@@ -62,7 +62,7 @@ Document the decision and notify the other steward as soon as possible.
 | **Supabase project** | Jonathan (primary) | *(TBD: Ammon collaborator access?)* |
 | **Resend accounts** (3 brands) | Jonathan | *(TBD: Ammon backup access?)* |
 | **Vercel project** | Jonathan (owner) | *(TBD: Ammon collaborator access?)* |
-| **GitHub repository** | Jonathan (admin) | Ammon (collaborator — write access) |
+| **GitHub repository** | Jonathan (admin) | Ammon (collaborator — write access; **not granted yet** — Jonathan holding invites) |
 | **GitHub Actions secrets** | Jonathan | *(Both stewards can edit)* |
 
 **Todo:** Grant Ammon collaborator access to Supabase, Vercel, and backup access to domain registrar.
@@ -70,7 +70,7 @@ Document the decision and notify the other steward as soon as possible.
 ### Who Can Deploy
 
 Both stewards should have:
-- Write access to the GitHub repository (✅ done for Ammon)
+- Write access to the GitHub repository (**TBD** — Jonathan holding collaborator invites for Ammon)
 - Collaborator access to Vercel (deploy previews, manage env vars)
 - Collaborator access to Supabase (run migrations, view logs, manage RLS)
 - Emergency domain/DNS credentials (password manager share or documented recovery process)
