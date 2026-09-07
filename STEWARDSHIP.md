@@ -62,7 +62,7 @@ Document the decision and notify the other steward as soon as possible.
 | **Supabase project** | Jonathan (primary) | *(TBD: Ammon collaborator access?)* |
 | **Resend accounts** (3 brands) | Jonathan | *(TBD: Ammon backup access?)* |
 | **Vercel project** | Jonathan (owner) | *(TBD: Ammon collaborator access?)* |
-| **GitHub repository** | Jonathan (admin) | Ammon (collaborator — write access; **not granted yet** — Jonathan holding invites) |
+| **GitHub repository** | Jonathan (admin) | Ammon — **not granted yet** (Jonathan holding collaborator invites) |
 | **GitHub Actions secrets** | Jonathan | *(Both stewards can edit)* |
 
 **Todo:** Grant Ammon collaborator access to Supabase, Vercel, and backup access to domain registrar.
@@ -153,6 +153,7 @@ This document can be updated by either steward via pull request. For major gover
 
 ## Open Questions / Action Items
 
+- [ ] Grant Ammon GitHub collaborator (write) on wardsignup + mvp — currently **on hold** by Jonathan
 - [ ] Grant Ammon collaborator access to Vercel
 - [ ] Grant Ammon collaborator access to Supabase project
 - [ ] Decide on backup domain/DNS access mechanism
