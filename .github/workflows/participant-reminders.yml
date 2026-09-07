@@ -1,0 +1,59 @@
+name: Participant Reminders
+
+on:
+  schedule:
+    - cron: "0 * * * *"  # every hour
+  workflow_dispatch:       # allow manual trigger
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ward Signup — participant reminders
+        run: |
+          curl -sf -X GET https://wardsignup.com/api/cron/participant-reminders \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 60
+
+      - name: Ward Signup — organizer faster alerts
+        run: |
+          curl -sf -X GET https://wardsignup.com/api/cron/organizer-faster \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 60
+
+      - name: Ward Signup — organizer digest + feedback loop
+        run: |
+          curl -sf -X GET https://wardsignup.com/api/cron/organizer-digest \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 90
+
+      - name: Ministry Signup — participant reminders
+        run: |
+          curl -sf -X GET https://ministrysignup.com/api/cron/participant-reminders \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 60
+
+      - name: Ministry Signup — organizer digest + feedback loop
+        run: |
+          curl -sf -X GET https://ministrysignup.com/api/cron/organizer-digest \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 90
+
+      - name: Org Signup — participant reminders
+        run: |
+          curl -sf -X GET https://www.orgsignup.com/api/cron/participant-reminders \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 60
+
+      - name: Org Signup — organizer digest + feedback loop
+        run: |
+          curl -sf -X GET https://www.orgsignup.com/api/cron/organizer-digest \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 90

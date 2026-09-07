@@ -1,0 +1,55 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+/.pnp
+.pnp.js
+
+# testing
+/coverage
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# misc
+.claude/
+.DS_Store
+
+# secrets and credentials (defense in depth)
+*.pem
+*.key
+*-key.json
+*credentials*.json
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# local env files (catch all .env variants)
+.env*
+!.env.example
+
+# supabase cli (linked project metadata; do not commit)
+supabase/.temp/
+supabase/.branches/
+
+# vercel
+.vercel
+.env.vercel.*
+.env.supabase
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# testing
+/coverage
+/playwright-report
+/test-results
+/.playwright
+.env.local
