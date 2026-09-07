@@ -109,6 +109,6 @@ Built with:
 
 ---
 
-**Stewards:** Jonathan Bond ([@jrbondesign](https://github.com/jrbondesign)), Ammon Curtis  
+**Stewards:** Jonathan Bond ([@jrbondesign](https://github.com/jrbondesign)), Ammon Curtis ([@ammon-ai](https://github.com/ammon-ai))  
 **Status:** Production (actively maintained)  
 **Hosted at:** [wardsignup.com](https://wardsignup.com) | [ministrysignup.com](https://ministrysignup.com) | [orgsignup.com](https://orgsignup.com)
