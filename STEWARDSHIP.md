@@ -13,7 +13,7 @@ WardSignup uses a **co-steward** model with two primary maintainers who share re
   - Primary contact: [jon@jrbond.com](mailto:jon@jrbond.com)
   - Manages: Domain/DNS, Supabase, Resend, Vercel, GitHub admin
   
-- **Ammon Shepherd**
+- **Ammon Curtis**
   - Co-steward
   - Contact: *(Placeholder — Ammon to provide preferred contact method)*
   - Manages: *(Placeholder — TBD with Ammon)*

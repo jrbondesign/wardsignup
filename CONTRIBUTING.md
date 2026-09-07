@@ -71,7 +71,7 @@ npm run test:e2e           # Playwright E2E tests (requires local Supabase)
 
 **Co-stewards:**
 - **Jonathan Bond** ([@jrbondesign](https://github.com/jrbondesign)) — original creator, primary maintainer
-- **Ammon Shepherd** — co-steward (contact details TBD)
+- **Ammon Curtis** — co-steward (contact details TBD)
 
 ### Merge Authority
 
