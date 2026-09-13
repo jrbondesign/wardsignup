@@ -58,10 +58,10 @@ Document the decision and notify the other steward as soon as possible.
 
 | Asset | Owner | Access |
 |-------|-------|--------|
-| **Domains** (wardsignup.com, ministrysignup.com, orgsignup.com) | Jonathan | *(TBD: Ammon backup access?)* |
+| **Domain** (wardsignup.com) | Jonathan | *(TBD: Ammon backup access?)* |
 | **DNS** | Jonathan | *(TBD: Ammon backup access?)* |
 | **Supabase project** | Jonathan (primary) | *(TBD: Ammon collaborator access?)* |
-| **Resend accounts** (3 brands) | Jonathan | *(TBD: Ammon backup access?)* |
+| **Resend account** | Jonathan | *(TBD: Ammon backup access?)* |
 | **Vercel project** | Jonathan (owner) | *(TBD: Ammon collaborator access?)* |
 | **GitHub repository** | Jonathan (admin) | Ammon — **not granted yet** (Jonathan holding collaborator invites) |
 | **GitHub Actions secrets** | Jonathan | *(Both stewards can edit)* |

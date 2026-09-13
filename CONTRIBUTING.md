@@ -1,6 +1,6 @@
 # Contributing to WardSignup
 
-Thank you for your interest in contributing to WardSignup! This project helps Latter-day Saint wards, ministries, and other groups coordinate volunteer signups, potlucks, and service events.
+Thank you for your interest in contributing to WardSignup! This project helps Latter-day Saint wards coordinate volunteer signups, potlucks, and service events.
 
 ## Quick Start
 
@@ -79,9 +79,9 @@ Either steward can merge PRs and ship fixes independently. For major architectur
 
 ### Who Holds What
 
-- **Domain/DNS** — Jonathan manages wardsignup.com, ministrysignup.com, orgsignup.com
-- **Email (Resend)** — Jonathan manages Resend accounts for all brands
-- **Supabase** — Jonathan manages the shared Supabase project
+- **Domain/DNS** — Jonathan manages wardsignup.com
+- **Email (Resend)** — Jonathan manages Resend account
+- **Supabase** — Jonathan manages the Supabase project
 - **Vercel** — Jonathan manages Vercel deployments and environment variables
 - **GitHub** — Jonathan is the primary GitHub admin; Ammon is a collaborator
 
