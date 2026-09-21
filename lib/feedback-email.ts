@@ -26,16 +26,17 @@ export async function sendFeedbackAskEmail(params: {
 
 Thanks for trying ${brand.name} — I saw you created an event and people actually signed up. That's exactly what I built this for, so thank you.
 
-A few quick questions (under a minute):
+I'd love your quick feedback. Takes less than a minute:
 
+→ Answer 4 quick questions: ${formUrl}
+
+The questions:
 1. How would you feel if you could no longer use ${brand.name}?
 2. Will you use it for your next event?
 3. What's the single most valuable part of it for you?
 4. What's the #1 thing holding it back from being perfect?
 
-Answer here: ${formUrl}
-
-Or just reply to this email — I read every message.
+Can't click the link? Reply to this email and I'll still get it.
 
 Thanks again,
 Jonathan
@@ -58,17 +59,21 @@ Made with ❤️ in Arizona`;
           Thanks for trying ${escapeHtml(brand.name)} — I saw you created an event and people actually signed up.
           That's exactly what I built this for, so thank you.
         </p>
-        <p style="font-size: 16px; line-height: 1.7; margin: 0 0 8px;">
-          A few quick questions (under a minute):
+        <p style="font-size: 16px; line-height: 1.7; margin: 0 0 20px;">
+          I'd love your quick feedback. Takes less than a minute:
         </p>
-        <ol style="font-size: 16px; line-height: 1.7; margin: 0 0 16px; padding-left: 22px;">
+        <div style="text-align: center; margin: 0 0 24px;">
+          <a href="${safeUrl}" style="display: inline-block; background: #0E96B0; color: #ffffff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-size: 17px; font-weight: 500;">Answer 4 quick questions</a>
+        </div>
+        <p style="font-size: 15px; line-height: 1.6; margin: 0 0 6px; color: #5A8399;">The questions:</p>
+        <ol style="font-size: 15px; line-height: 1.6; margin: 0 0 16px; padding-left: 22px; color: #5A8399;">
           <li>How would you feel if you could no longer use ${escapeHtml(brand.name)}?</li>
           <li>Will you use it for your next event?</li>
           <li>What's the single most valuable part of it for you?</li>
           <li>What's the #1 thing holding it back from being perfect?</li>
         </ol>
-        <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
-          <a href="${safeUrl}" style="color: #0E96B0;">Answer here</a> — or just reply to this email. I read every message.
+        <p style="font-size: 13px; line-height: 1.5; margin: 0 0 20px; color: #7A9AAD;">
+          Can't click the link? Reply to this email and I'll still get it.
         </p>
         <p style="font-size: 16px; line-height: 1.7; margin: 0 0 4px;">Thanks again,</p>
         <p style="font-size: 16px; line-height: 1.7; margin: 0 0 24px;">Jonathan</p>
@@ -124,7 +129,7 @@ export function buildFeedbackDigestEmailHtml(params: {
     ? Math.round((veryCount / withPmf.length) * 100)
     : 0;
   const summary = withPmf.length
-    ? `PMF benchmark: <strong>${pmfPct}%</strong> "very disappointed" (${veryCount}/${withPmf.length} answered). ${
+    ? `PMF benchmark: <strong>${pmfPct}%</strong> would be "very disappointed" if they could no longer use the product (${veryCount}/${withPmf.length} answered). ${
         withPmf.length < 40
           ? "Sample still small — directional only."
           : ""

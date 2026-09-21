@@ -66,10 +66,12 @@ export async function POST(request: Request) {
     }
 
     if (item_id) {
-      // Verify item belongs to campaign and check limit (sum of claimed quantities, not row count)
+      // Verify item belongs to campaign and check limit (sum of claimed quantities).
+      // Do not nest-embed item_signups: after org-member-only RLS, anon gets empty
+      // nested rows. Use the public-safe view (no email) for capacity counts.
       const { data: itemRaw, error: itemError } = await supabase
         .from("campaign_items")
-        .select("id, campaign_id, item_limit, item_signups(id, quantity)")
+        .select("id, campaign_id, item_limit")
         .eq("id", item_id)
         .eq("campaign_id", campaign_id)
         .single();
@@ -82,11 +84,20 @@ export async function POST(request: Request) {
         id: string;
         campaign_id: string;
         item_limit: number | null;
-        item_signups: { id: string; quantity: number }[];
       };
 
-      const claimedSum = Array.isArray(item.item_signups)
-        ? item.item_signups.reduce((s, r) => s + (r.quantity ?? 1), 0)
+      const { data: existingClaims, error: claimsError } = await supabase
+        .from("item_signups_public")
+        .select("id, quantity")
+        .eq("item_id", item_id)
+        .eq("campaign_id", campaign_id);
+      if (claimsError) {
+        console.error("Failed to load item signup claims:", claimsError);
+        return NextResponse.json({ error: "Failed to check item capacity" }, { status: 500 });
+      }
+
+      const claimedSum = Array.isArray(existingClaims)
+        ? existingClaims.reduce((s, r) => s + ((r as { quantity?: number }).quantity ?? 1), 0)
         : 0;
       if (item.item_limit !== null && claimedSum + quantity > item.item_limit) {
         const remaining = Math.max(0, item.item_limit - claimedSum);
@@ -97,7 +108,12 @@ export async function POST(request: Request) {
       }
     }
 
-    const { data, error } = await supabase
+    // Insert via service role when available: org-member-only SELECT on the base
+    // table makes anon INSERT…RETURNING fail even though INSERT itself is allowed.
+    const insertClient =
+      serviceKey && supabaseUrl ? createClient(supabaseUrl, serviceKey) : supabase;
+
+    const { data, error } = await insertClient
       .from("item_signups")
       .insert({
         item_id: item_id || null,

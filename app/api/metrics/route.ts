@@ -74,7 +74,7 @@ function num(v: unknown): number {
 
 export const maxDuration = 60;
 
-const VALID_BRANDS = new Set(["wardsignup", "ministrysignup", "orgsignup"]);
+const VALID_BRANDS = new Set(["wardsignup"]);
 
 export async function GET(request: NextRequest) {
   const token = request.headers.get("authorization")?.replace("Bearer ", "");

@@ -32,21 +32,8 @@ export default async function EventOGImage({ params }: { params: Promise<{ id: s
   const eventName = event?.name ?? brand.shortName;
   const eventDescription = event?.description ?? null;
 
-  // Fetch cover image for Ministry brand (fall back to gradient if unavailable)
-  const isMinistry = brand.id === "ministrysignup";
+  // Future: Cover image support
   let coverBase64: string | null = null;
-  if (isMinistry && event?.cover_image_url) {
-    try {
-      const res = await fetch(event.cover_image_url, { cache: "force-cache" });
-      if (res.ok) {
-        const buf = await res.arrayBuffer();
-        const mime = res.headers.get("content-type") ?? "image/jpeg";
-        coverBase64 = `data:${mime};base64,${Buffer.from(buf).toString("base64")}`;
-      }
-    } catch {
-      // Fall through to gradient
-    }
-  }
 
   return new ImageResponse(
     (

@@ -30,7 +30,9 @@ import {
   inferTithingDeclarationConfig,
 } from "@/lib/tithing-reschedule";
 import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
-import AdvancedSection from "@/components/create/sections/AdvancedSection";
+import VisibilitySection from "@/components/create/sections/VisibilitySection";
+import NotificationsSection from "@/components/create/sections/NotificationsSection";
+import EventSettingsSection from "@/components/create/sections/EventSettingsSection";
 import ItemsSection from "@/components/create/sections/ItemsSection";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
 import { groupSessionsForDisplay } from "@/lib/edit-session-classes";
@@ -161,7 +163,10 @@ export default function EditEventPage() {
   const [digestEnabled, setDigestEnabled] = useState(false);
   const [instantEnabled, setInstantEnabled] = useState(false);
   const [showSignupsPublicly, setShowSignupsPublicly] = useState(false);
-  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [listOnDirectory, setListOnDirectory] = useState(true);
+  const [visibilityOpen, setVisibilityOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [leaderName, setLeaderName] = useState("");
   const [leaderEmail, setLeaderEmail] = useState("");
   // Debounce leader-field auto-save so we don't PATCH on every keystroke.
@@ -301,19 +306,9 @@ export default function EditEventPage() {
           return;
         }
 
-        // Load org logo (Ministry brand only)
-        if (brand.id === "ministrysignup") {
-          const { data: { user } } = await supabase.auth.getUser();
-          if (user) {
-            const { data: profile } = await supabase
-              .from("organizer_profiles")
-              .select("logo_url")
-              .eq("user_id", user.id)
-              .eq("brand_id", "ministrysignup")
-              .maybeSingle();
-            setLogoUrl((profile as any)?.logo_url ?? null);
-          }
-        }
+        // Future: Load org logo if Ward Signup supports custom logos
+        const profileLogoUrl = null;
+        setLogoUrl(profileLogoUrl);
 
         setLeaderName((event as any).leader_name ?? "");
         setLeaderEmail((event as any).leader_email ?? "");
@@ -384,6 +379,7 @@ export default function EditEventPage() {
         setDigestEnabled(Boolean((event as any).organizer_digest_enabled));
         setInstantEnabled(Boolean((event as any).organizer_instant_notify_enabled));
         setShowSignupsPublicly(Boolean((event as any).show_signups_publicly));
+        setListOnDirectory(typeof (event as any).list_on_directory === "boolean" ? (event as any).list_on_directory : true);
         setCoverUrl((event as any).cover_image_url ?? null);
 
         // Load sessions
@@ -480,6 +476,7 @@ export default function EditEventPage() {
     organizer_digest_enabled?: boolean;
     organizer_instant_notify_enabled?: boolean;
     show_signups_publicly?: boolean;
+    list_on_directory?: boolean;
     event_timezone?: string;
     leader_name?: string | null;
     leader_email?: string | null;
@@ -1334,8 +1331,8 @@ export default function EditEventPage() {
             {itemsError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm">{itemsError}</div>}
             {/* Event details */}
             <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-4">
-              {/* Cover image banner — Ministry brand only */}
-              {brand.id === "ministrysignup" && (
+              {/* Future: Cover image support */}
+              <div className="p-4 md:p-8">
                 <div className="relative">
                   <label className="cursor-pointer group block">
                     <div className="w-full aspect-[2/1] relative overflow-hidden bg-[#F4FAFB] flex items-center justify-center">
@@ -1379,14 +1376,10 @@ export default function EditEventPage() {
                         <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
                       </svg>
                     </button>
-                  )}
-                </div>
-              )}
-              <div className="p-4 md:p-8">
-              <div className="flex items-center gap-3 mb-6">
-                {brand.id === "ministrysignup" && (
-                  <OrgLogoButton initialUrl={logoUrl} size="md" />
                 )}
+              </div>
+              <div className="flex items-center gap-3 mb-6">
+                {/* Future: Org logo support */}
                 <h1 className="font-serif text-[28px] text-[#0D2B35]">Edit Event</h1>
               </div>
               <div className="space-y-5">
@@ -1486,20 +1479,18 @@ export default function EditEventPage() {
               <div className="bg-[#E6F7FB] border border-[rgba(14,150,176,0.18)] rounded-xl px-[18px] py-[14px] text-sm leading-relaxed text-[#2E5566] mb-6">
                 <strong className="text-[#0D2B35] font-semibold">Tip:</strong>{" "}Press <kbd className="bg-white border border-[rgba(14,150,176,0.22)] rounded px-1 py-0.5 text-xs font-mono">Enter</kbd> in any item field to quickly add the next row.
               </div>
-              <AdvancedSection
+              <VisibilitySection
                 state={{
                   ...INITIAL_FORM_STATE,
                   showSignupsPublicly,
-                  organizerDigestEnabled: digestEnabled,
-                  organizerInstantNotifyEnabled: instantEnabled,
-                  eventTimezone,
-                  leaderName,
-                  leaderEmail,
-                  expanded: { ...INITIAL_FORM_STATE.expanded, advanced: advancedOpen },
+                  listOnDirectory,
+                  expanded: { ...INITIAL_FORM_STATE.expanded, visibility: visibilityOpen },
                 }}
                 set={(patch: Partial<CreateFormState>) => {
                   if ("expanded" in patch && patch.expanded) {
-                    setAdvancedOpen(patch.expanded.advanced);
+                    if ("visibility" in patch.expanded) {
+                      setVisibilityOpen(patch.expanded.visibility);
+                    }
                   }
                   if ("showSignupsPublicly" in patch && typeof patch.showSignupsPublicly === "boolean") {
                     const next = patch.showSignupsPublicly;
@@ -1508,6 +1499,29 @@ export default function EditEventPage() {
                       setShowSignupsPublicly(!next);
                       alert(err instanceof Error ? err.message : "Could not save");
                     });
+                  }
+                  if ("listOnDirectory" in patch && typeof patch.listOnDirectory === "boolean") {
+                    const next = patch.listOnDirectory;
+                    setListOnDirectory(next);
+                    patchCampaignFields({ list_on_directory: next }).catch((err: unknown) => {
+                      setListOnDirectory(!next);
+                      alert(err instanceof Error ? err.message : "Could not save");
+                    });
+                  }
+                }}
+              />
+              <NotificationsSection
+                state={{
+                  ...INITIAL_FORM_STATE,
+                  organizerDigestEnabled: digestEnabled,
+                  organizerInstantNotifyEnabled: instantEnabled,
+                  expanded: { ...INITIAL_FORM_STATE.expanded, notifications: notificationsOpen },
+                }}
+                set={(patch: Partial<CreateFormState>) => {
+                  if ("expanded" in patch && patch.expanded) {
+                    if ("notifications" in patch.expanded) {
+                      setNotificationsOpen(patch.expanded.notifications);
+                    }
                   }
                   if (
                     "organizerDigestEnabled" in patch &&
@@ -1530,6 +1544,22 @@ export default function EditEventPage() {
                       setInstantEnabled(!next);
                       alert(err instanceof Error ? err.message : "Could not save");
                     });
+                  }
+                }}
+              />
+              <EventSettingsSection
+                state={{
+                  ...INITIAL_FORM_STATE,
+                  eventTimezone,
+                  leaderName,
+                  leaderEmail,
+                  expanded: { ...INITIAL_FORM_STATE.expanded, settings: settingsOpen },
+                }}
+                set={(patch: Partial<CreateFormState>) => {
+                  if ("expanded" in patch && patch.expanded) {
+                    if ("settings" in patch.expanded) {
+                      setSettingsOpen(patch.expanded.settings);
+                    }
                   }
                   if ("eventTimezone" in patch && typeof patch.eventTimezone === "string") {
                     const next = patch.eventTimezone;
@@ -1580,59 +1610,10 @@ export default function EditEventPage() {
             {hasUnsavedChanges ? "Cancel" : "Back to event"}
           </Link>
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden">
-            {/* Cover image banner — Ministry brand only */}
-            {brand.id === "ministrysignup" && (
-              <div className="relative">
-                <label className="cursor-pointer group block">
-                  <div className="w-full aspect-[2/1] relative overflow-hidden bg-[#F4FAFB] flex items-center justify-center">
-                    {coverUploading ? (
-                      <LoadingSpinner size="lg" />
-                    ) : (coverPreview || coverUrl) ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img src={coverPreview ?? coverUrl!} alt="Event cover" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="text-center text-[#5A8399] px-4">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 mx-auto mb-2 opacity-30">
-                          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-                          <polyline points="21 15 16 10 5 21"/>
-                        </svg>
-                        <p className="text-sm font-medium opacity-50">Add a cover image</p>
-                        <p className="text-xs opacity-40 mt-1">2:1 landscape · 800×400 px min · JPEG, PNG, or WebP</p>
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
-                      <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-semibold bg-black/50 px-3 py-1.5 rounded-lg">
-                        {coverUrl || coverPreview ? "Replace cover image" : "Upload cover image"}
-                      </span>
-                    </div>
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="sr-only"
-                    onChange={handleCoverChange}
-                    disabled={coverUploading}
-                  />
-                </label>
-                {(coverUrl || coverPreview) && !coverUploading && (
-                  <button
-                    type="button"
-                    onClick={handleCoverRemove}
-                    className="absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center transition-colors"
-                    title="Remove cover image"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                  </button>
-                )}
-              </div>
-            )}
+            {/* Future: Cover image support */}
             <div className="p-4 md:p-8">
             <div className="flex items-center gap-3 mb-4">
-              {brand.id === "ministrysignup" && (
-                <OrgLogoButton initialUrl={logoUrl} size="md" />
-              )}
+              {/* Future: Org logo support */}
               <h1 className="font-serif text-[28px] text-[#0D2B35]">Edit Event</h1>
             </div>
 
@@ -1667,21 +1648,18 @@ export default function EditEventPage() {
                 />
               </div>
 
-              <AdvancedSection
+              <VisibilitySection
                 state={{
                   ...INITIAL_FORM_STATE,
                   showSignupsPublicly,
-                  organizerDigestEnabled: digestEnabled,
-                  organizerInstantNotifyEnabled: instantEnabled,
-                  eventTimezone,
-                  leaderName,
-                  leaderEmail,
-                  expanded: { ...INITIAL_FORM_STATE.expanded, advanced: advancedOpen },
+                  listOnDirectory,
+                  expanded: { ...INITIAL_FORM_STATE.expanded, visibility: visibilityOpen },
                 }}
                 set={(patch: Partial<CreateFormState>) => {
-                  // Each toggle / select auto-saves to the campaign on change.
                   if ("expanded" in patch && patch.expanded) {
-                    setAdvancedOpen(patch.expanded.advanced);
+                    if ("visibility" in patch.expanded) {
+                      setVisibilityOpen(patch.expanded.visibility);
+                    }
                   }
                   if ("showSignupsPublicly" in patch && typeof patch.showSignupsPublicly === "boolean") {
                     const next = patch.showSignupsPublicly;
@@ -1690,6 +1668,32 @@ export default function EditEventPage() {
                       setShowSignupsPublicly(!next);
                       alert(err instanceof Error ? err.message : "Could not save");
                     });
+                  }
+                  if ("listOnDirectory" in patch && typeof patch.listOnDirectory === "boolean") {
+                    const next = patch.listOnDirectory;
+                    setListOnDirectory(next);
+                    patchCampaignFields({ list_on_directory: next }).catch((err: unknown) => {
+                      setListOnDirectory(!next);
+                      alert(err instanceof Error ? err.message : "Could not save");
+                    });
+                  }
+                }}
+              />
+              <NotificationsSection
+                state={{
+                  ...INITIAL_FORM_STATE,
+                  organizerDigestEnabled: digestEnabled,
+                  organizerInstantNotifyEnabled: instantEnabled,
+                  eventTimezone,
+                  leaderName,
+                  leaderEmail,
+                  expanded: { ...INITIAL_FORM_STATE.expanded, notifications: notificationsOpen },
+                }}
+                set={(patch: Partial<CreateFormState>) => {
+                  if ("expanded" in patch && patch.expanded) {
+                    if ("notifications" in patch.expanded) {
+                      setNotificationsOpen(patch.expanded.notifications);
+                    }
                   }
                   if (
                     "organizerDigestEnabled" in patch &&
@@ -1712,6 +1716,31 @@ export default function EditEventPage() {
                       setInstantEnabled(!next);
                       alert(err instanceof Error ? err.message : "Could not save");
                     });
+                  }
+                  if ("eventTimezone" in patch && typeof patch.eventTimezone === "string") {
+                    const next = patch.eventTimezone;
+                    const prev = eventTimezone;
+                    setEventTimezone(next);
+                    patchCampaignFields({ event_timezone: next }).catch((err: unknown) => {
+                      setEventTimezone(prev);
+                      alert(err instanceof Error ? err.message : "Could not save");
+                    });
+                  }
+                }}
+              />
+              <EventSettingsSection
+                state={{
+                  ...INITIAL_FORM_STATE,
+                  eventTimezone,
+                  leaderName,
+                  leaderEmail,
+                  expanded: { ...INITIAL_FORM_STATE.expanded, settings: settingsOpen },
+                }}
+                set={(patch: Partial<CreateFormState>) => {
+                  if ("expanded" in patch && patch.expanded) {
+                    if ("settings" in patch.expanded) {
+                      setSettingsOpen(patch.expanded.settings);
+                    }
                   }
                   if ("eventTimezone" in patch && typeof patch.eventTimezone === "string") {
                     const next = patch.eventTimezone;

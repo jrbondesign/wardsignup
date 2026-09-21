@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/react";
 import { headers } from "next/headers";
 import { Suspense } from "react";
 import { BrandProvider } from "@/components/BrandProvider";
+import { BrandJsonLd } from "@/components/BrandJsonLd";
 import { PostHogProvider } from "@/components/PostHogProvider";
 import { PostHogPageView } from "@/components/PostHogPageView";
 import { getBrandFromHost } from "@/lib/brand";
@@ -30,7 +31,13 @@ export async function generateMetadata(): Promise<Metadata> {
   const brand = getBrandFromHost(host);
   const base = new URL(brand.siteUrl);
 
-  const isMinistry = brand.id === "ministrysignup";
+  // Future: Ministry/Org support
+  const isMinistry = false;
+
+  // GSC HTML-tag verification (preferred tonight — no DNS wait).
+  // Set NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION to the token from Search Console.
+  const googleSiteVerification =
+    process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION?.trim() || undefined;
 
   return {
     metadataBase: base,
@@ -66,6 +73,9 @@ export async function generateMetadata(): Promise<Metadata> {
       description: brand.twitterDescription,
       images: ["/opengraph-image"],
     },
+    ...(googleSiteVerification
+      ? { verification: { google: googleSiteVerification } }
+      : {}),
   };
 }
 
@@ -81,6 +91,7 @@ export default async function RootLayout({
   return (
     <html lang="en">
       <body className={`${dmSans.variable} ${dmSerifDisplay.variable} antialiased`}>
+        <BrandJsonLd brand={brand} />
         <PostHogProvider>
           <BrandProvider brand={brand}>
             {children}

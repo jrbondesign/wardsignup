@@ -145,21 +145,8 @@ export async function POST(request: NextRequest) {
     const safeSiteUrl = escapeHtml(brand.siteUrl);
     const safeSiteHost = escapeHtml(brand.siteHost);
 
-    // Look up organizer logo for Ministry brand (non-fatal)
+    // Future: Look up organizer logo if Ward Signup supports custom logos
     let organizerLogoUrl: string | null = null;
-    if (brand.id === "ministrysignup") {
-      try {
-        const adminClient = createServiceRoleClient();
-        const { data: profile } = await adminClient
-          .from("organizer_profiles")
-          .select("logo_url")
-          .eq("email_lower", email.toLowerCase())
-          .maybeSingle();
-        organizerLogoUrl = (profile as any)?.logo_url ?? null;
-      } catch {
-        // Non-fatal: email sends without logo if lookup fails
-      }
-    }
 
     const logoBlock = organizerLogoUrl
       ? `<div style="text-align:center;margin-bottom:20px;">

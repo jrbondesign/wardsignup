@@ -6,6 +6,16 @@ import { createClientComponentClient } from "@/lib/auth";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import Navigation from "@/components/Navigation";
 import Link from "next/link";
+import dynamic from "next/dynamic";
+
+const GeographyMap = dynamic(() => import("@/components/GeographyMap"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex items-center justify-center py-12">
+      <LoadingSpinner size="md" />
+    </div>
+  ),
+});
 
 interface MetricsData {
   totalEvents: number;
@@ -391,6 +401,17 @@ export default function MetricsPage() {
                     </tbody>
                   </table>
                 </div>
+              </div>
+
+              {/* Geography Map */}
+              <div className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6">
+                <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-2">
+                  User Geography
+                </div>
+                <p className="text-[13px] text-[#5A8399] mb-5 max-w-3xl">
+                  Where users are accessing WardSignup from, based on PostHog GeoIP data. Marker size indicates number of unique users per city.
+                </p>
+                <GeographyMap />
               </div>
 
               <details className="group rounded-2xl border border-[rgba(14,150,176,0.2)] bg-[#FAFCFD] open:bg-white open:shadow-[0_2px_12px_rgba(8,100,126,0.06)]">

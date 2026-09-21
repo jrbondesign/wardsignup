@@ -1,5 +1,9 @@
 import { type NextRequest, NextResponse } from "next/server";
-import { isKnownBrandHost, normalizeHost } from "@/lib/brand";
+import {
+  isKnownBrandHost,
+  normalizeHost,
+  preferredBrandApexHost,
+} from "@/lib/brand";
 import { isProtectedPath, updateSession } from "@/lib/supabase/middleware";
 
 function copyCookies(from: NextResponse, to: NextResponse) {
@@ -17,12 +21,24 @@ function shouldSkipCanonicalRedirect(host: string): boolean {
 }
 
 export async function middleware(request: NextRequest) {
+  const currentHost = normalizeHost(request.nextUrl.host);
+
+  // Preferred host: www → apex for each brand (301). Keeps multi-brand apexes
+  // intact while consolidating www aliases for SEO/GSC.
+  const preferredApex = preferredBrandApexHost(currentHost);
+  if (preferredApex) {
+    const dest = request.nextUrl.clone();
+    dest.protocol = "https:";
+    dest.host = preferredApex;
+    dest.port = "";
+    return NextResponse.redirect(dest, 301);
+  }
+
   const canonical =
     process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ?? "";
   if (canonical) {
     try {
       const canonicalUrl = new URL(canonical);
-      const currentHost = normalizeHost(request.nextUrl.host);
       const canonicalHost = canonicalUrl.host.toLowerCase();
       if (
         canonicalHost &&

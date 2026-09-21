@@ -9,7 +9,9 @@ import LocationSection from "@/components/create/sections/LocationSection";
 import CapacitySection from "@/components/create/sections/CapacitySection";
 import AttendeeFieldsSection from "@/components/create/sections/AttendeeFieldsSection";
 import ItemsSection from "@/components/create/sections/ItemsSection";
-import AdvancedSection from "@/components/create/sections/AdvancedSection";
+import VisibilitySection from "@/components/create/sections/VisibilitySection";
+import NotificationsSection from "@/components/create/sections/NotificationsSection";
+import EventSettingsSection from "@/components/create/sections/EventSettingsSection";
 import ComponentCard from "@/components/create/sections/ComponentCard";
 import {
   INITIAL_FORM_STATE,
@@ -323,7 +325,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
           }),
         });
         if (!sessionsRes.ok) {
-          router.push(`/admin/${event.id}?warn=session-failed`);
+          router.push(`/admin/${event.id}?warn=session-failed&created=1`);
           return;
         }
       } else if (state.eventType === "spots") {
@@ -339,7 +341,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
           body: JSON.stringify({ campaign_id: event.id, sessions }),
         });
         if (!sessionsRes.ok) {
-          router.push(`/admin/${event.id}?warn=session-failed`);
+          router.push(`/admin/${event.id}?warn=session-failed&created=1`);
           return;
         }
       } else {
@@ -357,12 +359,12 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
           body: JSON.stringify({ campaign_id: event.id, items: cleanItems }),
         });
         if (!itemsRes.ok) {
-          router.push(`/admin/${event.id}?warn=items-failed`);
+          router.push(`/admin/${event.id}?warn=items-failed&created=1`);
           return;
         }
       }
 
-      router.push(`/admin/${event.id}`);
+      router.push(`/admin/${event.id}?created=1`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
       setSubmitting(false);
@@ -511,7 +513,9 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
         </ComponentCard>
       )}
 
-      <AdvancedSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
+      <VisibilitySection state={state} set={(patch) => dispatch({ type: "set", patch })} />
+      <NotificationsSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
+      <EventSettingsSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
 
       {error && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[13px] text-red-700">

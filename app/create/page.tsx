@@ -20,6 +20,8 @@ function CreateInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  const isAiEnabled = process.env.NEXT_PUBLIC_AI_EVENT_CREATE_ENABLED === "1";
+
   // Templates available to this brand. Built-in templates are Ward-only (LDS copy);
   // other brands simply see none until brand-neutral templates are authored.
   const brandTemplates = useMemo(() => getTemplatesForBrand(brand.id), [brand.id]);
@@ -140,7 +142,7 @@ function CreateInner() {
           <div className="max-w-md w-full bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-10 text-center">
             <h1 className="font-serif text-[26px] text-[#0D2B35] mb-3">You&apos;re at the event limit</h1>
             <p className="text-[15px] text-[#5A8399] mb-6">
-              Free beta includes up to {maxEvents} events per account ({eventCount}/{maxEvents} used).
+              Free accounts include up to {maxEvents} events ({eventCount}/{maxEvents} used).
             </p>
             <Link
               href="/dashboard"
@@ -173,9 +175,15 @@ function CreateInner() {
 
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">
             <h1 className="font-serif text-[26px] text-[#0D2B35] mb-1">Create a new event</h1>
-            <p className="text-[13px] text-[#5A8399] mb-5">
+            <p className="text-[13px] text-[#5A8399] mb-3">
               Build it from the components below — or start faster with a template or AI.
             </p>
+            
+            <div className="mb-5 px-3 py-2 bg-[#E6F7FB] border border-[#0E96B0]/20 rounded-lg">
+              <p className="text-xs text-[#08647E] font-medium">
+                ✨ Members don&apos;t need an account — they&apos;ll sign up with just their name.
+              </p>
+            </div>
 
             {/* Starting points: optional accelerators that prefill the composer.
                 Neither blocks the form, which is always shown below. */}
@@ -217,25 +225,27 @@ function CreateInner() {
               )}
 
               {/* Describe with AI — collapsed by default so it stays an accelerator. */}
-              <div className={brandTemplates.length > 0 ? "pt-3 border-t border-[rgba(14,150,176,0.12)]" : ""}>
-                {aiOpen ? (
-                  <AiEventInput
-                    onResult={(result) => {
-                      if (!confirmReplace("this AI-generated draft")) return;
-                      setAiResult(result);
-                      setAiVersion((v) => v + 1);
-                    }}
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setAiOpen(true)}
-                    className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#0E96B0] hover:text-[#08647E] transition-colors"
-                  >
-                    <span aria-hidden>✨</span> Describe it with AI instead
-                  </button>
-                )}
-              </div>
+              {isAiEnabled && (
+                <div className={brandTemplates.length > 0 ? "pt-3 border-t border-[rgba(14,150,176,0.12)]" : ""}>
+                  {aiOpen ? (
+                    <AiEventInput
+                      onResult={(result) => {
+                        if (!confirmReplace("this AI-generated draft")) return;
+                        setAiResult(result);
+                        setAiVersion((v) => v + 1);
+                      }}
+                    />
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setAiOpen(true)}
+                      className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#0E96B0] hover:text-[#08647E] transition-colors"
+                    >
+                      <span aria-hidden>✨</span> Describe it with AI instead
+                    </button>
+                  )}
+                </div>
+              )}
 
               {brandTemplates.length > 0 && (
                 <p className="text-[12px] text-[#5A8399]">

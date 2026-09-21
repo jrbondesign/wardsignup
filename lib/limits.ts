@@ -1,4 +1,4 @@
-/** Env-tunable limits for free beta. NEXT_PUBLIC_* is readable in client and server bundles. */
+/** Env-tunable limits for the free tier. NEXT_PUBLIC_* is readable in client and server bundles. */
 
 function positiveInt(v: string | undefined, fallback: number): number {
   const n = parseInt(v ?? "", 10);
@@ -38,7 +38,7 @@ export function isUnlimitedEventsUser(email: string | null | undefined): boolean
 
 /**
  * Per-organization event-limit overrides, keyed by lowercased org name. Lets specific
- * orgs run a higher cap than the default free-beta limit without granting unlimited
+ * orgs run a higher cap than the default free-tier limit without granting unlimited
  * events. Returns null when the org has no override, so callers fall back to
  * getMaxCampaignsPerUser().
  */

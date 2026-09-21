@@ -58,10 +58,10 @@ Document the decision and notify the other steward as soon as possible.
 
 | Asset | Owner | Access |
 |-------|-------|--------|
-| **Domain** (wardsignup.com) | Jonathan | *(TBD: Ammon backup access?)* |
+| **Domains** (wardsignup.com, ministrysignup.com, orgsignup.com) | Jonathan | *(TBD: Ammon backup access?)* |
 | **DNS** | Jonathan | *(TBD: Ammon backup access?)* |
 | **Supabase project** | Jonathan (primary) | *(TBD: Ammon collaborator access?)* |
-| **Resend account** | Jonathan | *(TBD: Ammon backup access?)* |
+| **Resend accounts** (3 brands) | Jonathan | *(TBD: Ammon backup access?)* |
 | **Vercel project** | Jonathan (owner) | *(TBD: Ammon collaborator access?)* |
 | **GitHub repository** | Jonathan (admin) | Ammon — **not granted yet** (Jonathan holding collaborator invites) |
 | **GitHub Actions secrets** | Jonathan | *(Both stewards can edit)* |
@@ -162,7 +162,7 @@ This document can be updated by either steward via pull request. For major gover
 - [ ] Document Ammon's preferred contact method
 - [ ] Clarify Ammon's operational responsibilities (if different from Jonathan's)
 - [ ] Set up auto-renew on domain registrations
-- [ ] Consider GitHub Sponsors setup (if tip jar is enabled)
+- [x] Consider GitHub Sponsors setup (if tip jar is enabled) — `.github/FUNDING.yml` with `github: [jrbondesign]`; enable Sponsors on the account + repo Settings → Sponsorships so the Sponsor button appears
 
 ---
 

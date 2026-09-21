@@ -7,7 +7,12 @@ import {
 import type { BrandId } from "@/lib/brand/types";
 import { getPostHogClient } from "@/lib/posthog-server";
 
-const VALID_BRAND_IDS: BrandId[] = ["wardsignup", "ministrysignup", "orgsignup"];
+const VALID_BRAND_IDS: BrandId[] = ["wardsignup"];
+
+function isAiEventCreateEnabled(): boolean {
+  const flag = process.env.AI_EVENT_CREATE_ENABLED ?? "";
+  return flag === "1" || flag.toLowerCase() === "true";
+}
 
 // Simple in-process rate limiter: max 10 requests per user per hour.
 // Resets on cold start (acceptable for Hobby plan single instances).
@@ -33,6 +38,13 @@ function checkRateLimit(userId: string): { allowed: boolean; retryAfterMs: numbe
 }
 
 export async function POST(request: Request) {
+  if (!isAiEventCreateEnabled()) {
+    return NextResponse.json(
+      { error: "AI event creation is currently disabled." },
+      { status: 503 },
+    );
+  }
+
   const auth = await getAuthFromRequest(request);
   if (!auth.ok) {
     return NextResponse.json({ error: auth.message }, { status: auth.status });

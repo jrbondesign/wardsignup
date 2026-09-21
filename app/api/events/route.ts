@@ -152,7 +152,7 @@ export async function POST(request: Request) {
         return NextResponse.json(
           {
             error:
-              "Your organization is missing an owner membership row — contact support@ministrysignup.com to fix.",
+              "Your organization is missing an owner membership row — contact support@wardsignup.com to fix.",
             code: "org_member_missing",
           },
           { status: 403 },

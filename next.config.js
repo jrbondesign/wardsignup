@@ -77,6 +77,60 @@ const nextConfig = {
       },
     ];
   },
+  async redirects() {
+    return [
+      {
+        source: "/support",
+        destination: "/support-the-project",
+        permanent: true,
+      },
+      // Permanent 301 redirects: ministrysignup.com + orgsignup.com → wardsignup.com
+      {
+        source: "/:path*",
+        has: [
+          {
+            type: "host",
+            value: "ministrysignup.com",
+          },
+        ],
+        destination: "https://wardsignup.com/:path*",
+        permanent: true,
+      },
+      {
+        source: "/:path*",
+        has: [
+          {
+            type: "host",
+            value: "www.ministrysignup.com",
+          },
+        ],
+        destination: "https://wardsignup.com/:path*",
+        permanent: true,
+      },
+      {
+        source: "/:path*",
+        has: [
+          {
+            type: "host",
+            value: "orgsignup.com",
+          },
+        ],
+        destination: "https://wardsignup.com/:path*",
+        permanent: true,
+      },
+      {
+        source: "/:path*",
+        has: [
+          {
+            type: "host",
+            value: "www.orgsignup.com",
+          },
+        ],
+        destination: "https://wardsignup.com/:path*",
+        permanent: true,
+      },
+    ];
+  },
 };
 
 const withBundleAnalyzer = require("@next/bundle-analyzer")({

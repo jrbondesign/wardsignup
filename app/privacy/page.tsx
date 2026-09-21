@@ -7,10 +7,28 @@ export async function generateMetadata(): Promise<Metadata> {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
+  const title = `Privacy Policy — ${brand.shortName}`;
+  const description = `How ${brand.name} collects, uses, and protects your information.`;
+  const url = `${brand.siteUrl}/privacy`;
   return {
     metadataBase: new URL(brand.siteUrl),
-    title: `Privacy Policy — ${brand.shortName}`,
-    description: `How ${brand.name} collects, uses, and protects your information.`,
+    title,
+    description,
+    alternates: {
+      canonical: "/privacy",
+    },
+    openGraph: {
+      title,
+      description,
+      url,
+      siteName: brand.shortName,
+      type: "website",
+    },
+    twitter: {
+      card: "summary",
+      title,
+      description,
+    },
   };
 }
 

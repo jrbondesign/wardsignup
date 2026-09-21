@@ -62,7 +62,7 @@ Items rules (for "items" templateType only):
 - If no quantity is stated, use 1`;
   }
 
-  return `You are a structured-data extractor for a church ministry sign-up app (ministrysignup.com).
+  return `You are a structured-data extractor for a church sign-up app (wardsignup.com).
 Today is ${today}. Extract event details from the user's description by calling the extract_event function.
 
 templateType rules:

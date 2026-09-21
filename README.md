@@ -1,6 +1,6 @@
 # WardSignup
 
-**Simple, streamlined volunteer signup and coordination for church wards.**
+**Simple, streamlined volunteer signup and coordination for church wards, ministries, and community groups.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -10,7 +10,7 @@ WardSignup helps coordinate volunteers for teaching, potlucks, service projects,
 
 **WardSignup is not affiliated with, endorsed by, or sponsored by The Church of Jesus Christ of Latter-day Saints.**
 
-This is an independent open-source project created by individual members to serve ward communities worldwide. The Church has no involvement in its development, operation, or maintenance.
+This is an independent open-source project created by individual members to serve ward and ministry communities worldwide. The Church has no involvement in its development, operation, or maintenance.
 
 ## 🚀 Try It Free
 
@@ -20,7 +20,7 @@ No setup required — create an account and start coordinating signups in minute
 - Magic link authentication (no passwords)
 - Unlimited events and signups
 - Email invitations and reminders
-- Responsive design for desktop, tablet, and mobile
+- Multi-brand support (Ward Signup, Ministry Signup, Org Signup)
 
 ## 🛠️ Self-Hosting
 
@@ -41,6 +41,7 @@ Want to run your own instance? See **[SELF_HOSTING.md](SELF_HOSTING.md)** for co
 - **Public signup pages** — shareable links, no login required for participants
 - **Email notifications** — invitations, confirmations, 24-hour reminders
 - **Admin dashboard** — real-time signup tracking, organizer reports
+- **Multi-brand** — white-label support for ward/ministry/org contexts
 - **Items/supplies signup** — optional: potluck dishes, equipment, materials
 - **Responsive design** — works on desktop, tablet, mobile
 
@@ -69,9 +70,11 @@ npm run dev
 
 WardSignup is free and open-source. If the hosted version at [wardsignup.com](https://wardsignup.com) has helped your ward, consider supporting hosting costs:
 
-**[Sponsor on GitHub](https://github.com/sponsors/jrbondesign)** *(placeholder — update when GitHub Sponsors enabled)*
+**[Sponsor on GitHub](https://github.com/sponsors/jrbondesign)** · **[Support the Project](https://wardsignup.com/support-the-project)**
 
 Your support helps keep the lights on and development moving forward. Every contribution is appreciated, but never required — WardSignup will always be free.
+
+*(Enable GitHub Sponsors on the maintainer account so the Sponsors link resolves.)*
 
 ## 🎯 Roadmap
 
@@ -110,4 +113,4 @@ Built with:
 
 **Stewards:** Jonathan Bond ([@jrbondesign](https://github.com/jrbondesign)), Ammon Curtis ([@ammon-ai](https://github.com/ammon-ai))  
 **Status:** Production (actively maintained)  
-**Hosted at:** [wardsignup.com](https://wardsignup.com)
+**Hosted at:** [wardsignup.com](https://wardsignup.com) | [ministrysignup.com](https://ministrysignup.com) | [orgsignup.com](https://orgsignup.com)

@@ -52,6 +52,11 @@ function buildSessionDates(
   return sessions;
 }
 
+function isAiEventCreateEnabled(): boolean {
+  const flag = process.env.AI_EVENT_CREATE_ENABLED ?? "";
+  return flag === "1" || flag.toLowerCase() === "true";
+}
+
 export const aiTools = [
   {
     name: "create_event_from_description",
@@ -69,6 +74,9 @@ export const aiTools = [
         ),
     }),
     async handler(input: { description: string }) {
+      if (!isAiEventCreateEnabled()) {
+        throw new Error("AI event creation is currently disabled.");
+      }
       // Step 1: AI extraction
       const { result, missingFields } = await apiCall<{ result: AiEventResult; missingFields: string[] }>(
         "/api/ai-create-event",

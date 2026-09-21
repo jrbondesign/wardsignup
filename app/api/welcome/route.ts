@@ -8,6 +8,7 @@ import {
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { escapeHtml } from "@/lib/html-escape";
 import { getResendForBrand } from "@/lib/resend-for-brand";
+import { withUtm } from "@/lib/utm";
 const creatorNotifyTo = process.env.CREATOR_NOTIFY_TO || "jon@jrbond.com";
 
 /** Welcome replies: must be an address that receives mail (e.g. Cloudflare Email Routing → your inbox). */
@@ -179,20 +180,30 @@ export async function POST(request: NextRequest) {
     const welcomeSubject = brand.email.welcomeSubject;
     const safeFirst = escapeHtml(firstName);
     const quickPlain = brand.email.welcomeQuickStartBold;
+    
+    // Add UTM tracking to welcome email CTA
+    const siteUrlWithUtm = withUtm(brand.siteUrl, {
+      utm_source: 'welcome_email',
+      utm_medium: 'email',
+      utm_campaign: 'creator_welcome'
+    });
+    
     const welcomeText = `Hi ${firstName},
 
 Thanks for signing up — you're one of our very first users!
 
 Quick start: ${quickPlain}
 
-This is beta, so if anything feels off, just reply. I read every message.
+✨ Members don't need an account. They just open your link, pick a slot, and enter their name.
+
+This is free to use — if anything feels off, just reply. I read every message.
 
 One quick question: What's the first event you plan to use it for?
 
 Thanks again,
 Jonathan
 
-${brand.name} · ${brand.siteUrl}
+${brand.name} · ${siteUrlWithUtm}
 Made with ❤️ in Arizona`;
 
     // Send welcome email (must succeed before we mark welcome_sent)
@@ -216,7 +227,11 @@ Made with ❤️ in Arizona`;
           </p>
 
           <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
-            This is beta, so if anything feels off, just reply. I read every message.
+            ✨ Members don't need an account. They just open your link, pick a slot, and enter their name.
+          </p>
+
+          <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
+            This is free to use — if anything feels off, just reply. I read every message.
           </p>
 
           <p style="font-size: 16px; line-height: 1.7; margin: 0 0 24px;">
@@ -228,7 +243,7 @@ Made with ❤️ in Arizona`;
 
           <div style="margin: 0; padding: 0; color: #5A8399;">
             <div style="margin: 0; padding: 0; font-size: 14px; line-height: 1.45;">
-              ${escapeHtml(brand.name)} · <a href="${escapeHtml(brand.siteUrl)}" style="color: #0E96B0; text-decoration: none;">${escapeHtml(brand.siteHost)}</a>
+              ${escapeHtml(brand.name)} · <a href="${escapeHtml(siteUrlWithUtm)}" style="color: #0E96B0; text-decoration: none;">${escapeHtml(brand.siteHost)}</a>
             </div>
             <div style="margin: 0; padding: 0; font-size: 13px; line-height: 1.45;">
               Made with ❤️ in Arizona

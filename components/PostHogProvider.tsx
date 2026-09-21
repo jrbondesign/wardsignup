@@ -10,7 +10,6 @@ if (typeof window !== "undefined") {
     capture_pageview: false, // handled by PostHogPageView
     capture_pageleave: true,
     person_profiles: "always",
-    disable_session_recording: false, // Explicitly enable session recording
   });
 }
 

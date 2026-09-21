@@ -6,8 +6,7 @@ function env(key: string): string | undefined {
 }
 
 /**
- * When set, applies to all brands (single-tenant deploy). Prefer unset for multi-brand
- * so each pack’s `brand.email.*` is used (or per-key overrides below).
+ * When set, applies to Ward Signup. Prefer unset to use brand.email.*.
  */
 export function organizerEmailFrom(brand: PublicBrand): string {
   return env("ORGANIZER_EMAIL_FROM") ?? brand.email.organizerFrom;
@@ -35,25 +34,20 @@ export function feedbackEmailFrom(brand: PublicBrand): string {
 
 /**
  * Magic-link sign-in emails (Resend).
- * Uses each pack’s `organizerFrom` unless `MAGIC_LINK_EMAIL_FROM` is set.
- * Does **not** use `ORGANIZER_EMAIL_FROM` — that global is often Ward-only and would
- * break Ministry sends (wrong domain for `RESEND_API_KEY_MINISTRY`).
  */
 export function magicLinkEmailFrom(brand: PublicBrand): string {
   return env("MAGIC_LINK_EMAIL_FROM") ?? brand.email.organizerFrom;
 }
 
 /**
- * Participant signup confirmation + ~24h reminder. Per-brand noreply (same as magic links).
- * Do not use ORGANIZER_EMAIL_FROM — it is often Ward-only and breaks Ministry.
+ * Participant signup confirmation + ~24h reminder.
  */
 export function participantEmailFrom(brand: PublicBrand): string {
   return env("PARTICIPANT_EMAIL_FROM") ?? brand.email.organizerFrom;
 }
 
 /**
- * Per-signup notification to the event's assigned leader. Per-brand noreply
- * (same rationale as participant emails — ORGANIZER_EMAIL_FROM is often Ward-only).
+ * Per-signup notification to the event's assigned leader.
  */
 export function leaderEmailFrom(brand: PublicBrand): string {
   return env("LEADER_EMAIL_FROM") ?? brand.email.organizerFrom;

@@ -17,6 +17,11 @@ export function getPublicCampaignById(campaignId: string) {
   return supabase.rpc("get_public_campaign", args as never);
 }
 
+/** SECURITY DEFINER RPC for public org directory; returns open/accepting-signups events with no PII. */
+export function getPublicOrgCampaigns(slug: string) {
+  return supabase.rpc("get_public_org_campaigns", { p_slug: slug } as never);
+}
+
 export function createSignupIfCapacityRpc(args: RpcSignupArgs) {
   const client = createAnonSupabaseClient();
   return client.rpc("create_signup_if_capacity", args as never);

@@ -1,5 +1,6 @@
 import type { PublicBrand } from "@/lib/brand";
 import { getDefaultPublicBrand } from "@/lib/brand";
+import { isTipJarEnabled, supportPageOutboundUrl } from "@/lib/tip-jar";
 
 /** Canonical public site URL (no trailing slash). Env override for APIs/crons without request host. */
 export const SITE_URL =
@@ -30,6 +31,17 @@ export function buildOrganizerEmailFooterHtml(
   const site = brand.siteUrl;
   const host = brand.siteHost;
   const tdStyle = "font-size:12px;color:#5A8399;line-height:1.6;word-break:break-word;overflow-wrap:break-word;";
+  const supportUrl = supportPageOutboundUrl(brand, {
+    utm_source: "organizer_email",
+    utm_medium: "email",
+    utm_campaign: "tip_jar",
+  });
+  const tipLine = isTipJarEnabled(brand)
+    ? `<tr><td style="${tdStyle}padding-top:10px;">
+        ${brand.name} stays free — optional hosting support is welcome, never required.
+        <a href="${supportUrl}" style="color:#0E96B0;text-decoration:none;">Learn more</a>.
+      </td></tr>`
+    : "";
   return `
     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="table-layout:fixed;border-collapse:collapse;">
       <tr><td style="${tdStyle}padding-top:16px;margin-top:28px;border-top:1px solid rgba(14,150,176,0.2);">
@@ -39,6 +51,7 @@ export function buildOrganizerEmailFooterHtml(
         Know someone who could use this?<br>
         Share <a href="${site}" style="color:#0E96B0;font-weight:600;text-decoration:none;">${host}</a> with a friend.
       </td></tr>
+      ${tipLine}
       <tr><td style="${tdStyle}padding-top:12px;">
         Made with ♥ from Arizona ·
         <a href="${site}" style="color:#0E96B0;text-decoration:none;">${brand.name}</a>
