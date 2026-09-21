@@ -10,6 +10,7 @@ import { DigestScheduleLocalTime } from "@/components/DigestScheduleLocalTime";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import Navigation from "@/components/Navigation";
 import Toast from "@/components/Toast";
+import PostCreateSupportPrompt from "@/components/PostCreateSupportPrompt";
 import { useBrand } from "@/components/BrandProvider";
 import { campaignMatchesHostBrand } from "@/lib/campaign-brand-guard";
 import { compareBySortOrder } from "@/lib/session-sort-order";
@@ -61,6 +62,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const isWardBrand = brand.id === "wardsignup";
   const router = useRouter();
   const posthog = usePostHog();
+  const [justCreated, setJustCreated] = useState(false);
 
   const [event, setEvent] = useState<any>(null);
   const [eventType, setEventType] = useState<"spots" | "items" | "rsvp">("spots");
@@ -86,6 +88,19 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("created") === "1") {
+      setJustCreated(true);
+      // Drop the query flag so refresh / share doesn't keep re-triggering the prompt UI state.
+      params.delete("created");
+      const next = params.toString();
+      const path = `${window.location.pathname}${next ? `?${next}` : ""}`;
+      window.history.replaceState({}, "", path);
+    }
+  }, []);
 
   useEffect(() => {
     if (!moreMenuOpen) return;
@@ -210,16 +225,9 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       const scp = (eventData as any).show_capacity_publicly;
       setShowCapacityPublicly(scp == null ? true : Boolean(scp));
 
-      // Load org logo (Ministry brand only)
-      if (brand.id === "ministrysignup") {
-        const { data: profile } = await supabase
-          .from("organizer_profiles")
-          .select("logo_url")
-          .eq("user_id", user.id)
-          .eq("brand_id", "ministrysignup")
-          .maybeSingle();
-        setLogoUrl((profile as any)?.logo_url ?? null);
-      }
+      // Future: Load org logo if Ward Signup supports custom logos
+      const profileLogoUrl = null;
+      setLogoUrl(profileLogoUrl);
 
       setLoading(false);
     };
@@ -437,64 +445,16 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
             </span>
           </Link>
 
+          <PostCreateSupportPrompt visible={justCreated} />
+
           {/* Event header card */}
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-6">
-            {/* Cover image — Ministry brand only */}
-            {brand.id === "ministrysignup" && (
-              <div className="relative">
-                <label className="cursor-pointer group block">
-                  <div className="w-full aspect-[2/1] relative overflow-hidden bg-[#F4FAFB] flex items-center justify-center">
-                    {coverUploading ? (
-                      <LoadingSpinner size="lg" />
-                    ) : (coverPreview || coverUrl) ? (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img src={coverPreview ?? coverUrl!} alt="Event cover" className="w-full h-full object-cover" />
-                    ) : (
-                      <div className="text-center text-[#5A8399] px-4">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 mx-auto mb-2 opacity-30">
-                          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/>
-                          <polyline points="21 15 16 10 5 21"/>
-                        </svg>
-                        <p className="text-sm font-medium opacity-50">Add a cover image</p>
-                        <p className="text-xs opacity-40 mt-1">2:1 landscape · 800×400 px min · JPEG, PNG, or WebP</p>
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
-                      <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-semibold bg-black/50 px-3 py-1.5 rounded-lg">
-                        {coverUrl || coverPreview ? "Replace cover image" : "Upload cover image"}
-                      </span>
-                    </div>
-                  </div>
-                  <input
-                    type="file"
-                    accept="image/jpeg,image/png,image/webp"
-                    className="sr-only"
-                    onChange={handleCoverChange}
-                    disabled={coverUploading}
-                  />
-                </label>
-                {(coverUrl || coverPreview) && !coverUploading && (
-                  <button
-                    type="button"
-                    onClick={handleCoverRemove}
-                    className="absolute top-2 right-2 z-10 w-7 h-7 rounded-full bg-black/50 hover:bg-black/70 text-white flex items-center justify-center transition-colors"
-                    title="Remove cover image"
-                  >
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                      <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                  </button>
-                )}
-              </div>
-            )}
+            {/* Future: Cover image support */}
             <div className="p-7">
             <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
               <div className="flex-1 min-w-0 w-full">
                 <div className="flex items-start gap-3">
-                  {/* Org logo — Ministry brand only */}
-                  {brand.id === "ministrysignup" && (
-                    <OrgLogoButton initialUrl={logoUrl} size="md" />
-                  )}
+                  {/* Future: Org logo support */}
                   <h1 className="font-serif text-[clamp(24px,3.5vw,36px)] text-[#0D2B35] tracking-[-0.4px] leading-tight flex-1 min-w-0">
                     {event.name}
                   </h1>

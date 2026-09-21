@@ -12,9 +12,9 @@ interface Props {
   set: (patch: Partial<CreateFormState>) => void;
 }
 
-export default function AdvancedSection({ state, set }: Props) {
-  const open = state.expanded.advanced;
-  const toggle = () => set({ expanded: { ...state.expanded, advanced: !open } });
+export default function EventSettingsSection({ state, set }: Props) {
+  const open = state.expanded.settings ?? false;
+  const toggle = () => set({ expanded: { ...state.expanded, settings: !open } });
 
   return (
     <section className="rounded-2xl border-[1.5px] border-[rgba(14,150,176,0.18)] bg-[#F8FCFD] p-4 sm:p-5">
@@ -32,13 +32,13 @@ export default function AdvancedSection({ state, set }: Props) {
         </span>
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2">
-            <span className="text-[14px] font-semibold text-[#0D2B35]">Notifications &amp; visibility</span>
+            <span className="text-[14px] font-semibold text-[#0D2B35]">Event settings</span>
             <span className="text-[10px] font-semibold uppercase tracking-wide text-[#5A8399] bg-white border border-[rgba(14,150,176,0.25)] rounded-full px-2 py-0.5">
               Optional
             </span>
           </span>
           <span className="block text-[12px] text-[#5A8399] leading-snug mt-0.5">
-            Email alerts, public signup list, timezone.
+            Event leader, timezone.
           </span>
         </span>
         <svg
@@ -56,24 +56,7 @@ export default function AdvancedSection({ state, set }: Props) {
 
       {open && (
         <div className="mt-4 space-y-4">
-          <Toggle
-            checked={state.showSignupsPublicly}
-            onChange={(v) => set({ showSignupsPublicly: v })}
-            label="Show the signup list publicly"
-            help="Off (default): only the organizer sees who signed up. On: anyone with the event link can see."
-          />
-          <Toggle
-            checked={state.organizerInstantNotifyEnabled}
-            onChange={(v) => set({ organizerInstantNotifyEnabled: v })}
-            label="Email me instantly when someone signs up"
-          />
-          <Toggle
-            checked={state.organizerDigestEnabled}
-            onChange={(v) => set({ organizerDigestEnabled: v })}
-            label="Send me a daily digest of new signups"
-          />
-
-          <div className="pt-1">
+          <div>
             <span className={labelCls}>Event leader (optional)</span>
             <p className="text-[12px] text-[#5A8399] mb-2">
               Assign a leader and they&apos;ll get an email with a calendar file each time someone signs up.
@@ -118,32 +101,5 @@ export default function AdvancedSection({ state, set }: Props) {
         </div>
       )}
     </section>
-  );
-}
-
-function Toggle({
-  checked,
-  onChange,
-  label,
-  help,
-}: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-  help?: string;
-}) {
-  return (
-    <label className="flex items-start gap-2 cursor-pointer select-none">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 w-4 h-4 rounded border-[rgba(14,150,176,0.4)] text-[#0E96B0] focus:ring-[#0E96B0]"
-      />
-      <span className="flex flex-col gap-0.5">
-        <span className="text-[13px] font-medium text-[#2E5566]">{label}</span>
-        {help && <span className="text-[12px] text-[#5A8399]">{help}</span>}
-      </span>
-    </label>
   );
 }

@@ -47,6 +47,21 @@ export function isKnownBrandHost(hostHeader: string | null): boolean {
   return ALL_BRAND_HOSTS.has(host);
 }
 
+/**
+ * Preferred public apex for a known brand host (from brand `siteUrl`).
+ * Returns the apex host when the request is on a non-preferred alias
+ * (e.g. www.wardsignup.com → wardsignup.com). Null for loopback/preview,
+ * unknown hosts, or when already on the preferred host.
+ */
+export function preferredBrandApexHost(hostHeader: string | null): string | null {
+  const host = normalizeHost(hostHeader);
+  if (!host || isLoopbackOrPreviewHost(host)) return null;
+  if (!ALL_BRAND_HOSTS.has(host)) return null;
+  const preferred = getBrandFromHost(host).siteHost.toLowerCase();
+  if (!preferred || host === preferred) return null;
+  return preferred;
+}
+
 /** Server utilities that have no request host yet (cron, scripts). */
 export function getDefaultPublicBrand(): PublicBrand {
   return toPublicBrand(BRAND_DEFINITIONS[DEFAULT_BRAND_ID]);

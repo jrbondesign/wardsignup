@@ -36,7 +36,7 @@ export default function Navigation() {
 
   return (
     <>
-      <nav className="sticky top-0 z-[100] flex items-center justify-between px-4 sm:px-8 h-[60px] sm:h-[66px] bg-[#F4FAFB]/92 backdrop-blur-[16px] border-b border-[#0E96B0]/10">
+      <nav className="sticky top-0 z-[1000] flex items-center justify-between px-4 sm:px-8 h-[60px] sm:h-[66px] bg-[#F4FAFB]/92 backdrop-blur-[16px] border-b border-[#0E96B0]/10">
         {/* Logo */}
         <Link href="/dashboard" className="flex items-center gap-2 sm:gap-2.5 no-underline flex-shrink-0 min-w-0">
           <Image
@@ -52,7 +52,7 @@ export default function Navigation() {
             {brand.name}
           </span>
           <span className="hidden sm:inline text-[10px] font-bold tracking-[0.9px] uppercase bg-[#22C8D8]/15 text-[#08647E] border border-[#0E96B0]/28 px-2.5 py-1 rounded-full whitespace-nowrap self-center">
-            Free Beta
+            Free
           </span>
         </Link>
 
@@ -104,7 +104,7 @@ export default function Navigation() {
 
       {/* Mobile menu drawer */}
       {menuOpen && (
-        <div className="md:hidden fixed inset-0 z-[99] top-[60px]">
+        <div className="md:hidden fixed inset-0 z-[999] top-[60px]">
           {/* Backdrop */}
           <div className="absolute inset-0 bg-[#0D2B35]/20 backdrop-blur-[2px]" onClick={() => setMenuOpen(false)} />
           {/* Panel */}

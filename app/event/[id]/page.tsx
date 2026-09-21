@@ -114,11 +114,6 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
   const fetchData = async () => {
     try {
-      // Select * (not an explicit list) so sort_order is included when present
-      // but its absence on an un-migrated brand doesn't error the query.
-      const sessionsSelect =
-        "*, signups(id, member_name, signup_note, guest_names)";
-
       // RLS on campaigns is org-scoped post-PR-7, so anon visitors can no longer
       // do a direct table read. Visibility flags now ride along on the public RPC,
       // which is SECURITY DEFINER and bypasses RLS for the public-safe columns.
@@ -150,52 +145,137 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       // show_capacity_publicly defaults true
       setShowCapacityPublicly(eventData.show_capacity_publicly == null ? true : Boolean(eventData.show_capacity_publicly));
 
+      // Public-safe signup rows come from views (no email/phone). PostgREST cannot
+      // nest-embed views (no FKs), so we load parents + views separately and merge.
       if (resolvedType === "items") {
-        const { data: itemsData, error: itemsError } = await supabase
-          .from("campaign_items")
-          .select("*, item_signups(id, member_name, member_email, signup_note, quantity)")
-          .eq("campaign_id", eventId)
-          .order("sort_order")
-          .order("created_at");
+        const [{ data: itemsData, error: itemsError }, { data: itemSignupRows, error: itemSignupsError }] =
+          await Promise.all([
+            supabase
+              .from("campaign_items")
+              .select("*")
+              .eq("campaign_id", eventId)
+              .order("sort_order")
+              .order("created_at"),
+            supabase
+              .from("item_signups_public")
+              .select("id, item_id, member_name, custom_label, signup_note, quantity")
+              .eq("campaign_id", eventId)
+              .order("signed_up_at"),
+          ]);
         if (itemsError) throw itemsError;
-        setItems((itemsData || []) as CampaignItemWithSignups[]);
+        if (itemSignupsError) throw itemSignupsError;
 
-        // Custom write-in signups (item_id IS NULL): fetch separately so the public list
-        // can show what other people are also bringing.
-        const { data: customRows } = await supabase
-          .from("item_signups")
-          .select("id, member_name, custom_label, signup_note, quantity")
-          .eq("campaign_id", eventId)
-          .is("item_id", null)
-          .order("signed_up_at");
-        setCustomSignups((customRows ?? []) as never);
+        const byItemId = new Map<string, NonNullable<CampaignItemWithSignups["item_signups"]>>();
+        const customRows: {
+          id: string;
+          member_name: string;
+          custom_label: string | null;
+          signup_note: string | null;
+          quantity: number;
+        }[] = [];
+        for (const row of itemSignupRows ?? []) {
+          const r = row as {
+            id: string;
+            item_id: string | null;
+            member_name: string;
+            custom_label: string | null;
+            signup_note: string | null;
+            quantity: number;
+          };
+          if (r.item_id == null) {
+            customRows.push({
+              id: r.id,
+              member_name: r.member_name,
+              custom_label: r.custom_label,
+              signup_note: r.signup_note,
+              quantity: r.quantity,
+            });
+            continue;
+          }
+          const list = byItemId.get(r.item_id) ?? [];
+          list.push({
+            id: r.id,
+            member_name: r.member_name,
+            signup_note: r.signup_note,
+            quantity: r.quantity,
+          } as never);
+          byItemId.set(r.item_id, list);
+        }
+
+        setItems(
+          ((itemsData || []) as CampaignItemWithSignups[]).map((item) => ({
+            ...item,
+            item_signups: byItemId.get(item.id) ?? [],
+          }))
+        );
+        setCustomSignups(customRows);
 
         setEvent(eventData);
         return;
       }
 
-      const { data: sessionsData, error: sessionsError } = await supabase
-        .from("sessions")
-        .select(sessionsSelect)
-        .eq("campaign_id", eventId)
-        .order("session_date", { nullsFirst: false })
-        // sort_order is applied client-side (orderSessionsBySection) so this
-        // works whether or not the column exists yet.
-        .order("created_at", { ascending: true })
-        .order("id", { ascending: true });
+      // Select * (not an explicit list) so sort_order is included when present
+      // but its absence on an un-migrated brand doesn't error the query.
+      const [{ data: sessionsData, error: sessionsError }, { data: signupRows, error: signupsError }] =
+        await Promise.all([
+          supabase
+            .from("sessions")
+            .select("*")
+            .eq("campaign_id", eventId)
+            .order("session_date", { nullsFirst: false })
+            // sort_order is applied client-side (orderSessionsBySection) so this
+            // works whether or not the column exists yet.
+            .order("created_at", { ascending: true })
+            .order("id", { ascending: true }),
+          supabase
+            .from("signups_public")
+            .select("id, session_id, member_name, signup_note, guest_names")
+            .eq("campaign_id", eventId),
+        ]);
       if (sessionsError) throw sessionsError;
+      if (signupsError) throw signupsError;
+
+      const bySessionId = new Map<
+        string,
+        NonNullable<SessionWithSignups["signups"]>
+      >();
+      for (const row of signupRows ?? []) {
+        const r = row as {
+          id: string;
+          session_id: string;
+          member_name: string;
+          signup_note: string | null;
+          guest_names: string[] | null;
+        };
+        const list = bySessionId.get(r.session_id) ?? [];
+        list.push({
+          id: r.id,
+          member_name: r.member_name,
+          signup_note: r.signup_note,
+          guest_names: r.guest_names ?? [],
+        });
+        bySessionId.set(r.session_id, list);
+      }
+
+      const mergedSessions = ((sessionsData || []) as Session[]).map((session) => ({
+        ...session,
+        signups: bySessionId.get(session.id) ?? [],
+      })) as SessionWithSignups[];
 
       setEvent(eventData);
-      setSessions((sessionsData || []) as SessionWithSignups[]);
+      setSessions(mergedSessions);
 
       // Initialize calendar to the month of the earliest upcoming session
       const today = new Date();
       today.setHours(0, 0, 0, 0);
-      const futureDates = (sessionsData || [])
-        .filter((s: any) => s.session_date)
-        .map((s: any) => { const [y, m, d] = s.session_date.split("-").map(Number); return new Date(y, m - 1, d); })
-        .filter((d: Date) => d >= today)
-        .sort((a: Date, b: Date) => a.getTime() - b.getTime());
+      const futureDates = mergedSessions
+        .filter((s) => s.session_date)
+        .map((s) => {
+          const [y, m, d] = s.session_date!.split("-").map(Number);
+          return new Date(y, m - 1, d);
+        })
+        .filter((d) => d >= today)
+        .sort((a, b) => a.getTime() - b.getTime());
       if (futureDates.length > 0) {
         setCalendarMonth(new Date(futureDates[0].getFullYear(), futureDates[0].getMonth(), 1));
       }
@@ -513,30 +593,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
         {/* Event card */}
         <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-6">
-          {/* Cover image (Ministry brand only) or gradient strip */}
-          {brand.id === "ministrysignup" && event.cover_image_url ? (
-            <div className="relative w-full aspect-[2/1] overflow-hidden">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={event.cover_image_url}
-                alt={event.name}
-                className="w-full h-full object-cover"
-              />
-            </div>
-          ) : (
-            <div className="h-1.5 bg-gradient-to-r from-[#22C8D8] via-[#0E96B0] to-[#08647E]" />
-          )}
+          {/* Gradient strip */}
+          <div className="h-1.5 bg-gradient-to-r from-[#22C8D8] via-[#0E96B0] to-[#08647E]" />
           <div className="p-7">
             <div className="flex items-start gap-3 mb-2">
-              {/* Organizer logo (Ministry brand only) */}
-              {brand.id === "ministrysignup" && event.organizer_logo_url && (
-                /* eslint-disable-next-line @next/next/no-img-element */
-                <img
-                  src={event.organizer_logo_url}
-                  alt="Organizer"
-                  className="w-14 h-14 rounded-xl object-cover border border-[#0E96B0]/20 shadow-sm flex-shrink-0"
-                />
-              )}
+              {/* Future: Org logo support */}
               <h1 className="font-serif text-[clamp(22px,4vw,34px)] text-[#0D2B35] tracking-[-0.4px] leading-tight">
                 {event.name}
               </h1>
@@ -649,6 +710,15 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             </div>
           </div>
         </div>
+
+        {/* No account required callout - appears between event card and signup sections */}
+        {!success && (
+          <div className="mb-6 px-4 py-3 bg-[#E6F7FB] border border-[#0E96B0]/20 rounded-xl">
+            <p className="text-sm text-[#08647E] font-medium">
+              ✨ No account needed. Pick a slot and enter your name.
+            </p>
+          </div>
+        )}
 
         {/* Success banner */}
         {success && (

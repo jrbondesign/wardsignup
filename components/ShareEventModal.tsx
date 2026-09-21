@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useBrand } from "@/components/BrandProvider";
 import { usePostHog } from "posthog-js/react";
 import Toast from "./Toast";
+import { withUtm } from "@/lib/utm";
 
 interface ShareEventModalProps {
   eventId: string;
@@ -23,8 +24,15 @@ export default function ShareEventModal({
   const [copied, setCopied] = useState(false);
   const [showToast, setShowToast] = useState(false);
 
+  // Add UTM tracking to share links
+  const shareableLinkWithUtm = withUtm(shareableLink, {
+    utm_source: 'event_share',
+    utm_medium: 'share',
+    utm_campaign: eventId
+  });
+
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(shareableLink);
+    navigator.clipboard.writeText(shareableLinkWithUtm);
     posthog?.capture("event_shared", { event_id: eventId, method: "copy_link" });
     setCopied(true);
     setShowToast(true);
@@ -35,7 +43,7 @@ export default function ShareEventModal({
     posthog?.capture("event_shared", { event_id: eventId, method: "email" });
     const subject = encodeURIComponent(`Sign up for ${eventName}`);
     const body = encodeURIComponent(
-      `Hi,\n\nI'd like to invite you to sign up as a teacher for ${eventName}.\n\nClick here to view available sessions and sign up:\n${shareableLink}\n\nThank you!`
+      `Hi,\n\nI'd like to invite you to sign up as a teacher for ${eventName}.\n\nClick here to view available sessions and sign up:\n${shareableLinkWithUtm}\n\nThank you!`
     );
     window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
   };
@@ -43,7 +51,7 @@ export default function ShareEventModal({
   const shareViaWhatsApp = () => {
     posthog?.capture("event_shared", { event_id: eventId, method: "whatsapp" });
     const text = encodeURIComponent(
-      `Sign up for ${eventName}: ${shareableLink}`
+      `Sign up for ${eventName}: ${shareableLinkWithUtm}`
     );
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
@@ -51,7 +59,7 @@ export default function ShareEventModal({
   const shareViaSMS = () => {
     posthog?.capture("event_shared", { event_id: eventId, method: "sms" });
     const text = encodeURIComponent(
-      `Sign up for ${eventName}: ${shareableLink}`
+      `Sign up for ${eventName}: ${shareableLinkWithUtm}`
     );
     window.open(`sms:?&body=${text}`, "_blank");
   };
@@ -78,8 +86,13 @@ export default function ShareEventModal({
             </button>
           </div>
           <p className="text-gray-600 mt-1">
-            Share the link to {eventName} — people can sign up without creating an account.
+            Share the link to {eventName}
           </p>
+          <div className="mt-3 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="text-sm text-blue-800 font-medium">
+              ✨ Members sign up with the link. No account required.
+            </p>
+          </div>
         </div>
 
         <div className="p-6 space-y-6">
@@ -90,7 +103,7 @@ export default function ShareEventModal({
             <div className="flex gap-2">
               <input
                 type="text"
-                value={shareableLink}
+                value={shareableLinkWithUtm}
                 readOnly
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50"
               />
@@ -140,7 +153,7 @@ export default function ShareEventModal({
           </div>
 
           <p className="text-xs text-gray-500 border-t border-gray-200 pt-4">
-            Sending email from {brand.name} is paused during beta. Use your own email or messaging apps above.
+            Sending email from {brand.name} isn&apos;t available from the app right now. Use your own email or messaging apps above.
           </p>
         </div>
       </div>

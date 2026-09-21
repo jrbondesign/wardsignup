@@ -1,8 +1,4 @@
-export type BrandId =
-  | "wardsignup"
-  | "ministrysignup"
-  /** Reserved for a future orgsignup.com launch (not a current production domain). */
-  | "orgsignup";
+export type BrandId = "wardsignup";
 
 /** Serializable brand fields for the client (RSC → BrandProvider). */
 export interface PublicBrand {
@@ -20,11 +16,17 @@ export interface PublicBrand {
   /** Host only, for display links (from `siteUrl`). */
   siteHost: string;
   supportEmail: string;
+  /**
+   * External tip jar / sponsors URL (e.g. GitHub Sponsors).
+   * Omit or leave unset to fall back to the default Sponsors URL in `lib/tip-jar.ts`.
+   * Hide tip-jar surfaces with `NEXT_PUBLIC_TIP_JAR_ENABLED=0`.
+   */
+  tipJarUrl?: string;
   logoSrc: string;
   logoAlt: string;
   /** Large faint hero background on the home page (defaults to `/logo-watermark.svg` in UI). */
   heroWatermarkSrc?: string;
-  /** Home hero pill (beta + audience line). */
+  /** Home hero pill (free + audience line). */
   homePillText: string;
   heroLine1: string;
   heroLine2Prefix: string;

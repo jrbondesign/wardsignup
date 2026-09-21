@@ -13,6 +13,7 @@ import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
 import { consumeEmailKeyRate, sendGuardedEmail } from "@/lib/email-send";
 import { consumeActionRate } from "@/lib/rate-limit";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { withUtm } from "@/lib/utm";
 
 type EventInviteInsert = Database["public"]["Tables"]["event_invites"]["Insert"];
 
@@ -24,7 +25,7 @@ export async function POST(request: NextRequest) {
 
     if (!isAppEmailInvitesEnabled()) {
       return NextResponse.json(
-        { error: "Sending invitations from the app is disabled during beta. Share your event link instead." },
+        { error: "Sending invitations from the app isn't available right now. Share your event link instead." },
         { status: 403 }
       );
     }
@@ -162,6 +163,13 @@ export async function POST(request: NextRequest) {
     // Send email invitation (links + from-address match stored campaign brand/host)
     {
       const eventUrl = `${siteOrigin}/event/${event_id}`;
+      
+      // Add UTM tracking to invite email links
+      const eventUrlWithUtm = withUtm(eventUrl, {
+        utm_source: 'invite_email',
+        utm_medium: 'email'
+      });
+      
       const evName = escapeHtml(eventRow.name);
       const invName =
         typeof invitee_name === "string" && invitee_name.trim()
@@ -194,14 +202,14 @@ export async function POST(request: NextRequest) {
             <p>Click the button below to view available teaching sessions and sign up:</p>
 
             <div style="text-align: center; margin: 30px 0;">
-              <a href="${eventUrl}"
+              <a href="${eventUrlWithUtm}"
                  style="background-color: #2563eb; color: white; padding: 12px 30px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 600;">
                 View Teaching Sessions
               </a>
             </div>
 
             <p style="color: #6b7280; font-size: 14px;">
-              Or copy this link: <a href="${eventUrl}" style="color: #2563eb;">${eventUrl}</a>
+              Or copy this link: <a href="${eventUrlWithUtm}" style="color: #2563eb;">${eventUrlWithUtm}</a>
             </p>
 
             <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 30px 0;">

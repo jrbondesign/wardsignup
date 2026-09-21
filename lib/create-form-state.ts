@@ -106,6 +106,9 @@ export interface CreateFormState {
   allowGuests: boolean;
   showSignupsPublicly: boolean;
 
+  // ── Ward directory (wardsignup only) ─────────────────────────────────────
+  listOnDirectory: boolean;
+
   // ── Notifications ────────────────────────────────────────────────────────
   organizerDigestEnabled: boolean;
   organizerInstantNotifyEnabled: boolean;
@@ -122,7 +125,9 @@ export interface CreateFormState {
   expanded: {
     extraTimes: boolean;
     extraLocations: boolean;
-    advanced: boolean;
+    visibility: boolean;
+    notifications: boolean;
+    settings: boolean;
   };
 
   /** Per-type "user has edited something" flags. Set when the user touches a
@@ -183,6 +188,8 @@ export const INITIAL_FORM_STATE: CreateFormState = {
   allowGuests: true,
   showSignupsPublicly: false,
 
+  listOnDirectory: true,
+
   organizerDigestEnabled: true,
   organizerInstantNotifyEnabled: true,
   leaderName: "",
@@ -193,7 +200,9 @@ export const INITIAL_FORM_STATE: CreateFormState = {
   expanded: {
     extraTimes: false,
     extraLocations: false,
-    advanced: false,
+    visibility: false,
+    notifications: false,
+    settings: false,
   },
 
   dirty: {

@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
     const file = form.get("file") as File | null;
     const uploadType = form.get("type") as string | null;
     const eventId = form.get("eventId") as string | null;
-    const brandId = (form.get("brand") as string | null) ?? "ministrysignup";
+    const brandId = (form.get("brand") as string | null) ?? "wardsignup";
 
     // 3. Validate inputs
     if (!file) {
@@ -190,7 +190,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     if (type === "logo") {
-      const brandId = brand ?? "ministrysignup";
+      const brandId = brand ?? "wardsignup";
       // Clear DB column
       await admin
         .from("organizer_profiles")

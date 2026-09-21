@@ -19,6 +19,7 @@ import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } 
 import { EVENT_TEMPLATES, TEMPLATES_INITIAL_VISIBLE } from "@/lib/event-template-data";
 import { downloadEventQr } from "@/lib/download-qr";
 import { diffDays, earliestYmd } from "@/lib/date-shift";
+import { isTipJarEnabled } from "@/lib/tip-jar";
 
 interface DeleteModalProps {
   eventId: string;
@@ -245,16 +246,9 @@ export default function DashboardPage() {
         setOrgName(org.name);
       }
 
-      // Load org logo (Ministry brand only)
-      if (brand.id === "ministrysignup") {
-        const { data: profile } = await supabase
-          .from("organizer_profiles")
-          .select("logo_url")
-          .eq("user_id", authUser.id)
-          .eq("brand_id", "ministrysignup")
-          .maybeSingle();
-        setLogoUrl((profile as any)?.logo_url ?? null);
-      }
+      // Future: Load org logo if Ward Signup supports custom logos
+      const profileLogoUrl = null;
+      setLogoUrl(profileLogoUrl);
 
       // Scope campaigns to the active org so multi-org users only see the events for
       // whichever org they selected. RLS already restricts visibility to orgs they
@@ -350,16 +344,13 @@ export default function DashboardPage() {
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
             <div>
               <div className="flex items-center gap-3 mb-1">
-                {/* Org logo — Ministry brand only */}
-                {brand.id === "ministrysignup" && (
-                  <OrgLogoButton initialUrl={logoUrl} size="sm" />
-                )}
+                {/* Future: Org logo support */}
                 <h1 className="font-serif text-[clamp(28px,4vw,40px)] text-[#0D2B35] tracking-[-0.5px] leading-tight">
                   {orgName ?? "My Events"}
                 </h1>
               </div>
               <p className="text-sm text-[#5A8399] flex items-center gap-2">
-                <span>{isWardBrand ? "Manage your ward signups" : "Manage your ministry signups"}</span>
+                <span>Manage your ward signups</span>
                 <OrgSwitcher />
               </p>
               <p className="text-xs text-[#5A8399] mt-2 max-w-xl leading-relaxed">
@@ -368,7 +359,7 @@ export default function DashboardPage() {
                     ? "Share links with your ward—people who sign up don’t need an account."
                     : "Share links with your group—people who sign up don’t need an account."
                   : <>
-                      Free beta: up to {maxEvents} events per account.{" "}
+                      Free to use: up to {maxEvents} events per account.{" "}
                       {atLimit
                         ? "Delete an event below to create a new one."
                         : isWardBrand
@@ -400,7 +391,7 @@ export default function DashboardPage() {
                     New Event
                   </span>
                   <p className="text-[11px] text-[#5A8399] mt-2 leading-snug">
-                    You&apos;ve reached the free beta limit. Delete an event to create another.
+                    You&apos;ve reached the free account limit. Delete an event to create another.
                   </p>
                 </div>
               ) : (
@@ -665,6 +656,19 @@ export default function DashboardPage() {
           <div className="mt-8 max-w-sm">
             <ConnectToClaudeCard />
           </div>
+
+          {isTipJarEnabled(brand) && (
+            <p className="mt-6 text-sm text-[#5A8399] leading-relaxed max-w-md">
+              Ward Signup stays free. Optional hosting support is welcome — never required.{" "}
+              <Link
+                href="/support-the-project"
+                className="text-[#0E96B0] font-medium hover:text-[#08647E] transition-colors no-underline"
+              >
+                Learn more
+              </Link>
+              .
+            </p>
+          )}
         </div>
       </main>
 

@@ -59,7 +59,7 @@ export async function POST(
       );
     }
 
-    // Per-org override on the free-beta cap keys off the org name.
+    // Per-org override on the free-tier cap keys off the org name.
     let orgName: string | null = null;
     if (source.organization_id) {
       const { data: org } = await supabase

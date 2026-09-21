@@ -131,6 +131,8 @@ export interface Database {
           owner_id: string;
           created_at: string;
           needs_naming: boolean;
+          slug: string | null;
+          public_directory_enabled: boolean;
         };
         Insert: {
           id?: string;
@@ -140,6 +142,8 @@ export interface Database {
           owner_id: string;
           created_at?: string;
           needs_naming?: boolean;
+          slug?: string | null;
+          public_directory_enabled?: boolean;
         };
         Update: {
           id?: string;
@@ -149,6 +153,8 @@ export interface Database {
           owner_id?: string;
           created_at?: string;
           needs_naming?: boolean;
+          slug?: string | null;
+          public_directory_enabled?: boolean;
         };
         Relationships: TableRelationship[];
       };
@@ -365,6 +371,51 @@ export interface Database {
           signed_up_at?: string;
           reminder_sent_at?: string | null;
           guest_names?: string[];
+        };
+        Relationships: TableRelationship[];
+      };
+      geography_snapshot_cache: {
+        Row: {
+          id: string;
+          cities: {
+            city: string;
+            country: string;
+            latitude: number;
+            longitude: number;
+            userCount: number;
+          }[];
+          total_cities: number;
+          total_users: number;
+          refreshed_at: string;
+          source: string;
+        };
+        Insert: {
+          id?: string;
+          cities?: {
+            city: string;
+            country: string;
+            latitude: number;
+            longitude: number;
+            userCount: number;
+          }[];
+          total_cities?: number;
+          total_users?: number;
+          refreshed_at?: string;
+          source?: string;
+        };
+        Update: {
+          id?: string;
+          cities?: {
+            city: string;
+            country: string;
+            latitude: number;
+            longitude: number;
+            userCount: number;
+          }[];
+          total_cities?: number;
+          total_users?: number;
+          refreshed_at?: string;
+          source?: string;
         };
         Relationships: TableRelationship[];
       };

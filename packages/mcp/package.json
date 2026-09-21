@@ -1,12 +1,13 @@
 {
   "name": "wardsignup-mcp",
   "version": "0.1.1",
-  "description": "MCP server for wardsignup.com — create and manage sign-up events via Claude",
+  "description": "MCP server for wardsignup.com and ministrysignup.com — create and manage sign-up events via Claude",
   "type": "module",
   "main": "dist/index.js",
   "files": ["dist"],
   "bin": {
-    "wardsignup-mcp": "dist/index.js"
+    "wardsignup-mcp": "dist/index.js",
+    "ministrysignup-mcp": "dist/index.js"
   },
   "scripts": {
     "build": "tsc",

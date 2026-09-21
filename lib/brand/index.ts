@@ -12,6 +12,7 @@ export {
   getDefaultPublicBrand,
   isKnownBrandHost,
   normalizeHost,
+  preferredBrandApexHost,
 } from "./resolve";
 export {
   creatorNotifyEmailFrom,

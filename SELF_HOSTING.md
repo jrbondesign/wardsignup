@@ -236,9 +236,32 @@ Use [cron-job.org](https://cron-job.org), [EasyCron](https://www.easycron.com), 
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `NEXT_PUBLIC_SITE_URL` | Canonical site URL (no trailing slash) | Auto-detected |
-| `EMAIL_HOURLY_CEILING` | Max notification emails per hour | `100` |
+| `NEXT_PUBLIC_BRAND_ID` | Force a specific brand (`wardsignup`, `ministrysignup`, `orgsignup`) | Hostname-based |
+| `EMAIL_HOURLY_CEILING` | Max notification emails per brand per hour | `100` |
+| `RESEND_API_KEY_MINISTRY` | Separate Resend key for Ministry brand | Falls back to `RESEND_API_KEY` |
+| `RESEND_API_KEY_ORG` | Separate Resend key for Org brand | Falls back to `RESEND_API_KEY` |
 | `ANTHROPIC_API_KEY` | Enable AI event extraction | Not set (feature disabled) |
 | `NEXT_PUBLIC_POSTHOG_KEY` | PostHog analytics project key | Not set (analytics disabled) |
+
+## Multi-Brand (Advanced)
+
+WardSignup supports multiple white-labeled brands on the same codebase:
+- **Ward Signup** (`wardsignup.com`) — LDS ward focus
+- **Ministry Signup** (`ministrysignup.com`) — broader ministry groups
+- **Org Signup** (`orgsignup.com`) — generic volunteer coordination
+
+Each brand has its own:
+- Color scheme
+- Wording ("ward" vs "ministry" vs "organization")
+- Email templates
+
+Brand is auto-detected from the hostname. To force a brand in development:
+
+```env
+NEXT_PUBLIC_ACTIVE_BRAND=ministrysignup
+```
+
+To deploy multiple brands, create separate Vercel projects pointing at different domains, or use a single Supabase project with all domains configured in Auth → Redirect URLs.
 
 ## Database Migrations
 
@@ -303,7 +326,7 @@ Before going live:
 - [ ] **Service role key is secret** — never commit to git, only in Vercel env vars
 - [ ] **HTTPS only** — custom domain must have SSL (Vercel handles this automatically)
 - [ ] **CRON endpoints secured** — all `/api/cron/*` routes check `Authorization: Bearer CRON_SECRET`
-- [ ] **Email rate limits enabled** — `EMAIL_HOURLY_CEILING` is set (default 100/hour)
+- [ ] **Email rate limits enabled** — `EMAIL_HOURLY_CEILING` is set (default 100/hour/brand)
 
 ## Cost Estimate
 
@@ -339,6 +362,6 @@ Once deployed:
 1. Sign in at `/login`
 2. Create your first event at `/create`
 3. Set up sessions at `/setup/[id]`
-4. Share the public signup link with your ward
+4. Share the public signup link with your ward/ministry
 
 Welcome to the WardSignup family! 🎉

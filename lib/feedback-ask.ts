@@ -245,7 +245,7 @@ export async function runFeedbackAskPass(
       continue;
     }
 
-    let row = ((insertedRows ?? []) as Existing[])[0] ?? null;
+    let row: Existing | null = ((insertedRows ?? []) as Existing[])[0] ?? null;
     if (!row) {
       // Duplicate ignored — another run inserted concurrently; fetch it.
       const { data: fetched } = await admin

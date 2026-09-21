@@ -1,0 +1,13 @@
+{
+  "regions": ["iad1"],
+  "crons": [
+    {
+      "path": "/api/cron/organizer-digest",
+      "schedule": "0 14 * * *"
+    },
+    {
+      "path": "/api/cron/geography-refresh",
+      "schedule": "0 15 * * *"
+    }
+  ]
+}

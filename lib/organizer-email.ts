@@ -47,6 +47,7 @@ type SessionRow = {
   session_date: string | null;
   location: string | null;
   notes: string | null;
+  label: string | null;
   capacity: number;
   signups: SignupRow[] | null;
 };
@@ -165,6 +166,30 @@ function sessionChronoKey(s: SessionRow): string {
 }
 
 /**
+ * Filter out dated sessions that are in the past (relative to now in the event timezone).
+ * Undated (recurring weekly) sessions always pass through.
+ */
+function filterFutureSessions(
+  sessions: SessionRow[],
+  eventTimezone?: string | null,
+): SessionRow[] {
+  const now = new Date();
+  const tz = resolveEffectiveEventTimezone(eventTimezone ?? null);
+  
+  return sessions.filter((s) => {
+    if (!s.session_date) {
+      return true;
+    }
+    try {
+      const sessionStart = sessionStartUtc(s.session_date, s.time, tz);
+      return sessionStart >= now;
+    } catch {
+      return true;
+    }
+  });
+}
+
+/**
  * Split a session's "when" into a date heading (shared by all slots that day)
  * and a time label, so the email can group same-day slots together.
  */
@@ -201,6 +226,7 @@ function sessionFieldsToRow(sess: {
   end_time: string | null;
   session_date: string | null;
   location?: string | null;
+  label?: string | null;
 }): SessionRow {
   return {
     id: "",
@@ -210,6 +236,7 @@ function sessionFieldsToRow(sess: {
     session_date: sess.session_date,
     location: sess.location ?? null,
     notes: null,
+    label: sess.label ?? null,
     capacity: 0,
     signups: null,
   };
@@ -240,6 +267,9 @@ function buildSessionsTableHtml(
     `);
       lastDateLabel = dateLabel;
     }
+    const eventTitle = s.label?.trim()
+      ? `<div style="font-weight:700;color:#0D2B35;font-size:15px;margin-bottom:4px;">${escapeHtml(s.label)}</div>`
+      : "";
     const when = escapeHtml(timeLabel);
     const loc = s.location?.trim()
       ? `<div style="font-size:12px;color:#5A8399;margin-top:4px;">${escapeHtml(s.location)}</div>`
@@ -285,6 +315,7 @@ function buildSessionsTableHtml(
 
     rows.push(`
       <div style="margin-bottom:20px;padding-bottom:16px;border-bottom:1px solid rgba(14,150,176,0.15);">
+        ${eventTitle}
         <div style="font-weight:600;color:#0D2B35;font-size:14px;">${when}</div>
         ${loc}
         ${notes}
@@ -576,7 +607,7 @@ export async function sendOrganizerMetricsEmail(
   } else {
     const { data: sessionRows, error: sErr } = await admin
       .from("sessions")
-      .select("*, signups(*)")
+      .select("id, day_of_week, time, end_time, session_date, location, notes, label, capacity, signups(member_name, member_email, member_phone, signed_up_at)")
       .eq("campaign_id", campaignId)
       .order("day_of_week", { ascending: true })
       .order("time", { ascending: true });
@@ -585,7 +616,8 @@ export async function sendOrganizerMetricsEmail(
       return { ok: false, error: sErr.message };
     }
 
-    const sessions = (sessionRows || []) as unknown as SessionRow[];
+    const allSessions = (sessionRows || []) as unknown as SessionRow[];
+    const sessions = filterFutureSessions(allSessions, (c.event_timezone as string | null) ?? null);
     const totalCapacity = sessions.reduce((sum, s) => sum + (s.capacity || 0), 0);
     const totalSignups = sessions.reduce(
       (sum, s) => sum + (Array.isArray(s.signups) ? s.signups.length : 0),
@@ -641,6 +673,7 @@ type SignupWithSessionJoin = {
         end_time: string | null;
         session_date: string | null;
         location: string | null;
+        label: string | null;
       }
     | null
     | Array<{
@@ -649,6 +682,7 @@ type SignupWithSessionJoin = {
         end_time: string | null;
         session_date: string | null;
         location: string | null;
+        label: string | null;
       }>;
 };
 
@@ -714,7 +748,8 @@ export async function sendOrganizerFasterAlertEmail(
         time,
         end_time,
         session_date,
-        location
+        location,
+        label
       )
     `,
     )
@@ -757,7 +792,7 @@ export async function sendOrganizerFasterAlertEmail(
 
   const { data: sessionRows, error: sErr } = await admin
     .from("sessions")
-    .select("*, signups(*)")
+    .select("id, day_of_week, time, end_time, session_date, location, notes, label, capacity, signups(member_name, member_email, member_phone, signed_up_at)")
     .eq("campaign_id", campaignId)
     .order("day_of_week", { ascending: true })
     .order("time", { ascending: true });
@@ -766,7 +801,8 @@ export async function sendOrganizerFasterAlertEmail(
     return { ok: false, error: sErr.message };
   }
 
-  const sessions = (sessionRows || []) as unknown as SessionRow[];
+  const allSessions = (sessionRows || []) as unknown as SessionRow[];
+  const sessions = filterFutureSessions(allSessions, (c.event_timezone as string | null) ?? null);
   const totalCapacity = sessions.reduce((sum, s) => sum + (s.capacity || 0), 0);
   const totalSignups = sessions.reduce(
     (sum, s) => sum + (Array.isArray(s.signups) ? s.signups.length : 0),

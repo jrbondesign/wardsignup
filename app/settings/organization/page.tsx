@@ -11,7 +11,14 @@ import OrgMembersSection from "@/components/OrgMembersSection";
 import OrgSwitcher from "@/components/OrgSwitcher";
 import { getCurrentOrganization } from "@/lib/organizations";
 
-type OrgRow = { id: string; name: string; needs_naming: boolean; owner_id: string };
+type OrgRow = { 
+  id: string; 
+  name: string; 
+  needs_naming: boolean; 
+  owner_id: string;
+  slug: string | null;
+  public_directory_enabled: boolean;
+};
 
 export default function OrganizationSettingsPage() {
   const router = useRouter();
@@ -19,10 +26,15 @@ export default function OrganizationSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [org, setOrg] = useState<OrgRow | null>(null);
   const [name, setName] = useState("");
+  const [slug, setSlug] = useState("");
+  const [publicDirectoryEnabled, setPublicDirectoryEnabled] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [slugMessage, setSlugMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [savingDirectory, setSavingDirectory] = useState(false);
   const [leaving, setLeaving] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -38,15 +50,29 @@ export default function OrganizationSettingsPage() {
       const current = await getCurrentOrganization(supabase, authUser, brand.id);
       let row: OrgRow | null = null;
       if (current) {
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("organizations")
-          .select("id, name, needs_naming, owner_id")
+          .select("id, name, needs_naming, owner_id, slug, public_directory_enabled")
           .eq("id", current.id)
           .maybeSingle();
-        row = (data as OrgRow | null) ?? null;
+        if (error) {
+          // Columns missing from a stale schema cache must not blank the page.
+          const { data: fallback } = await supabase
+            .from("organizations")
+            .select("id, name, needs_naming, owner_id")
+            .eq("id", current.id)
+            .maybeSingle();
+          row = fallback
+            ? { ...(fallback as Omit<OrgRow, "slug" | "public_directory_enabled">), slug: null, public_directory_enabled: false }
+            : null;
+        } else {
+          row = (data as OrgRow | null) ?? null;
+        }
       }
       setOrg(row);
       setName(row?.name && row.name !== "Untitled organization" ? row.name : "");
+      setSlug(row?.slug ?? "");
+      setPublicDirectoryEnabled(row?.public_directory_enabled ?? false);
       setLoading(false);
     };
     load();
@@ -120,6 +146,55 @@ export default function OrganizationSettingsPage() {
     }
   };
 
+  const handleSaveDirectory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!org) return;
+    
+    const trimmedSlug = slug.trim().toLowerCase();
+    // Validate slug format: lowercase letters, numbers, hyphens only
+    if (trimmedSlug && !/^[a-z0-9-]+$/.test(trimmedSlug)) {
+      setSlugMessage({ kind: "error", text: "Slug can only contain lowercase letters, numbers, and hyphens." });
+      return;
+    }
+
+    setSavingDirectory(true);
+    setSlugMessage(null);
+    try {
+      const supabase = createClientComponentClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/organizations/${org.id}/directory`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+        },
+        body: JSON.stringify({ 
+          slug: trimmedSlug || null,
+          public_directory_enabled: publicDirectoryEnabled 
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setSlugMessage({ kind: "error", text: data?.error ?? "Failed to update directory settings." });
+        setSavingDirectory(false);
+        return;
+      }
+      setOrg({ ...org, slug: trimmedSlug || null, public_directory_enabled: publicDirectoryEnabled });
+      setSlugMessage({ kind: "ok", text: "Directory settings saved." });
+    } catch {
+      setSlugMessage({ kind: "error", text: "Network error. Please try again." });
+    } finally {
+      setSavingDirectory(false);
+    }
+  };
+
+  const copyDirectoryUrl = () => {
+    const url = `${typeof window !== "undefined" ? window.location.origin : ""}/w/${slug}`;
+    void navigator.clipboard.writeText(url);
+    setCopyToast(true);
+    setTimeout(() => setCopyToast(false), 2000);
+  };
+
   if (loading) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-[#F4FAFB]">
@@ -172,6 +247,8 @@ export default function OrganizationSettingsPage() {
               <OrgSwitcher />
             </div>
             <p className="text-[13px] text-[#5A8399] mb-6">
+              {org.name && org.name !== "Untitled organization" ? org.name : "Untitled organization"}
+              {" · "}
               This is the team that owns your events on {brand.name}.
             </p>
 
@@ -209,6 +286,105 @@ export default function OrganizationSettingsPage() {
               )}
             </form>
           </div>
+
+          {/* Ward directory — any accepted member can view and edit. */}
+          {brand.id === "wardsignup" && (
+            <section className="mt-6 bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">
+              <h2 className="font-serif text-[22px] text-[#0D2B35] mb-1">Ward directory</h2>
+              <p className="text-[13px] text-[#5A8399] mb-5">
+                Publish a public page listing your open volunteer opportunities. No PII is shown.
+              </p>
+
+              <form onSubmit={handleSaveDirectory} className="space-y-5">
+                {/* Toggle */}
+                <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={publicDirectoryEnabled}
+                    onClick={() => setPublicDirectoryEnabled(!publicDirectoryEnabled)}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                      publicDirectoryEnabled ? "bg-[#0E96B0]" : "bg-[#B0C8D4]"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        publicDirectoryEnabled ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
+                  <div className="flex-1">
+                    <label className="block text-[13px] font-semibold text-[#0D2B35]">
+                      Publish ward directory
+                    </label>
+                    <p className="text-[12px] text-[#5A8399] mt-0.5">
+                      When enabled, your directory will be visible at /w/[your-slug]
+                    </p>
+                  </div>
+                </div>
+
+                {/* Slug Input */}
+                <div>
+                  <label htmlFor="org-slug" className="block text-[12px] font-semibold text-[#0D2B35] mb-1.5">
+                    Directory URL slug
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-[#5A8399]">{typeof window !== "undefined" ? window.location.origin : ""}/w/</span>
+                    <input
+                      id="org-slug"
+                      type="text"
+                      value={slug}
+                      onChange={(e) => setSlug(e.target.value)}
+                      placeholder="my-ward"
+                      maxLength={60}
+                      pattern="[a-z0-9-]+"
+                      className="flex-1 px-4 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/30 focus:border-[#0E96B0] focus:outline-none text-[#0D2B35] placeholder-[#5A8399]/60"
+                    />
+                  </div>
+                  <p className="text-[11px] text-[#5A8399] mt-1.5">
+                    {slug
+                      ? `Public URL: ${typeof window !== "undefined" ? window.location.origin : ""}/w/${slug}`
+                      : "Lowercase letters, numbers, and hyphens only. If the slug is taken, we'll suggest an alternative."}
+                  </p>
+                </div>
+
+                {slugMessage && (
+                  <p className={`text-[13px] ${slugMessage.kind === "ok" ? "text-[#0F6E56]" : "text-red-600"}`}>
+                    {slugMessage.text}
+                  </p>
+                )}
+
+                <div className="flex gap-3 flex-wrap">
+                  <button
+                    type="submit"
+                    disabled={savingDirectory}
+                    className="text-sm font-semibold px-6 py-2.5 rounded-xl bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
+                  >
+                    {savingDirectory ? "Saving…" : "Save directory settings"}
+                  </button>
+                  
+                  {slug && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => window.open(`/w/${slug}`, "_blank")}
+                        className="text-sm font-semibold px-4 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#08647E] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all"
+                      >
+                        Open public page
+                      </button>
+                      <button
+                        type="button"
+                        onClick={copyDirectoryUrl}
+                        className="text-sm font-semibold px-4 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#08647E] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all"
+                      >
+                        {copyToast ? "✓ Copied!" : "Copy public URL"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </form>
+            </section>
+          )}
 
           <OrgMembersSection organizationId={org.id} isOwner={isOwner} />
 

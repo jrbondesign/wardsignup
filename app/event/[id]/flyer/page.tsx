@@ -52,25 +52,75 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
         const scp = eventData.show_capacity_publicly;
         setShowCapacityPublicly(scp == null ? true : Boolean(scp));
 
+        // Views have no FKs, so PostgREST cannot nest-embed them. Load parents +
+        // public-safe signup views separately, then merge (never email/phone).
         if (resolvedType === "items") {
-          const { data: itemsData } = await supabase
-            .from("campaign_items")
-            .select("*, item_signups(id, member_name, member_email, signup_note, quantity)")
-            .eq("campaign_id", eventId)
-            .order("sort_order")
-            .order("created_at");
-          setItems((itemsData || []) as CampaignItemWithSignups[]);
+          const [{ data: itemsData }, { data: itemSignupRows }] = await Promise.all([
+            supabase
+              .from("campaign_items")
+              .select("*")
+              .eq("campaign_id", eventId)
+              .order("sort_order")
+              .order("created_at"),
+            supabase
+              .from("item_signups_public")
+              .select("id, item_id, member_name, signup_note, quantity")
+              .eq("campaign_id", eventId),
+          ]);
+          const byItemId = new Map<string, NonNullable<CampaignItemWithSignups["item_signups"]>>();
+          for (const row of itemSignupRows ?? []) {
+            const r = row as {
+              id: string;
+              item_id: string | null;
+              member_name: string;
+              signup_note: string | null;
+              quantity: number;
+            };
+            if (r.item_id == null) continue;
+            const list = byItemId.get(r.item_id) ?? [];
+            list.push({
+              id: r.id,
+              member_name: r.member_name,
+              signup_note: r.signup_note,
+              quantity: r.quantity,
+            } as never);
+            byItemId.set(r.item_id, list);
+          }
+          setItems(
+            ((itemsData || []) as CampaignItemWithSignups[]).map((item) => ({
+              ...item,
+              item_signups: byItemId.get(item.id) ?? [],
+            }))
+          );
         } else {
-          const { data: sessionsData } = await supabase
-            .from("sessions")
-            .select(
-              "id, campaign_id, day_of_week, time, end_time, session_date, capacity, location, notes, created_at, updated_at, signups(id, guest_names)"
-            )
-            .eq("campaign_id", eventId)
-            .order("session_date", { ascending: true, nullsFirst: false })
-            .order("day_of_week")
-            .order("time");
-          setSessions((sessionsData || []) as SessionWithSignups[]);
+          const [{ data: sessionsData }, { data: signupRows }] = await Promise.all([
+            supabase
+              .from("sessions")
+              .select(
+                "id, campaign_id, day_of_week, time, end_time, session_date, capacity, location, notes, created_at, updated_at"
+              )
+              .eq("campaign_id", eventId)
+              .order("session_date", { ascending: true, nullsFirst: false })
+              .order("day_of_week")
+              .order("time"),
+            supabase
+              .from("signups_public")
+              .select("id, session_id, guest_names")
+              .eq("campaign_id", eventId),
+          ]);
+          const bySessionId = new Map<string, NonNullable<SessionWithSignups["signups"]>>();
+          for (const row of signupRows ?? []) {
+            const r = row as { id: string; session_id: string; guest_names: string[] | null };
+            const list = bySessionId.get(r.session_id) ?? [];
+            list.push({ id: r.id, guest_names: r.guest_names ?? [] });
+            bySessionId.set(r.session_id, list);
+          }
+          setSessions(
+            ((sessionsData || []) as Session[]).map((session) => ({
+              ...session,
+              signups: bySessionId.get(session.id) ?? [],
+            })) as SessionWithSignups[]
+          );
         }
 
         const svg = await QRCode.toString(url, {
@@ -196,14 +246,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
         <div className="flyer-event-card">
           <div className="flyer-event-card-band" />
           <div className="flyer-event-card-inner">
-            {event.organizer_logo_url && brand.id === "ministrysignup" && (
-              /* eslint-disable-next-line @next/next/no-img-element */
-              <img
-                src={event.organizer_logo_url}
-                alt="Organizer"
-                className="flyer-organizer-logo"
-              />
-            )}
+            {/* Future: Org logo support */}
             <h1 className="flyer-title">{event.name}</h1>
             {event.description && (
               <p className="flyer-description">{event.description}</p>

@@ -3,6 +3,7 @@ import {
   getBrandFromHost,
   isKnownBrandHost,
   normalizeHost,
+  preferredBrandApexHost,
 } from "@/lib/brand";
 
 describe("brand resolve", () => {
@@ -56,5 +57,15 @@ describe("brand resolve", () => {
     expect(getBrandForSiteOrigin("https://ministrysignup.com").id).toBe("ministrysignup");
     expect(getBrandForSiteOrigin("https://wardsignup.com").id).toBe("wardsignup");
     expect(getBrandForSiteOrigin("https://unknown.example").id).toBe("wardsignup");
+  });
+
+  it("preferredBrandApexHost redirects www to apex", () => {
+    expect(preferredBrandApexHost("www.wardsignup.com")).toBe("wardsignup.com");
+    expect(preferredBrandApexHost("wardsignup.com")).toBeNull();
+    expect(preferredBrandApexHost("www.ministrysignup.com")).toBe(
+      "ministrysignup.com",
+    );
+    expect(preferredBrandApexHost("localhost")).toBeNull();
+    expect(preferredBrandApexHost("evil.com")).toBeNull();
   });
 });

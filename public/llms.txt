@@ -1,0 +1,42 @@
+# Ward Signup
+
+> Free online signup sheet for Latter-day Saint wards and branches
+
+## Key URLs
+- Home: https://wardsignup.com/
+- About: https://wardsignup.com/about
+- FAQ: https://wardsignup.com/faq
+- Ad Free Ward Signup: https://wardsignup.com/ad-free
+- Ward Secretary Guide: https://wardsignup.com/use-cases/ward-secretary-signup
+- Tithing Declaration Scheduling: https://wardsignup.com/use-cases/tithing-declaration
+- Ward Signup vs SignUpGenius: https://wardsignup.com/compare/signupgenius
+- Create Event: https://wardsignup.com/create
+- Sign In: https://wardsignup.com/login
+- Privacy Policy: https://wardsignup.com/privacy
+- Terms of Service: https://wardsignup.com/terms
+
+## Product Summary
+Ward Signup is an independent free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set spot limits, and share one link — members sign up with no account needed.
+
+**Core features:**
+- Time slot scheduling with capacity limits
+- No account required for members
+- Shareable signup links
+- Automatic email confirmations and reminders
+- Real-time signup tracking
+- Free during beta
+
+**Common use cases:**
+- Tithing declaration appointments
+- Youth and adult interviews
+- Temple recommend appointments
+- Service project shifts
+- Teaching assignments
+- Volunteer schedules
+
+## Independence Notice
+Ward Signup is an **independent** product. It is **not** official Church software and is **not** affiliated with or endorsed by The Church of Jesus Christ of Latter-day Saints.
+
+## Contact
+- Support: support@wardsignup.com
+- Made in Arizona

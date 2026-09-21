@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 
-/** When set (e.g. `https://ministrysignup.com`), run E2E against prod — no local dev server. */
+/** When set (e.g. `https://wardsignup.com`), run E2E against prod — no local dev server. */
 const remoteBaseURL = process.env.PLAYWRIGHT_BASE_URL?.trim();
 
 export default defineConfig({
