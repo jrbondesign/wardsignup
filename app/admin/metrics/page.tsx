@@ -131,22 +131,12 @@ function pct(n: number) {
   return Math.round(n * 100);
 }
 
-type BrandTab = "all" | "wardsignup" | "ministrysignup" | "orgsignup";
-
-const BRAND_TABS: { id: BrandTab; label: string }[] = [
-  { id: "all", label: "All" },
-  { id: "wardsignup", label: "Ward" },
-  { id: "ministrysignup", label: "Ministry" },
-  { id: "orgsignup", label: "Org" },
-];
-
 export default function MetricsPage() {
   const router = useRouter();
   const [data, setData] = useState<MetricsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshed, setRefreshed] = useState("");
-  const [activeTab, setActiveTab] = useState<BrandTab>("all");
 
   useEffect(() => {
     const load = async () => {
@@ -157,8 +147,7 @@ export default function MetricsPage() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) { router.push("/login"); return; }
 
-      const url = activeTab === "all" ? "/api/metrics" : `/api/metrics?brand=${activeTab}`;
-      const res = await fetch(url, {
+      const res = await fetch("/api/metrics", {
         headers: { Authorization: `Bearer ${session.access_token}` },
       });
       if (res.status === 403) {
@@ -178,7 +167,7 @@ export default function MetricsPage() {
       setLoading(false);
     };
     load();
-  }, [router, activeTab]);
+  }, [router]);
 
   const fillRate = data && data.totalCapacity > 0
     ? Math.min(100, Math.round((data.totalSignups / data.totalCapacity) * 100))
@@ -210,23 +199,6 @@ export default function MetricsPage() {
             {refreshed && (
               <div className="text-[13px] text-[#5A8399] shrink-0 pb-1">Updated {refreshed}</div>
             )}
-          </div>
-
-          {/* Brand tabs */}
-          <div className="flex gap-1 mb-6 bg-white border border-[rgba(14,150,176,0.14)] rounded-xl p-1 w-fit shadow-[0_1px_4px_rgba(8,100,126,0.06)]">
-            {BRAND_TABS.map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                  activeTab === tab.id
-                    ? "bg-[#0E96B0] text-white shadow-sm"
-                    : "text-[#5A8399] hover:text-[#0D2B35]"
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
           </div>
 
           {error ? (
