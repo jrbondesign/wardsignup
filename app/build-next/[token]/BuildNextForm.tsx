@@ -19,7 +19,7 @@ function TipJarBlurb() {
         href="https://wardsignup.com/support-the-project"
         target="_blank"
         rel="noopener noreferrer"
-        className="inline-flex items-center gap-2 text-[15px] font-medium px-5 py-2.5 rounded-full bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white no-underline shadow-[0_4px_14px_rgba(14,150,176,0.35)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_6px_20px_rgba(14,150,176,0.45)]"
+        className="inline-flex items-center gap-2 text-[15px] font-medium px-5 py-2.5 rounded-full bg-transparent border-[1.5px] border-[#0E96B0]/40 text-[#08647E] no-underline whitespace-nowrap transition-all duration-200 hover:border-[#0E96B0] hover:bg-[#E6F7FB]"
       >
         Optional tip jar →
       </a>
