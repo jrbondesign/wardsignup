@@ -15,6 +15,11 @@ jest.mock("@supabase/supabase-js", () => ({
   })),
 }));
 
+jest.mock("next/server", () => {
+  const actual = jest.requireActual("next/server");
+  return { ...actual, after: (fn: () => unknown) => { void fn(); } };
+});
+
 jest.mock("@/lib/posthog-server", () => ({
   getPostHogClient: () => ({ capture: jest.fn() }),
 }));
