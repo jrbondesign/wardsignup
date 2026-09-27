@@ -92,7 +92,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [itemSuccess, setItemSuccess] = useState(false);
   const [allowGuests, setAllowGuests] = useState(true);
   const [showCapacityPublicly, setShowCapacityPublicly] = useState(true);
-  const [viewMode, setViewMode] = useState<"list" | "calendar">("list");
+  const [viewMode, setViewMode] = useState<"list" | "calendar">("calendar");
   const [calendarMonth, setCalendarMonth] = useState(() => {
     const d = new Date();
     return new Date(d.getFullYear(), d.getMonth(), 1);
