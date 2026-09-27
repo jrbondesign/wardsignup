@@ -60,8 +60,8 @@ export default function VisibilitySection({ state, set }: Props) {
           <Toggle
             checked={state.listOnDirectory}
             onChange={(v) => set({ listOnDirectory: v })}
-            label="List on ward directory"
-            help="When your ward directory is published, this event will appear there (only when accepting signups)."
+            label="Show on public directory at wardsignup.com/w/[org-name]"
+            help="Appears only while this event is still accepting signups and is not past."
           />
         </div>
       )}
