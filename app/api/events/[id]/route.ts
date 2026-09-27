@@ -105,6 +105,7 @@ export async function PATCH(
       body.show_signups_publicly !== undefined ||
       body.allow_guests !== undefined ||
       body.show_capacity_publicly !== undefined ||
+      body.list_on_directory !== undefined ||
       body.leader_name !== undefined ||
       body.leader_email !== undefined;
     const hasEventTimezone = "event_timezone" in body;
@@ -184,6 +185,10 @@ export async function PATCH(
 
     if (body.show_capacity_publicly !== undefined) {
       updates.show_capacity_publicly = Boolean(body.show_capacity_publicly);
+    }
+
+    if (body.list_on_directory !== undefined) {
+      updates.list_on_directory = Boolean(body.list_on_directory);
     }
 
     if (body.leader_name !== undefined) {

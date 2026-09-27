@@ -126,6 +126,98 @@ describe("/api/events", () => {
       expect(data.event.user_email).toBe("test@example.com");
     });
 
+    it("persists list_on_directory when the create checkbox is sent", async () => {
+      let campaignsFromCalls = 0;
+      const insert = jest.fn(() => ({
+        select: jest.fn(() => ({
+          single: jest.fn(() =>
+            Promise.resolve({
+              data: {
+                id: "test-event-id",
+                name: "Private Event",
+                list_on_directory: false,
+              },
+              error: null,
+            }),
+          ),
+        })),
+      }));
+      const mockSupabase = {
+        from: jest.fn((table: string) => {
+          if (table === "organizer_profiles") {
+            return {
+              select: jest.fn(() => ({
+                eq: jest.fn(() => ({
+                  eq: jest.fn(() => ({
+                    maybeSingle: jest.fn(() =>
+                      Promise.resolve({ data: null, error: null }),
+                    ),
+                  })),
+                })),
+              })),
+              insert: jest.fn(() => Promise.resolve({ error: null })),
+            };
+          }
+          if (table === "organizations") {
+            return {
+              select: jest.fn(() => ({
+                eq: jest.fn(() => ({
+                  eq: jest.fn(() => ({
+                    order: jest.fn(() => ({
+                      order: jest.fn(() => ({
+                        limit: jest.fn(() => ({
+                          maybeSingle: jest.fn(() =>
+                            Promise.resolve({
+                              data: {
+                                id: "test-org-id",
+                                name: "Test Org",
+                                needs_naming: false,
+                                brand_id: "wardsignup",
+                              },
+                              error: null,
+                            }),
+                          ),
+                        })),
+                      })),
+                    })),
+                  })),
+                })),
+              })),
+            };
+          }
+          if (table !== "campaigns") {
+            return {};
+          }
+          campaignsFromCalls += 1;
+          if (campaignsFromCalls === 1) {
+            return {
+              select: jest.fn(() => ({
+                eq: jest.fn(() => Promise.resolve({ count: 0, error: null })),
+              })),
+            };
+          }
+          return { insert };
+        }),
+      };
+      mockGetAuth.mockResolvedValue({
+        ok: true,
+        supabase: mockSupabase as any,
+        user: { id: "test-user-id", email: "test@example.com" } as any,
+      });
+
+      const request = new NextRequest("http://localhost:3000/api/events", {
+        method: "POST",
+        headers: { Authorization: "Bearer fake-token" },
+        body: JSON.stringify({ name: "Private Event", list_on_directory: false }),
+      });
+
+      const response = await POST(request);
+      expect(response.status).toBe(200);
+      expect(insert).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "Private Event", list_on_directory: false }),
+      );
+    });
+
     it("should return 400 if name is missing", async () => {
       const mockSupabase = {
         from: jest.fn((table: string) => {

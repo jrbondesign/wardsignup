@@ -137,6 +137,7 @@ export async function POST(
       event_type: source.event_type,
       allow_guests: source.allow_guests,
       show_capacity_publicly: source.show_capacity_publicly,
+      list_on_directory: source.list_on_directory,
       event_date: shiftNullableYmd(source.event_date, shiftDays),
       event_end_date: shiftNullableYmd(source.event_end_date, shiftDays),
       event_start_time: source.event_start_time,
