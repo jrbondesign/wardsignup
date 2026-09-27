@@ -9,6 +9,24 @@ const VOTE_OPTIONS = [
   { value: "something_else", label: "Something else" },
 ] as const;
 
+function TipJarBlurb() {
+  return (
+    <div className="rounded-xl bg-[#E6F7FB] border border-[#0E96B0]/20 p-6">
+      <p className="text-[16px] text-[#2E5566] leading-[1.7] mb-3">
+        Ward Signup stays free, with no ads on your sheets. If you want to help with hosting costs, an optional tip jar is here:
+      </p>
+      <a
+        href="https://wardsignup.com/support-the-project"
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-2 text-[15px] font-medium px-5 py-2.5 rounded-full bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white no-underline shadow-[0_4px_14px_rgba(14,150,176,0.35)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_6px_20px_rgba(14,150,176,0.45)]"
+      >
+        Optional tip jar →
+      </a>
+    </div>
+  );
+}
+
 export function BuildNextForm({ token }: { token: string }) {
   const [choice, setChoice] = useState("");
   const [otherText, setOtherText] = useState("");
@@ -60,19 +78,7 @@ export function BuildNextForm({ token }: { token: string }) {
             This helps us pick what to build next. We will not promise every idea ships.
           </p>
         </div>
-        <div className="rounded-xl bg-[#E6F7FB] border border-[#0E96B0]/20 p-6">
-          <p className="text-[16px] text-[#2E5566] leading-[1.7] mb-3">
-            Ward Signup stays free, with no ads on your sheets. If you want to help with hosting costs, an optional tip jar is here:
-          </p>
-          <a
-            href="https://wardsignup.com/support-the-project"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-2 text-[15px] font-medium px-5 py-2.5 rounded-full bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white no-underline shadow-[0_4px_14px_rgba(14,150,176,0.35)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_6px_20px_rgba(14,150,176,0.45)]"
-          >
-            Optional tip jar →
-          </a>
-        </div>
+        <TipJarBlurb />
       </div>
     );
   }
@@ -153,6 +159,7 @@ export function BuildNextForm({ token }: { token: string }) {
       >
         {state === "sending" ? "Sending…" : "Send my vote"}
       </button>
+      <TipJarBlurb />
     </form>
   );
 }
