@@ -25,6 +25,16 @@ export async function userCanAdminCampaign(
   return !!data;
 }
 
+/** True if the user has an accepted membership row on this organization. */
+export async function userIsAcceptedOrgMember(
+  supabase: SupabaseClient,
+  user: Pick<User, "id">,
+  organizationId: string,
+): Promise<boolean> {
+  if (!organizationId) return false;
+  return userCanAdminCampaign(supabase, user, { organization_id: organizationId });
+}
+
 /**
  * Any accepted member of the org (owner OR admin) may delete a campaign. Mirrors
  * the "Org members delete campaign" RLS policy (is_org_member) — admins are

@@ -94,8 +94,31 @@ async function getAuthFromMcpApiKey(apiKey: string): Promise<
     }
 
     const { data: { user }, error: userError } = await admin.auth.admin.getUserById(mcpToken.user_id);
-    if (userError || !user) {
+    if (userError || !user?.email) {
       return { ok: false, message: "User not found", status: 401 };
+    }
+
+    // Impersonate the token owner with a user JWT so PostgREST applies RLS.
+    // Service role is only used for the hash lookup and last_used_at bump.
+    const { data: linkData, error: linkError } = await admin.auth.admin.generateLink({
+      type: "magiclink",
+      email: user.email,
+    });
+    const hashedToken = linkData?.properties?.hashed_token;
+    if (linkError || !hashedToken) {
+      console.error("[getAuthFromMcpApiKey] generateLink", linkError);
+      return { ok: false, message: "Authentication error", status: 500 };
+    }
+
+    const anon = createAnonSupabaseClient();
+    const { data: otpData, error: otpError } = await anon.auth.verifyOtp({
+      token_hash: hashedToken,
+      type: "email",
+    });
+    const accessToken = otpData.session?.access_token;
+    if (otpError || !accessToken) {
+      console.error("[getAuthFromMcpApiKey] verifyOtp", otpError);
+      return { ok: false, message: "Authentication error", status: 500 };
     }
 
     // Update last_used_at (fire-and-forget)
@@ -104,7 +127,7 @@ async function getAuthFromMcpApiKey(apiKey: string): Promise<
       .update({ last_used_at: new Date().toISOString() } as never)
       .eq("token_hash", tokenHash);
 
-    return { ok: true, supabase: admin, user };
+    return { ok: true, supabase: createSupabaseWithAccessToken(accessToken), user };
   } catch (err) {
     console.error("[getAuthFromMcpApiKey]", err);
     return { ok: false, message: "Authentication error", status: 500 };
