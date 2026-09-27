@@ -57,7 +57,7 @@ export async function POST(request: Request) {
     }
 
     const body = await request.json();
-    const { name, description, event_timezone, event_type, allow_guests, show_capacity_publicly, event_date, event_end_date } = body;
+    const { name, description, event_timezone, event_type, allow_guests, show_capacity_publicly, list_on_directory, event_date, event_end_date } = body;
 
     if (!name || typeof name !== "string") {
       return NextResponse.json(
@@ -109,6 +109,9 @@ export async function POST(request: Request) {
     const resolvedShowCapacity: boolean =
       typeof show_capacity_publicly === "boolean" ? show_capacity_publicly : true;
 
+    const resolvedListOnDirectory: boolean =
+      typeof list_on_directory === "boolean" ? list_on_directory : true;
+
     const isIsoDate = (v: unknown): v is string =>
       typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
     const eventDateValue = isIsoDate(event_date) ? event_date : null;
@@ -129,6 +132,7 @@ export async function POST(request: Request) {
       event_type: resolvedEventType,
       allow_guests: resolvedAllowGuests,
       show_capacity_publicly: resolvedShowCapacity,
+      list_on_directory: resolvedListOnDirectory,
       event_date: eventDateValue,
       event_end_date: eventEndDateValue,
       organization_id: org.id,

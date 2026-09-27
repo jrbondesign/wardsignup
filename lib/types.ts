@@ -44,6 +44,7 @@ export interface Database {
           event_type: string;
           allow_guests: boolean;
           show_capacity_publicly: boolean;
+          list_on_directory: boolean;
           event_date: string | null;
           event_end_date: string | null;
           event_start_time: string | null;
@@ -79,6 +80,7 @@ export interface Database {
           event_type?: string;
           allow_guests?: boolean;
           show_capacity_publicly?: boolean;
+          list_on_directory?: boolean;
           event_date?: string | null;
           event_end_date?: string | null;
           event_start_time?: string | null;
@@ -109,6 +111,7 @@ export interface Database {
           event_type?: string;
           allow_guests?: boolean;
           show_capacity_publicly?: boolean;
+          list_on_directory?: boolean;
           event_date?: string | null;
           event_end_date?: string | null;
           event_start_time?: string | null;
