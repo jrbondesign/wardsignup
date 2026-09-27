@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { getAuthFromRequest } from "@/lib/auth";
+import { userIsAcceptedOrgMember } from "@/lib/campaign-access";
 import { getBrandFromHost, inviteEmailFrom, publicSiteOriginFromRequest } from "@/lib/brand";
 import { escapeHtml } from "@/lib/html-escape";
 import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
@@ -21,7 +22,11 @@ export async function GET(
     if (!auth.ok) {
       return NextResponse.json({ error: auth.message }, { status: auth.status });
     }
-    const { supabase } = auth;
+    const { supabase, user } = auth;
+
+    if (!(await userIsAcceptedOrgMember(supabase, user, orgId))) {
+      return NextResponse.json({ error: "Not authorized to view members" }, { status: 403 });
+    }
 
     const { data, error } = await supabase
       .from("organization_members")

@@ -4,7 +4,7 @@ import { getAuthFromRequest } from "@/lib/auth";
 import { checkEventLimit } from "@/lib/event-limit";
 import { ensureOrganizerBrandMatchesHost } from "@/lib/organizer-profile";
 import { isValidIanaTimezone } from "@/lib/event-timezone";
-import { getCurrentOrganization } from "@/lib/organizations";
+import { getCurrentOrganization, listUserOrganizations } from "@/lib/organizations";
 import type { Database } from "@/lib/types";
 import { getPostHogClient } from "@/lib/posthog-server";
 
@@ -21,11 +21,18 @@ export async function GET(request: Request) {
     const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
     const brand = getBrandFromHost(host);
 
-    // RLS limits to campaigns whose org the user is an accepted member of.
+    // Membership filter is explicit so list APIs do not depend on RLS alone
+    // (MCP keys previously used the service-role client).
+    const orgs = await listUserOrganizations(supabase, user, brand.id);
+    if (orgs.length === 0) {
+      return NextResponse.json({ events: [] });
+    }
+
     const { data, error } = await supabase
       .from("campaigns")
       .select("id, name, description, event_type, created_at, brand_id, public_host, event_timezone")
       .eq("brand_id", brand.id)
+      .in("organization_id", orgs.map((o) => o.id))
       .order("created_at", { ascending: false })
       .limit(200);
     if (error) {

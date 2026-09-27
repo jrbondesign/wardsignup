@@ -2,13 +2,22 @@
  * @jest-environment node
  */
 
-import { POST } from "@/app/api/events/route";
+import { GET, POST } from "@/app/api/events/route";
 import { NextRequest } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
+import { listUserOrganizations } from "@/lib/organizations";
 
 jest.mock("@/lib/auth", () => ({
   getAuthFromRequest: jest.fn(),
 }));
+
+jest.mock("@/lib/organizations", () => {
+  const actual = jest.requireActual("@/lib/organizations");
+  return {
+    ...actual,
+    listUserOrganizations: jest.fn(),
+  };
+});
 
 jest.mock("@/lib/posthog-server", () => ({
   getPostHogClient: () => ({ capture: jest.fn() }),
@@ -17,10 +26,58 @@ jest.mock("@/lib/posthog-server", () => ({
 const mockGetAuth = getAuthFromRequest as jest.MockedFunction<
   typeof getAuthFromRequest
 >;
+const mockListOrgs = listUserOrganizations as jest.MockedFunction<
+  typeof listUserOrganizations
+>;
 
 describe("/api/events", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+  });
+
+  describe("GET", () => {
+    it("returns an empty list when the user has no org memberships", async () => {
+      mockListOrgs.mockResolvedValue([]);
+      mockGetAuth.mockResolvedValue({
+        ok: true,
+        supabase: { from: jest.fn() } as any,
+        user: { id: "u1", email: "a@b.com" } as any,
+      });
+
+      const request = new NextRequest("http://localhost:3000/api/events", {
+        headers: { Authorization: "Bearer fake-token" },
+      });
+      const response = await GET(request);
+      const data = await response.json();
+      expect(response.status).toBe(200);
+      expect(data.events).toEqual([]);
+    });
+
+    it("scopes events to the caller's organizations", async () => {
+      mockListOrgs.mockResolvedValue([
+        { id: "org-1", name: "Ward", needs_naming: false, brand_id: "wardsignup", role: "owner" },
+      ]);
+      const limit = jest.fn(() => Promise.resolve({ data: [{ id: "evt-1" }], error: null }));
+      const order = jest.fn(() => ({ limit }));
+      const inFilter = jest.fn(() => ({ order }));
+      const eq = jest.fn(() => ({ in: inFilter }));
+      const select = jest.fn(() => ({ eq }));
+      const from = jest.fn(() => ({ select }));
+      mockGetAuth.mockResolvedValue({
+        ok: true,
+        supabase: { from } as any,
+        user: { id: "u1", email: "a@b.com" } as any,
+      });
+
+      const request = new NextRequest("http://localhost:3000/api/events", {
+        headers: { Authorization: "Bearer fake-token" },
+      });
+      const response = await GET(request);
+      const data = await response.json();
+      expect(response.status).toBe(200);
+      expect(data.events).toEqual([{ id: "evt-1" }]);
+      expect(inFilter).toHaveBeenCalledWith("organization_id", ["org-1"]);
+    });
   });
 
   describe("POST", () => {

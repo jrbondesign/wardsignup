@@ -458,6 +458,28 @@ export interface Database {
         };
         Returns: SignupRow;
       };
+      create_item_signup_if_capacity: {
+        Args: {
+          p_campaign_id: string;
+          p_member_name: string;
+          p_item_id?: string | null;
+          p_member_email?: string | null;
+          p_signup_note?: string | null;
+          p_quantity?: number;
+          p_custom_label?: string | null;
+        };
+        Returns: {
+          id: string;
+          item_id: string | null;
+          campaign_id: string;
+          member_name: string;
+          member_email: string | null;
+          signup_note: string | null;
+          quantity: number;
+          custom_label: string | null;
+          signed_up_at: string;
+        };
+      };
       try_consume_signup_rate: {
         Args: { p_ip_hash: string; p_bucket: string; p_max: number };
         Returns: boolean;

@@ -1,7 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
-import { supabase } from "@/lib/supabase";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { getClientIp } from "@/lib/request-ip";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
@@ -65,69 +64,35 @@ export async function POST(request: Request) {
       quantity = n;
     }
 
-    if (item_id) {
-      // Verify item belongs to campaign and check limit (sum of claimed quantities).
-      // Do not nest-embed item_signups: after org-member-only RLS, anon gets empty
-      // nested rows. Use the public-safe view (no email) for capacity counts.
-      const { data: itemRaw, error: itemError } = await supabase
-        .from("campaign_items")
-        .select("id, campaign_id, item_limit")
-        .eq("id", item_id)
-        .eq("campaign_id", campaign_id)
-        .single();
-
-      if (itemError || !itemRaw) {
-        return NextResponse.json({ error: "Item not found" }, { status: 404 });
-      }
-
-      const item = itemRaw as unknown as {
-        id: string;
-        campaign_id: string;
-        item_limit: number | null;
-      };
-
-      const { data: existingClaims, error: claimsError } = await supabase
-        .from("item_signups_public")
-        .select("id, quantity")
-        .eq("item_id", item_id)
-        .eq("campaign_id", campaign_id);
-      if (claimsError) {
-        console.error("Failed to load item signup claims:", claimsError);
-        return NextResponse.json({ error: "Failed to check item capacity" }, { status: 500 });
-      }
-
-      const claimedSum = Array.isArray(existingClaims)
-        ? existingClaims.reduce((s, r) => s + ((r as { quantity?: number }).quantity ?? 1), 0)
-        : 0;
-      if (item.item_limit !== null && claimedSum + quantity > item.item_limit) {
-        const remaining = Math.max(0, item.item_limit - claimedSum);
-        return NextResponse.json(
-          { error: remaining === 0 ? "This item is already full" : `Only ${remaining} left — please reduce the quantity` },
-          { status: 409 }
-        );
-      }
+    if (!serviceKey || !supabaseUrl) {
+      return NextResponse.json({ error: "Signup is temporarily unavailable" }, { status: 503 });
     }
 
-    // Insert via service role when available: org-member-only SELECT on the base
-    // table makes anon INSERT…RETURNING fail even though INSERT itself is allowed.
-    const insertClient =
-      serviceKey && supabaseUrl ? createClient(supabaseUrl, serviceKey) : supabase;
-
-    const { data, error } = await insertClient
-      .from("item_signups")
-      .insert({
-        item_id: item_id || null,
-        campaign_id,
-        member_name: member_name.trim(),
-        member_email: member_email?.trim() || null,
-        signup_note: typeof signup_note === "string" && signup_note.trim() ? signup_note.trim() : null,
-        quantity,
-        custom_label: rawCustomLabel || null,
-      } as never)
-      .select()
-      .single();
+    const admin = createClient(supabaseUrl, serviceKey);
+    const { data, error } = await admin.rpc("create_item_signup_if_capacity", {
+      p_campaign_id: campaign_id,
+      p_member_name: member_name.trim(),
+      p_item_id: item_id || null,
+      p_member_email: member_email?.trim() || null,
+      p_signup_note: typeof signup_note === "string" && signup_note.trim() ? signup_note.trim() : null,
+      p_quantity: quantity,
+      p_custom_label: rawCustomLabel || null,
+    } as never);
 
     if (error) {
+      const msg = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`;
+      if (msg.includes("ITEM_NOT_FOUND") || msg.includes("CAMPAIGN_NOT_FOUND")) {
+        return NextResponse.json({ error: "Item not found" }, { status: 404 });
+      }
+      if (msg.includes("CAMPAIGN_MISMATCH")) {
+        return NextResponse.json({ error: "Item not found" }, { status: 404 });
+      }
+      if (msg.includes("ITEM_FULL")) {
+        return NextResponse.json({ error: "This item is already full" }, { status: 409 });
+      }
+      if (msg.includes("INVALID_QUANTITY") || msg.includes("ITEM_OR_LABEL_REQUIRED") || msg.includes("NAME_REQUIRED") || msg.includes("LABEL_TOO_LONG")) {
+        return NextResponse.json({ error: "Failed to sign up" }, { status: 400 });
+      }
       console.error("Failed to create item signup:", error);
       return NextResponse.json({ error: "Failed to sign up" }, { status: 500 });
     }
