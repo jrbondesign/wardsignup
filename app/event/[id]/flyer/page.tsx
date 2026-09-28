@@ -95,9 +95,9 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
         } else {
           const [{ data: sessionsData }, { data: signupRows }] = await Promise.all([
             supabase
-              .from("sessions")
+              .from("sessions_public")
               .select(
-                "id, campaign_id, day_of_week, time, end_time, session_date, capacity, location, notes, created_at, updated_at"
+                "id, campaign_id, day_of_week, time, end_time, session_date, capacity, location, created_at, updated_at"
               )
               .eq("campaign_id", eventId)
               .order("session_date", { ascending: true, nullsFirst: false })

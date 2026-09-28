@@ -219,7 +219,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       const [{ data: sessionsData, error: sessionsError }, { data: signupRows, error: signupsError }] =
         await Promise.all([
           supabase
-            .from("sessions")
+            .from("sessions_public")
             .select("*")
             .eq("campaign_id", eventId)
             .order("session_date", { nullsFirst: false })

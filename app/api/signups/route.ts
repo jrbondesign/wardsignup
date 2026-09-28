@@ -8,6 +8,7 @@ import { sendParticipantSignupConfirmation } from "@/lib/participant-email";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { isHostedProduction } from "@/lib/runtime-env";
 
 function hashIp(ip: string): string {
   const salt = process.env.RATE_LIMIT_IP_SALT || "wardsignup_signup_rate";
@@ -57,7 +58,14 @@ export async function POST(request: Request) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     let admin: ReturnType<typeof createClient> | null = null;
-    if (serviceKey && url) {
+    if (!serviceKey || !url) {
+      if (isHostedProduction()) {
+        return NextResponse.json(
+          { error: "Signup is temporarily unavailable" },
+          { status: 503 }
+        );
+      }
+    } else {
       admin = createClient(url, serviceKey);
       const ip = getClientIp(request);
       const bucket = new Date();

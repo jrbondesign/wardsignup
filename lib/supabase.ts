@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { createAnonSupabaseClient } from "./auth";
+import { createServiceRoleClient } from "./supabase-admin";
 import type { Database } from "./types";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
@@ -23,6 +23,6 @@ export function getPublicOrgCampaigns(slug: string) {
 }
 
 export function createSignupIfCapacityRpc(args: RpcSignupArgs) {
-  const client = createAnonSupabaseClient();
+  const client = createServiceRoleClient();
   return client.rpc("create_signup_if_capacity", args as never);
 }

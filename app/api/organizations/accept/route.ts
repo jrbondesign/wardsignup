@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { hashInviteToken } from "@/lib/invite-token";
 
 /** POST /api/organizations/accept { token } — claim a co-admin invitation. */
 export async function POST(request: NextRequest) {
@@ -29,7 +30,7 @@ export async function POST(request: NextRequest) {
     const { data: row, error: lookupErr } = await admin
       .from("organization_members")
       .select("id, organization_id, invited_email, status, token_expires_at, transfer_on_accept")
-      .eq("accept_token", token)
+      .eq("accept_token", hashInviteToken(token))
       .maybeSingle();
     if (lookupErr) {
       console.error("Accept invite: lookup error:", lookupErr);

@@ -424,7 +424,24 @@ export interface Database {
       };
     };
     Views: {
-      [_ in never]: never;
+      sessions_public: {
+        Row: {
+          id: string;
+          campaign_id: string;
+          day_of_week: number;
+          time: string;
+          end_time: string | null;
+          capacity: number;
+          location: string | null;
+          session_date: string | null;
+          label: string | null;
+          section: string | null;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Relationships: TableRelationship[];
+      };
     };
     Functions: {
       get_public_campaign: {

@@ -1,6 +1,7 @@
 import { createHash } from "crypto";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { getClientIp } from "@/lib/request-ip";
+import { isHostedProduction } from "@/lib/runtime-env";
 
 function hashIp(ip: string): string {
   return createHash("sha256").update(ip).digest("hex");
@@ -29,6 +30,10 @@ export async function consumeActionRate(
   maxPerHour: number,
 ): Promise<RateLimitResult> {
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    if (isHostedProduction()) {
+      console.error("rate limit unconfigured in production (failing closed)");
+      return { allowed: false, reason: "rate_limited" };
+    }
     return { allowed: true, reason: "unconfigured" };
   }
   const admin = createServiceRoleClient();
@@ -67,6 +72,9 @@ export async function claimCronRun(
     // Still fail-open for local dev without env, but log loudly — a production
     // deploy missing these would skip idempotency and risk double-sends.
     console.error("cron claim unconfigured: missing SUPABASE_SERVICE_ROLE_KEY or SUPABASE_URL");
+    if (isHostedProduction()) {
+      return { claimed: false, reason: "unconfigured" };
+    }
     return { claimed: true, reason: "unconfigured" };
   }
   const admin = createServiceRoleClient();

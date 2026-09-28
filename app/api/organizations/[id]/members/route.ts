@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userIsAcceptedOrgMember } from "@/lib/campaign-access";
-import { getBrandFromHost, inviteEmailFrom, publicSiteOriginFromRequest } from "@/lib/brand";
+import { getBrandFromHost, inviteEmailFrom, trustedAuthOriginFromRequest } from "@/lib/brand";
+import { generateInviteToken, hashInviteToken } from "@/lib/invite-token";
 import { escapeHtml } from "@/lib/html-escape";
 import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
 import { sendGuardedEmail } from "@/lib/email-send";
@@ -117,7 +117,7 @@ export async function POST(
       );
     }
 
-    const token = crypto.randomBytes(32).toString("hex");
+    const token = generateInviteToken();
     const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
     // Re-invite cooldown: refreshing the token is fine, but re-emailing the
@@ -147,7 +147,7 @@ export async function POST(
           invited_by: user.id,
           role: "admin",
           status: "pending",
-          accept_token: token,
+          accept_token: hashInviteToken(token),
           token_expires_at: expiresAt,
           user_id: null,
           accepted_at: null,
@@ -170,8 +170,8 @@ export async function POST(
       );
     }
 
-    const siteOrigin = publicSiteOriginFromRequest(request);
-    const acceptUrl = `${siteOrigin}/orgs/accept?token=${encodeURIComponent(token)}`;
+    const siteOrigin = trustedAuthOriginFromRequest(request) ?? hostBrand.siteUrl;
+    const acceptUrl = `${siteOrigin.replace(/\/$/, "")}/orgs/accept?token=${encodeURIComponent(token)}`;
     const orgNameEsc = escapeHtml(org.name);
     const inviterEsc = escapeHtml(user.email ?? "an organizer");
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getBrandFromHost } from "@/lib/brand";
+import { getBrandFromHost, trustedAuthOriginFromRequest } from "@/lib/brand";
 import { magicLinkEmailFrom } from "@/lib/brand/email-from";
 import { getResendForBrand } from "@/lib/resend-for-brand";
 import { escapeHtml } from "@/lib/html-escape";
@@ -20,19 +20,6 @@ function messageFromResendError(err: unknown): string {
     if (m.length > 0 && m.length < 400) return m;
   }
   return "Failed to send email. Please try again.";
-}
-
-function requestOrigin(request: NextRequest): string {
-  const host =
-    request.headers.get("x-forwarded-host")?.split(",")[0]?.trim() ??
-    request.headers.get("host")?.split(",")[0]?.trim() ??
-    "";
-  const proto =
-    request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() ??
-    // Local dev has no x-forwarded-proto and no TLS.
-    (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
-  if (!host) return "";
-  return `${proto}://${host}`;
 }
 
 function parseJsonBody(raw: string): { email?: unknown; next?: unknown } | null {
@@ -88,7 +75,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const origin = requestOrigin(request);
+    const origin = trustedAuthOriginFromRequest(request);
     if (!origin) {
       return NextResponse.json({ error: "Invalid request." }, { status: 400 });
     }
