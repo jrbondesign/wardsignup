@@ -272,6 +272,23 @@ export default function EditEventPage() {
     };
   }, [showAddSessionsMenu]);
 
+  // Admin page date headers link here with #edit-date-YYYY-MM-DD; once the
+  // sessions render, scroll that date into view and briefly highlight it.
+  const scrolledToHashRef = useRef(false);
+  const [highlightDate, setHighlightDate] = useState<string | null>(null);
+  useEffect(() => {
+    if (scrolledToHashRef.current || loading || sessions.length === 0) return;
+    const hash = window.location.hash.slice(1);
+    if (!hash.startsWith("edit-date-")) return;
+    const el = document.getElementById(hash);
+    if (!el) return;
+    scrolledToHashRef.current = true;
+    // Defer so the router's own post-navigation scroll doesn't override ours.
+    setTimeout(() => el.scrollIntoView({ block: "start" }), 150);
+    setHighlightDate(hash.slice("edit-date-".length));
+    setTimeout(() => setHighlightDate(null), 2500);
+  }, [loading, sessions]);
+
   const toggleTithingDay = (d: number) => {
     setTithingDays((prev) =>
       prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort(),
@@ -870,6 +887,14 @@ export default function EditEventPage() {
 
   const removeSession = (index: number) => {
     setSessions(sessions.filter((_, i) => i !== index));
+  };
+
+  /** Remove every session on one date (takes effect on Save). */
+  const removeDateGroup = (group: { items: { index: number }[] }) => {
+    const n = group.items.length;
+    if (!confirm(`Remove this date${n > 1 ? ` and its ${n} sessions` : ""}? Changes apply when you save.`)) return;
+    const drop = new Set(group.items.map((it) => it.index));
+    setSessions(sessions.filter((_, i) => !drop.has(i)));
   };
 
   /** Add another class slot to an existing date, copying that date's time/location
@@ -2529,7 +2554,15 @@ export default function EditEventPage() {
                 ) : (
                   <div className="space-y-6">
                     {groupSessionsForDisplay(sessions).map((group) => (
-                      <div key={group.key} className="space-y-2">
+                      <div
+                        key={group.key}
+                        id={group.sessionDate ? `edit-date-${group.sessionDate}` : undefined}
+                        className={`space-y-2 scroll-mt-24 rounded-xl transition-shadow duration-700 ${
+                          highlightDate && group.sessionDate === highlightDate
+                            ? "shadow-[0_0_0_3px_rgba(14,150,176,0.35)]"
+                            : ""
+                        }`}
+                      >
                         {/* Date header — mirrors the public preview's per-date grouping */}
                         <div className="flex items-center gap-2 px-0.5">
                           <div className="font-serif text-[17px] text-[#0D2B35]">
@@ -2644,6 +2677,20 @@ export default function EditEventPage() {
                               </button>
                             )
                           )}
+                          <button
+                            type="button"
+                            onClick={() => removeDateGroup(group)}
+                            title="Remove every class on this day"
+                            className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-red-500 hover:text-red-700 transition-colors"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Remove
+                          </button>
                         </div>
                         {group.items.map(({ session, index }, itemIdx, itemArr) => {
                           const sectionKey = (session.section ?? "").trim();

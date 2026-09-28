@@ -5,6 +5,7 @@ import { posthogDistinctIdHeader } from "./posthog-client";
 import type { AuthError } from "@supabase/supabase-js";
 import { Database } from "./types";
 import { createServiceRoleClient } from "./supabase-admin";
+import { CLAUDE_MCP_ENABLED } from "./claude-mcp";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -58,6 +59,9 @@ export async function getAuthFromRequest(request: Request): Promise<
 
   // MCP API key path: tokens prefixed with "wsu_live_" or "wsu_test_"
   if (token.startsWith("wsu_live_") || token.startsWith("wsu_test_")) {
+    if (!CLAUDE_MCP_ENABLED) {
+      return { ok: false, message: "Claude MCP access is disabled", status: 401 };
+    }
     return getAuthFromMcpApiKey(token);
   }
 

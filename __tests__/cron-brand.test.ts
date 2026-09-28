@@ -18,15 +18,18 @@ function req(host: string | null, brandEnv?: string) {
 }
 
 describe("resolveCronBrandId", () => {
-  it("prefers known Host over wrong env", () => {
-    expect(req("www.orgsignup.com", "wardsignup")).toBe("orgsignup");
-    expect(req("ministrysignup.com", "wardsignup")).toBe("ministrysignup");
+  it("resolves known Host regardless of env", () => {
     expect(req("wardsignup.com", "orgsignup")).toBe("wardsignup");
+    expect(req("www.wardsignup.com", undefined)).toBe("wardsignup");
   });
 
   it("falls back to NEXT_PUBLIC_BRAND_ID when Host unknown", () => {
-    expect(req("cron.internal", "orgsignup")).toBe("orgsignup");
-    expect(req("cron.internal", "ministrysignup")).toBe("ministrysignup");
+    expect(req("cron.internal", "wardsignup")).toBe("wardsignup");
+  });
+
+  it("ignores retired brands in Host and env", () => {
+    expect(req("www.orgsignup.com", "orgsignup")).toBe("wardsignup");
+    expect(req("ministrysignup.com", "ministrysignup")).toBe("wardsignup");
   });
 
   it("defaults to wardsignup", () => {

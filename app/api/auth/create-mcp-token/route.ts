@@ -2,6 +2,14 @@ import { NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { getBrandFromHost } from "@/lib/brand";
+import { CLAUDE_MCP_ENABLED } from "@/lib/claude-mcp";
+
+function disabledResponse() {
+  return NextResponse.json(
+    { error: "Claude MCP is currently disabled" },
+    { status: 410 },
+  );
+}
 
 /**
  * POST /api/auth/create-mcp-token
@@ -9,6 +17,10 @@ import { getBrandFromHost } from "@/lib/brand";
  * Returns the token once — it is not retrievable after this call.
  */
 export async function POST(request: Request) {
+  if (!CLAUDE_MCP_ENABLED) {
+    return disabledResponse();
+  }
+
   try {
     const auth = await getAuthFromRequest(request);
     if (!auth.ok) {
@@ -84,6 +96,10 @@ export async function POST(request: Request) {
 
 /** DELETE /api/auth/create-mcp-token — revoke the current MCP token */
 export async function DELETE(request: Request) {
+  if (!CLAUDE_MCP_ENABLED) {
+    return disabledResponse();
+  }
+
   try {
     const auth = await getAuthFromRequest(request);
     if (!auth.ok) {

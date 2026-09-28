@@ -994,12 +994,22 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                 return (
                   <div key={day} className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden">
                     {/* Day header */}
-                    <div className="px-6 py-4 border-b border-[#0E96B0]/8 bg-gradient-to-r from-[#F4FAFB] to-white">
+                    <div className="px-6 py-4 border-b border-[#0E96B0]/8 bg-gradient-to-r from-[#F4FAFB] to-white flex items-center justify-between gap-3">
                       <h2 className="font-serif text-xl text-[#0D2B35]">
                         {hasSessionDates && /^\d{4}-\d{2}-\d{2}$/.test(day)
                           ? (() => { const [y,m,d2] = day.split("-").map(Number); return new Date(y, m-1, d2).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" }); })()
                           : day}
                       </h2>
+                      <Link
+                        href={/^\d{4}-\d{2}-\d{2}$/.test(day) ? `/edit/${eventId}#edit-date-${day}` : `/edit/${eventId}`}
+                        className="inline-flex flex-shrink-0 items-center gap-1.5 text-sm font-semibold px-3 py-1.5 rounded-xl border-[1.5px] border-[#0E96B0]/35 text-[#08647E] bg-white hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all no-underline"
+                      >
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 flex-shrink-0">
+                          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                        Edit
+                      </Link>
                     </div>
 
                     <div className="p-6 space-y-3">
