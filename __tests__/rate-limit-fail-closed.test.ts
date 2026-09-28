@@ -1,3 +1,7 @@
+/**
+ * @jest-environment node
+ */
+
 import { consumeActionRate } from "@/lib/rate-limit";
 
 describe("consumeActionRate fail-closed", () => {

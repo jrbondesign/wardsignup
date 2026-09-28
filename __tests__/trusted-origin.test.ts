@@ -1,3 +1,7 @@
+/**
+ * @jest-environment node
+ */
+
 import { trustedAuthOriginFromRequest } from "@/lib/brand/request-origin";
 
 function req(headers: Record<string, string>, url = "https://wardsignup.com/api") {
