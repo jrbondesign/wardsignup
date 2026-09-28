@@ -11,10 +11,10 @@ import { feedbackEmailFrom } from "@/lib/brand/email-from";
 import { parseMetricsAdminEmails } from "@/lib/metrics-admin";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { isFeedbackAskPaused } from "@/lib/feedback-ask-pause";
+import { creatorNotifyAddress } from "@/lib/founder-notify";
 
 type Admin = ReturnType<typeof createServiceRoleClient>;
 
-const creatorNotifyTo = process.env.CREATOR_NOTIFY_TO || "jon@jrbond.com";
 
 function askDelayDays(): number {
   const n = Number(process.env.FEEDBACK_ASK_DELAY_DAYS);
@@ -34,7 +34,8 @@ const DEFAULT_SKIP_EMAILS = [
 /** Founder/internal/test inboxes that should never receive the feedback ask. */
 function feedbackSkipEmails(): Set<string> {
   const set = new Set<string>(parseMetricsAdminEmails());
-  set.add(creatorNotifyTo.trim().toLowerCase());
+  const notifyTo = creatorNotifyAddress();
+  if (notifyTo) set.add(notifyTo.trim().toLowerCase());
   for (const e of DEFAULT_SKIP_EMAILS) set.add(e);
   const raw = process.env.CREATOR_NOTIFY_SKIP_EMAILS?.trim();
   if (raw) {
@@ -317,11 +318,15 @@ export async function runFeedbackDigestPass(
 
   // Founder-only internal mail: transactional category (no unsubscribe needed)
   // but still under the global ceiling.
+  const digestTo = creatorNotifyAddress();
+  if (!digestTo) {
+    return { ran: true, responses: 0, error: "CREATOR_NOTIFY_TO is not set" };
+  }
   const send = await sendGuardedEmail({
     brand,
     category: "transactional",
     from: feedbackEmailFrom(brand),
-    to: creatorNotifyTo,
+    to: digestTo,
     subject: `${brand.name}: ${rows.length} creator feedback response${rows.length === 1 ? "" : "s"} this week`,
     html: buildFeedbackDigestEmailHtml({ brand, responses: rows }),
   });

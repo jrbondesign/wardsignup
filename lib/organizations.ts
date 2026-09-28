@@ -72,13 +72,17 @@ export async function getCurrentOrganization(
   const selectedId = (profile as { selected_org_id: string | null } | null)?.selected_org_id ?? null;
 
   if (selectedId) {
-    const { data: selected } = await supabase
-      .from("organizations")
-      .select("id, name, needs_naming, brand_id")
-      .eq("id", selectedId)
-      .eq("brand_id", brandId)
+    const { data: membership } = await supabase
+      .from("organization_members")
+      .select("organization:organization_id(id, name, needs_naming, brand_id)")
+      .eq("user_id", user.id)
+      .eq("organization_id", selectedId)
+      .eq("status", "accepted")
       .maybeSingle();
-    if (selected) return selected as CurrentOrg;
+    type OrgRow = { id: string; name: string; needs_naming: boolean; brand_id: string };
+    const raw = (membership as { organization: OrgRow | OrgRow[] | null } | null)?.organization;
+    const selected = Array.isArray(raw) ? raw[0] ?? null : raw ?? null;
+    if (selected && selected.brand_id === brandId) return selected as CurrentOrg;
     // Stale selection (org deleted, brand mismatch, or user lost access) — fall through.
   }
 

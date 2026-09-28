@@ -9,17 +9,14 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { escapeHtml } from "@/lib/html-escape";
 import { getResendForBrand } from "@/lib/resend-for-brand";
 import { withUtm } from "@/lib/utm";
-const creatorNotifyTo = process.env.CREATOR_NOTIFY_TO || "jon@jrbond.com";
-
-/** Welcome replies: must be an address that receives mail (e.g. Cloudflare Email Routing → your inbox). */
-const welcomeReplyTo =
-  process.env.WELCOME_REPLY_TO?.trim() || "jonathan@wardsignup.com";
+import { creatorNotifyAddress, welcomeReplyAddress } from "@/lib/founder-notify";
 
 /** Comma-separated emails that never trigger “new creator” founder email (lowercased). */
 function creatorNotifySkipEmails(): Set<string> {
   const raw = process.env.CREATOR_NOTIFY_SKIP_EMAILS?.trim();
   const set = new Set<string>();
-  set.add(creatorNotifyTo.trim().toLowerCase());
+  const notifyTo = creatorNotifyAddress();
+  if (notifyTo) set.add(notifyTo.trim().toLowerCase());
   if (raw) {
     for (const part of raw.split(",")) {
       const e = part.trim().toLowerCase();
@@ -207,9 +204,10 @@ ${brand.name} · ${siteUrlWithUtm}
 Made with ❤️ in Arizona`;
 
     // Send welcome email (must succeed before we mark welcome_sent)
+    const welcomeReplyTo = welcomeReplyAddress();
     const welcomeSend = await resend.emails.send({
       from: welcomeEmailFrom(brand),
-      replyTo: welcomeReplyTo,
+      ...(welcomeReplyTo ? { replyTo: welcomeReplyTo } : {}),
       to: canonicalUser.email!,
       subject: welcomeSubject,
       text: welcomeText,
@@ -293,7 +291,8 @@ Made with ❤️ in Arizona`;
     }
 
     // Notify founder of a new creator (best-effort; do not block login)
-    if (shouldNotifyFounder) {
+    const creatorNotifyTo = creatorNotifyAddress();
+    if (shouldNotifyFounder && creatorNotifyTo) {
       try {
         const notifySend = await resend.emails.send({
           from: creatorNotifyEmailFrom(brand),
