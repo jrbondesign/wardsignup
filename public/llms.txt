@@ -11,6 +11,7 @@
 - Ward Secretary Guide: https://wardsignup.com/use-cases/ward-secretary-signup
 - Tithing Declaration Scheduling: https://wardsignup.com/use-cases/tithing-declaration
 - Ward Signup vs SignUpGenius: https://wardsignup.com/compare/signupgenius
+- Ward Signup vs Calendly: https://wardsignup.com/compare/calendly
 - Create Event: https://wardsignup.com/create
 - Sign In: https://wardsignup.com/login
 - Privacy Policy: https://wardsignup.com/privacy

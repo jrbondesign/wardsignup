@@ -244,6 +244,12 @@ export default async function TithingDeclarationPage() {
                 Ward Signup vs SignUpGenius
               </Link>
             </p>
+            <p className="text-[15px] text-[#5A8399] mt-3">
+              Prefer Calendly for calendar sync?{" "}
+              <Link href="/compare/calendly" className="text-[#0E96B0] hover:text-[#08647E] underline">
+                Ward Signup vs Calendly
+              </Link>
+            </p>
           </div>
         </div>
       </section>
