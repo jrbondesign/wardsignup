@@ -17,6 +17,11 @@ export function getPublicCampaignById(campaignId: string) {
   return supabase.rpc("get_public_campaign", args as never);
 }
 
+/** Org directory slug for a campaign, or null when the org's public directory is off. */
+export function getPublicDirectorySlugForCampaign(campaignId: string) {
+  return supabase.rpc("get_public_directory_slug_for_campaign", { p_campaign_id: campaignId } as never);
+}
+
 /** SECURITY DEFINER RPC for public org directory; returns open/accepting-signups events with no PII. */
 export function getPublicOrgCampaigns(slug: string) {
   return supabase.rpc("get_public_org_campaigns", { p_slug: slug } as never);

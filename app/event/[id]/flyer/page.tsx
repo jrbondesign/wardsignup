@@ -4,7 +4,7 @@ import { use, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import QRCode from "qrcode";
-import { supabase, getPublicCampaignById } from "@/lib/supabase";
+import { supabase, getPublicCampaignById, getPublicDirectorySlugForCampaign } from "@/lib/supabase";
 import type { Session, CampaignItemWithSignups } from "@/lib/types";
 import { formatTime } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
@@ -27,6 +27,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [qrPngDataUrl, setQrPngDataUrl] = useState<string>("");
   const [signupUrl, setSignupUrl] = useState("");
+  const [directorySlug, setDirectorySlug] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,7 +38,14 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
       try {
         // Visibility flags + cover/logo come from the public RPC now (SECURITY DEFINER);
         // direct table read against `campaigns` is blocked for anon by org-scoped RLS.
-        const pubResult = await getPublicCampaignById(eventId);
+        const [pubResult, slugResult] = await Promise.all([
+          getPublicCampaignById(eventId),
+          // Directory off or RPC missing (migration not applied) → falls back to the bare host.
+          getPublicDirectorySlugForCampaign(eventId),
+        ]);
+        const slugData = (slugResult as { data: unknown }).data;
+        const slug = typeof slugData === "string" && slugData ? slugData : null;
+        setDirectorySlug(slug);
 
         const { data: pubRows, error: eventError } = pubResult;
         const rows = Array.isArray(pubRows) ? pubRows : pubRows ? [pubRows] : [];
@@ -166,6 +174,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
   }
 
   const displayHost = brand.siteHost.replace(/^www\./, "");
+  const visitLabel = directorySlug ? `${displayHost}/w/${directorySlug}` : displayHost;
   const sessionHeadcount = (s: SessionWithSignups) => (s.signups ?? []).length;
 
   // Sort/filter sessions for display: keep future dates first, then fall back to day-of-week recurring
@@ -237,7 +246,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
               Point your phone camera at the code — no app needed.
             </div>
             <div className="flyer-hero-or">— or visit —</div>
-            <div className="flyer-hero-host">{displayHost}</div>
+            <div className="flyer-hero-host">{visitLabel}</div>
             <div className="flyer-hero-url">{signupUrl}</div>
           </div>
         </div>
