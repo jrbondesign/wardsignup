@@ -9,6 +9,7 @@ import type { Session, CampaignItemWithSignups } from "@/lib/types";
 import { formatTime } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
+import { isEventCoverUrl } from "@/lib/event-media";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -253,6 +254,16 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
 
         {/* Event card */}
         <div className="flyer-event-card">
+          {isEventCoverUrl(event.cover_image_url) && (
+            <div className="flyer-cover-wrap">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={event.cover_image_url}
+                alt={event.name}
+                className="flyer-cover"
+              />
+            </div>
+          )}
           <div className="flyer-event-card-band" />
           <div className="flyer-event-card-inner">
             {/* Future: Org logo support */}
@@ -381,6 +392,18 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
           border-radius: 16px;
           overflow: hidden;
           margin-bottom: 20px;
+        }
+        .flyer-cover-wrap {
+          width: 100%;
+          max-height: 3.5in;
+          overflow: hidden;
+          background: #F4FAFB;
+        }
+        .flyer-cover {
+          width: 100%;
+          height: auto;
+          display: block;
+          object-fit: cover;
         }
         .flyer-event-card-band {
           height: 6px;
