@@ -53,9 +53,8 @@ create policy "Org members can view campaign calendar sync"
   using (
     exists (
       select 1 from campaigns c
-      join org_members om on om.organization_id = c.organization_id
       where c.id = campaign_calendar_sync.campaign_id
-        and om.user_id = auth.uid()
+        and public.is_org_member(c.organization_id)
     )
   );
 
@@ -67,9 +66,8 @@ create policy "Org members can view calendar event links"
   using (
     exists (
       select 1 from campaigns c
-      join org_members om on om.organization_id = c.organization_id
       where c.id = calendar_event_links.campaign_id
-        and om.user_id = auth.uid()
+        and public.is_org_member(c.organization_id)
     )
   );
 
