@@ -68,16 +68,19 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
         headers: {
           Authorization: `Bearer ${session.access_token}`,
         },
-        redirect: "manual",
       });
 
-      // The endpoint returns a 307 redirect to Google's OAuth consent URL
-      const location = res.headers.get("location");
-      if (location) {
-        window.location.assign(location);
-      } else {
+      if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setMessage({ kind: "error", text: data?.error ?? "Failed to connect. Please try again." });
+        return;
+      }
+
+      const data = await res.json();
+      if (data.url) {
+        window.location.assign(data.url);
+      } else {
+        setMessage({ kind: "error", text: "Failed to connect. Please try again." });
       }
     } catch {
       setMessage({ kind: "error", text: "Network error. Please try again." });

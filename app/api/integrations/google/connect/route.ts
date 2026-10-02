@@ -48,7 +48,7 @@ export async function GET(request: Request) {
     };
 
     const authUrl = buildAuthUrl(state);
-    return NextResponse.redirect(authUrl);
+    return NextResponse.json({ url: authUrl });
   } catch (err) {
     console.error('[google/connect] error:', err);
     return NextResponse.json(
