@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { isGcalSyncFeatureEnabled } from '@/lib/gcal-feature';
 import { verifyState, exchangeCode, encryptToken } from '@/lib/google-oauth';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
+import { getPostHogClient } from '@/lib/posthog-server';
 
 /**
  * GET /api/integrations/google/callback
@@ -82,6 +83,17 @@ export async function GET(request: Request) {
       console.error('[google/callback] DB error:', dbError);
       return NextResponse.redirect('/settings?error=gcal_db_error');
     }
+    
+    // Fire PostHog event for successful connection
+    const posthog = getPostHogClient();
+    posthog.capture({
+      distinctId: state.userId,
+      event: 'gcal_connected',
+      properties: {
+        google_email: googleEmail,
+        organization_id: state.orgId,
+      },
+    });
 
     // Success - redirect to return path
     const redirectUrl = new URL(state.returnPath, url.origin);

@@ -9,6 +9,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { refreshAccessToken } from './google-oauth';
 import { createHash } from 'crypto';
+import { getPostHogClient } from './posthog-server';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -18,6 +19,7 @@ const supabase = createClient(
 export interface SyncResult {
   success: boolean;
   error?: string;
+  lastSyncedAt?: string;
   eventsCreated?: number;
   eventsUpdated?: number;
   eventsDeleted?: number;
@@ -79,11 +81,23 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
 
     const connection = syncConfig.connection as any;
     if (!connection || connection.revoked_at) {
+      const errorMsg = 'Connection revoked';
       await supabase
         .from('campaign_calendar_sync')
-        .update({ last_error: 'Connection revoked', last_synced_at: new Date().toISOString() })
+        .update({ last_error: errorMsg, last_synced_at: new Date().toISOString() })
         .eq('campaign_id', campaignId);
-      return { success: false, error: 'Connection revoked' };
+      
+      const posthog = getPostHogClient();
+      posthog.capture({
+        distinctId: connection?.user_id || 'unknown',
+        event: 'gcal_sync_error',
+        properties: {
+          campaign_id: campaignId,
+          error: errorMsg,
+        },
+      });
+      
+      return { success: false, error: errorMsg };
     }
 
     // 2. Get fresh access token
@@ -106,6 +120,17 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
         .from('campaign_calendar_sync')
         .update({ last_error: errorMsg, last_synced_at: new Date().toISOString() })
         .eq('campaign_id', campaignId);
+      
+      const posthog = getPostHogClient();
+      posthog.capture({
+        distinctId: connection.user_id,
+        event: 'gcal_sync_error',
+        properties: {
+          campaign_id: campaignId,
+          error: errorMsg,
+          is_invalid_grant: errorMsg.includes('invalid_grant'),
+        },
+      });
       
       return { success: false, error: errorMsg };
     }
@@ -270,8 +295,11 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
       })
       .eq('campaign_id', campaignId);
 
+    const lastSyncedAt = new Date().toISOString();
+
     return {
       success: true,
+      lastSyncedAt,
       eventsCreated,
       eventsUpdated,
       eventsDeleted,
