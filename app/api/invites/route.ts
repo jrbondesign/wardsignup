@@ -14,6 +14,7 @@ import { consumeEmailKeyRate, sendGuardedEmail } from "@/lib/email-send";
 import { consumeActionRate } from "@/lib/rate-limit";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { withUtm } from "@/lib/utm";
+import { isEventCoverUrl } from "@/lib/event-media";
 
 type EventInviteInsert = Database["public"]["Tables"]["event_invites"]["Insert"];
 
@@ -180,6 +181,10 @@ export async function POST(request: NextRequest) {
           ? escapeHtml(message.trim())
           : "";
 
+      const coverImageHtml = isEventCoverUrl(eventRow.cover_image_url)
+        ? `<img src="${eventRow.cover_image_url}" alt="${evName}" style="width: 100%; max-width: 600px; height: auto; border-radius: 8px; margin-bottom: 20px; display: block;" />`
+        : "";
+
       const send = await sendGuardedEmail({
         brand: campaignBrand,
         category: "notification",
@@ -193,6 +198,8 @@ export async function POST(request: NextRequest) {
             <p>Hi${invName ? ` ${invName}` : ""},</p>
 
             <p>${escapeHtml(user.email ?? "")} has invited you to sign up for teaching sessions:</p>
+
+            ${coverImageHtml}
 
             <div style="background-color: #f3f4f6; padding: 20px; border-radius: 8px; margin: 20px 0;">
               <h3 style="margin-top: 0; color: #1f2937;">${evName}</h3>

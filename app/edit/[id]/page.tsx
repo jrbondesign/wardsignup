@@ -39,6 +39,7 @@ import { groupSessionsForDisplay } from "@/lib/edit-session-classes";
 import { isMissingSortOrderError, stripSortOrder } from "@/lib/session-sort-order";
 import { INITIAL_FORM_STATE, type CreateFormState, type ItemDraft } from "@/lib/create-form-state";
 import { formatTime, formatTimeRange } from "@/lib/utils";
+import { resizeImage } from "@/lib/resize-image";
 
 interface SessionData {
   id?: string;
@@ -558,7 +559,7 @@ export default function EditEventPage() {
         const supabase = createClientComponentClient();
         const { data: { session } } = await supabase.auth.getSession();
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", await resizeImage(file));
         form.append("type", "cover");
         form.append("eventId", eventId);
         const res = await fetch("/api/upload", {

@@ -51,7 +51,12 @@ const nextConfig = {
         port: "",
         pathname: "/storage/v1/object/public/**",
       },
+      // Local Supabase stack (dev only) so uploaded covers render in next/image.
+      ...(process.env.NODE_ENV === "development"
+        ? [{ protocol: "http", hostname: "127.0.0.1", port: "54321", pathname: "/storage/v1/object/public/**" }]
+        : []),
     ],
+    dangerouslyAllowLocalIP: process.env.NODE_ENV === "development",
   },
   async headers() {
     return [
