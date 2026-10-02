@@ -126,9 +126,11 @@ interface Props {
   /** Reports whether the user has started filling the form, so the page can confirm
    *  before a template/AI pick remounts (and wipes) in-progress work. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Organization ID for feature gating (e.g. Google Calendar sync). */
+  organizationId?: string;
 }
 
-export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult, onDirtyChange }: Props) {
+export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult, onDirtyChange, organizationId }: Props) {
   const router = useRouter();
   const [state, dispatch] = useReducer(
     reducer,
@@ -516,7 +518,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
       )}
 
       <VisibilitySection state={state} set={(patch) => dispatch({ type: "set", patch })} />
-      <NotificationsSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
+      <NotificationsSection state={state} set={(patch) => dispatch({ type: "set", patch })} organizationId={organizationId} />
       <EventSettingsSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
 
       {error && (

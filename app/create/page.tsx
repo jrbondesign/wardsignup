@@ -52,6 +52,7 @@ function CreateInner() {
   type OrgState = { kind: "loading" } | { kind: "missing" } | { kind: "needsNaming"; id: string; name: string } | { kind: "ready" };
   const [orgState, setOrgState] = useState<OrgState>({ kind: "loading" });
   const [orgName, setOrgName] = useState<string | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
 
   useEffect(() => {
     const check = async () => {
@@ -73,6 +74,7 @@ function CreateInner() {
       // picked, not the first one they happen to own.
       const org = await getCurrentOrganization(supabase, authUser, brand.id);
       setOrgName(org?.name ?? null);
+      setOrgId(org?.id ?? null);
       if (!org) setOrgState({ kind: "missing" });
       else if (org.needs_naming) setOrgState({ kind: "needsNaming", id: org.id, name: org.name });
       else setOrgState({ kind: "ready" });
@@ -265,6 +267,7 @@ function CreateInner() {
               key={formKey}
               initialTemplateKey={initialTemplateKey}
               initialAiResult={aiResult}
+              organizationId={orgId ?? undefined}
               onDirtyChange={(dirty) => {
                 formDirtyRef.current = dirty;
               }}

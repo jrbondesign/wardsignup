@@ -5,7 +5,7 @@ import { campaignMatchesHostBrand } from "@/lib/campaign-brand-guard";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
 import type { Campaign } from "@/lib/types";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
-import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
+import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from "@/lib/gcal-feature";
 import { getPostHogClient } from "@/lib/posthog-server";
 
 function hostBrand(request: NextRequest) {
@@ -53,6 +53,15 @@ export async function PATCH(
     if (!(await userCanAdminCampaign(supabase, user, event as Campaign))) {
       return NextResponse.json(
         { error: "You do not have permission to edit this event" },
+        { status: 403 }
+      );
+    }
+
+    // Require org allowlist check
+    const orgId = (event as Campaign).organization_id;
+    if (!orgId || !isGcalSyncEnabledForOrg(orgId)) {
+      return NextResponse.json(
+        { error: "Calendar sync is not enabled for this organization" },
         { status: 403 }
       );
     }
@@ -228,6 +237,15 @@ export async function POST(
     if (!(await userCanAdminCampaign(supabase, user, event as Campaign))) {
       return NextResponse.json(
         { error: "You do not have permission to sync this event" },
+        { status: 403 }
+      );
+    }
+
+    // Require org allowlist check
+    const orgId = (event as Campaign).organization_id;
+    if (!orgId || !isGcalSyncEnabledForOrg(orgId)) {
+      return NextResponse.json(
+        { error: "Calendar sync is not enabled for this organization" },
         { status: 403 }
       );
     }

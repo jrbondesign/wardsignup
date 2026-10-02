@@ -7,9 +7,10 @@ import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
 interface Props {
   state: CreateFormState;
   set: (patch: Partial<CreateFormState>) => void;
+  organizationId?: string;
 }
 
-export default function NotificationsSection({ state, set }: Props) {
+export default function NotificationsSection({ state, set, organizationId }: Props) {
   const open = state.expanded.notifications ?? false;
   const toggle = () => set({ expanded: { ...state.expanded, notifications: !open } });
   
@@ -17,13 +18,13 @@ export default function NotificationsSection({ state, set }: Props) {
   const [hasConnection, setHasConnection] = useState(false);
   const [loadingCalendars, setLoadingCalendars] = useState(false);
   
-  const showCalendarSync = isGcalSyncUIEnabled() && (state.eventType === "spots" || state.eventType === "rsvp");
+  const showCalendarSync = isGcalSyncUIEnabled(organizationId) && (state.eventType === "spots" || state.eventType === "rsvp");
 
   useEffect(() => {
-    if (!showCalendarSync || !open) return;
+    if (!showCalendarSync || !open || !organizationId) return;
     
     setLoadingCalendars(true);
-    fetch("/api/integrations/google/calendars")
+    fetch(`/api/integrations/google/calendars?org_id=${encodeURIComponent(organizationId)}`)
       .then(async (res) => {
         if (res.ok) {
           const data = await res.json();
@@ -39,7 +40,7 @@ export default function NotificationsSection({ state, set }: Props) {
         setCalendars([]);
       })
       .finally(() => setLoadingCalendars(false));
-  }, [showCalendarSync, open]);
+  }, [showCalendarSync, open, organizationId]);
 
   return (
     <section className="rounded-2xl border-[1.5px] border-[rgba(14,150,176,0.18)] bg-[#F8FCFD] p-4 sm:p-5">

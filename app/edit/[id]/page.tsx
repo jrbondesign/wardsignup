@@ -152,6 +152,7 @@ export default function EditEventPage() {
   const [eventName, setEventName] = useState("");
   const [eventDescription, setEventDescription] = useState("");
   const [eventTimezone, setEventTimezone] = useState("America/Phoenix");
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionData[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -332,6 +333,9 @@ export default function EditEventPage() {
           setLoading(false);
           return;
         }
+
+        // Store organization ID for feature gating
+        setOrganizationId((event as any).organization_id ?? null);
 
         // Future: Load org logo if Ward Signup supports custom logos
         const profileLogoUrl = null;
@@ -1651,6 +1655,7 @@ export default function EditEventPage() {
                 }}
               />
               <NotificationsSection
+                organizationId={organizationId ?? undefined}
                 state={{
                   ...INITIAL_FORM_STATE,
                   eventType: "items",
@@ -1826,6 +1831,7 @@ export default function EditEventPage() {
                 }}
               />
               <NotificationsSection
+                organizationId={organizationId ?? undefined}
                 state={{
                   ...INITIAL_FORM_STATE,
                   eventType: (event as any)?.event_type || "spots",
