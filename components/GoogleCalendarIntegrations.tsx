@@ -48,10 +48,40 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
     load();
   }, [organizationId]);
 
-  const handleConnect = () => {
-    const returnPath = window.location.pathname;
-    const url = `/api/integrations/google/connect?org_id=${organizationId}&return_path=${encodeURIComponent(returnPath)}`;
-    window.location.href = url;
+  const handleConnect = async () => {
+    setMessage(null);
+
+    try {
+      const supabase = createClientComponentClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.access_token) {
+        setMessage({ kind: "error", text: "Please sign in again to connect Google Calendar." });
+        return;
+      }
+
+      const returnPath = window.location.pathname;
+      const url = `/api/integrations/google/connect?org_id=${organizationId}&return_path=${encodeURIComponent(returnPath)}`;
+
+      const res = await fetch(url, {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+        },
+        redirect: "manual",
+      });
+
+      // The endpoint returns a 307 redirect to Google's OAuth consent URL
+      const location = res.headers.get("location");
+      if (location) {
+        window.location.assign(location);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setMessage({ kind: "error", text: data?.error ?? "Failed to connect. Please try again." });
+      }
+    } catch {
+      setMessage({ kind: "error", text: "Network error. Please try again." });
+    }
   };
 
   const handleDisconnect = async () => {
