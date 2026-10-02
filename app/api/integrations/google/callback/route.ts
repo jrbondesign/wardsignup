@@ -9,36 +9,38 @@ import { getPostHogClient } from '@/lib/posthog-server';
  * OAuth callback handler. Exchange code for tokens and store connection.
  */
 export async function GET(request: Request) {
+  const url = new URL(request.url);
+  const { origin } = url;
+
   if (!isGcalSyncFeatureEnabled()) {
-    return NextResponse.redirect('/settings?error=gcal_disabled');
+    return NextResponse.redirect(new URL('/settings?error=gcal_disabled', origin));
   }
 
   try {
-    const url = new URL(request.url);
     const code = url.searchParams.get('code');
     const stateParam = url.searchParams.get('state');
     const error = url.searchParams.get('error');
 
     if (error) {
       console.error('[google/callback] OAuth error:', error);
-      return NextResponse.redirect('/settings?error=gcal_oauth_denied');
+      return NextResponse.redirect(new URL('/settings?error=gcal_oauth_denied', origin));
     }
 
     if (!code || !stateParam) {
-      return NextResponse.redirect('/settings?error=gcal_missing_params');
+      return NextResponse.redirect(new URL('/settings?error=gcal_missing_params', origin));
     }
 
     // Verify state
     const state = verifyState(stateParam);
     if (!state) {
       console.error('[google/callback] Invalid or expired state');
-      return NextResponse.redirect('/settings?error=gcal_invalid_state');
+      return NextResponse.redirect(new URL('/settings?error=gcal_invalid_state', origin));
     }
 
     // Require org allowlist check
     if (!isGcalSyncEnabledForOrg(state.orgId)) {
       console.error('[google/callback] Org not in allowlist:', state.orgId);
-      return NextResponse.redirect('/settings?error=gcal_org_not_enabled');
+      return NextResponse.redirect(new URL('/settings?error=gcal_org_not_enabled', origin));
     }
 
     // Exchange code for tokens
@@ -46,7 +48,7 @@ export async function GET(request: Request) {
     
     if (!tokens.refresh_token) {
       console.error('[google/callback] No refresh token received');
-      return NextResponse.redirect('/settings?error=gcal_no_refresh_token');
+      return NextResponse.redirect(new URL('/settings?error=gcal_no_refresh_token', origin));
     }
 
     // Get user info from Google to get email
@@ -87,7 +89,7 @@ export async function GET(request: Request) {
 
     if (dbError) {
       console.error('[google/callback] DB error:', dbError);
-      return NextResponse.redirect('/settings?error=gcal_db_error');
+      return NextResponse.redirect(new URL('/settings?error=gcal_db_error', origin));
     }
     
     // Fire PostHog event for successful connection
@@ -102,11 +104,11 @@ export async function GET(request: Request) {
     });
 
     // Success - redirect to return path
-    const redirectUrl = new URL(state.returnPath, url.origin);
+    const redirectUrl = new URL(state.returnPath, origin);
     redirectUrl.searchParams.set('gcal_connected', '1');
     return NextResponse.redirect(redirectUrl.toString());
   } catch (err) {
     console.error('[google/callback] error:', err);
-    return NextResponse.redirect('/settings?error=gcal_internal_error');
+    return NextResponse.redirect(new URL('/settings?error=gcal_internal_error', origin));
   }
 }
