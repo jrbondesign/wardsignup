@@ -1,6 +1,8 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { consumeActionRate } from "@/lib/rate-limit";
+import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
+import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,6 +45,17 @@ export async function POST(request: NextRequest) {
     if (deleteErr) {
       console.error("signups/cancel delete:", deleteErr);
       return NextResponse.json({ error: "Failed to cancel signup." }, { status: 500 });
+    }
+
+    // Sync to Google Calendar (fire-and-forget; never fails the cancellation)
+    if (isGcalSyncFeatureEnabled()) {
+      after(async () => {
+        try {
+          await syncCampaignCalendar(signup.campaign_id);
+        } catch (e) {
+          console.error("Calendar sync after cancel:", e);
+        }
+      });
     }
 
     return NextResponse.json({ ok: true });

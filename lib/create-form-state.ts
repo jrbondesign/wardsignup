@@ -117,6 +117,11 @@ export interface CreateFormState {
   leaderName: string;
   leaderEmail: string;
 
+  // ── Google Calendar sync ─────────────────────────────────────────────────
+  calendarSyncEnabled: boolean;
+  calendarId: string;
+  calendarName: string;
+
   // ── Misc ─────────────────────────────────────────────────────────────────
   eventTimezone: string;
 
@@ -194,6 +199,10 @@ export const INITIAL_FORM_STATE: CreateFormState = {
   organizerInstantNotifyEnabled: true,
   leaderName: "",
   leaderEmail: "",
+
+  calendarSyncEnabled: false,
+  calendarId: "",
+  calendarName: "",
 
   eventTimezone: DEFAULT_TIMEZONE,
 

@@ -1,6 +1,8 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import type { CreateFormState } from "@/lib/create-form-state";
+import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
 
 interface Props {
   state: CreateFormState;
@@ -10,6 +12,34 @@ interface Props {
 export default function NotificationsSection({ state, set }: Props) {
   const open = state.expanded.notifications ?? false;
   const toggle = () => set({ expanded: { ...state.expanded, notifications: !open } });
+  
+  const [calendars, setCalendars] = useState<Array<{ id: string; summary: string }>>([]);
+  const [hasConnection, setHasConnection] = useState(false);
+  const [loadingCalendars, setLoadingCalendars] = useState(false);
+  
+  const showCalendarSync = isGcalSyncUIEnabled() && (state.eventType === "spots" || state.eventType === "rsvp");
+
+  useEffect(() => {
+    if (!showCalendarSync || !open) return;
+    
+    setLoadingCalendars(true);
+    fetch("/api/integrations/google/calendars")
+      .then(async (res) => {
+        if (res.ok) {
+          const data = await res.json();
+          setCalendars(data.calendars || []);
+          setHasConnection(true);
+        } else {
+          setHasConnection(false);
+          setCalendars([]);
+        }
+      })
+      .catch(() => {
+        setHasConnection(false);
+        setCalendars([]);
+      })
+      .finally(() => setLoadingCalendars(false));
+  }, [showCalendarSync, open]);
 
   return (
     <section className="rounded-2xl border-[1.5px] border-[rgba(14,150,176,0.18)] bg-[#F8FCFD] p-4 sm:p-5">
@@ -61,6 +91,65 @@ export default function NotificationsSection({ state, set }: Props) {
             onChange={(v) => set({ organizerDigestEnabled: v })}
             label="Send me a daily digest of new signups"
           />
+          
+          {showCalendarSync && (
+            <div className="pt-2 border-t border-[rgba(14,150,176,0.15)]">
+              <Toggle
+                checked={state.calendarSyncEnabled}
+                onChange={(v) => {
+                  set({ calendarSyncEnabled: v });
+                  if (!v) {
+                    set({ calendarId: "", calendarName: "" });
+                  }
+                }}
+                label="Sync signups to Google Calendar"
+                help="Member names, contact details, and notes will be written to your selected calendar."
+              />
+              
+              {state.calendarSyncEnabled && (
+                <div className="mt-3 ml-6">
+                  {!hasConnection && (
+                    <p className="text-[12px] text-[#5A8399] mb-2">
+                      <a href="/settings" className="text-[#0E96B0] hover:underline">
+                        Connect your Google account
+                      </a>{" "}
+                      first to enable calendar sync.
+                    </p>
+                  )}
+                  
+                  {hasConnection && (
+                    <div>
+                      <label className="block text-[12px] font-medium text-[#2E5566] mb-1.5">
+                        Calendar
+                      </label>
+                      {loadingCalendars ? (
+                        <div className="text-[12px] text-[#5A8399]">Loading calendars...</div>
+                      ) : (
+                        <select
+                          value={state.calendarId}
+                          onChange={(e) => {
+                            const cal = calendars.find(c => c.id === e.target.value);
+                            set({ 
+                              calendarId: e.target.value,
+                              calendarName: cal?.summary || ""
+                            });
+                          }}
+                          className="w-full px-3 py-2 text-[13px] border border-[rgba(14,150,176,0.3)] rounded-lg focus:ring-2 focus:ring-[#0E96B0] focus:border-transparent"
+                        >
+                          <option value="">Select a calendar...</option>
+                          {calendars.map((cal) => (
+                            <option key={cal.id} value={cal.id}>
+                              {cal.summary}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </section>

@@ -1,0 +1,17 @@
+name: Calendar Reconcile
+
+on:
+  schedule:
+    # Run hourly at :05 past the hour
+    - cron: '5 * * * *'
+  workflow_dispatch:
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sync Google Calendar events
+        run: |
+          curl -X GET "${{ secrets.CRON_ENDPOINT_URL }}/api/cron/calendar-reconcile" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -f
