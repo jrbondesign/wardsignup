@@ -215,8 +215,8 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
         .maybeSingle();
       
       if (calSyncData) {
-        setCalendarSyncEnabled(Boolean(calSyncData.enabled));
-        setCalendarLastSyncedAt(calSyncData.last_synced_at);
+        setCalendarSyncEnabled(Boolean((calSyncData as any).enabled));
+        setCalendarLastSyncedAt((calSyncData as any).last_synced_at);
       }
 
       const resolvedType: "spots" | "items" | "rsvp" =

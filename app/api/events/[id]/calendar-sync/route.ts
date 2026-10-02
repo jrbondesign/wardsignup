@@ -153,7 +153,7 @@ export async function PATCH(
         .from("campaign_calendar_sync")
         .insert({
           campaign_id: eventId,
-          connection_id: connection.id,
+          connection_id: (connection as any).id,
           ...updates,
         } as never)
         .select()
@@ -184,8 +184,8 @@ export async function PATCH(
     return NextResponse.json(
       {
         success: true,
-        last_synced_at: result.last_synced_at,
-        last_error: result.last_error,
+        last_synced_at: (result as any).last_synced_at,
+        last_error: (result as any).last_error,
       },
       { status: 200 }
     );

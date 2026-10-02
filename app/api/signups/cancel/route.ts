@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     if (isGcalSyncFeatureEnabled()) {
       after(async () => {
         try {
-          await syncCampaignCalendar(signup.campaign_id);
+          await syncCampaignCalendar((signup as any).campaign_id);
         } catch (e) {
           console.error("Calendar sync after cancel:", e);
         }

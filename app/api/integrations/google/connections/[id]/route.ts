@@ -10,7 +10,7 @@ import { createServiceRoleClient } from '@/lib/supabase-admin';
  */
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   if (!isGcalSyncFeatureEnabled()) {
     return NextResponse.json(
@@ -26,7 +26,7 @@ export async function DELETE(
     }
 
     const { user } = auth;
-    const connectionId = params.id;
+    const { id: connectionId } = await params;
 
     // Get connection (verify ownership)
     const admin = createServiceRoleClient();
