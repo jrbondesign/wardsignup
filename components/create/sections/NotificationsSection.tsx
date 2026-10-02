@@ -118,32 +118,41 @@ export default function NotificationsSection({ state, set }: Props) {
                   )}
                   
                   {hasConnection && (
-                    <div>
-                      <label className="block text-[12px] font-medium text-[#2E5566] mb-1.5">
-                        Calendar
-                      </label>
-                      {loadingCalendars ? (
-                        <div className="text-[12px] text-[#5A8399]">Loading calendars...</div>
-                      ) : (
-                        <select
-                          value={state.calendarId}
-                          onChange={(e) => {
-                            const cal = calendars.find(c => c.id === e.target.value);
-                            set({ 
-                              calendarId: e.target.value,
-                              calendarName: cal?.summary || ""
-                            });
-                          }}
-                          className="w-full px-3 py-2 text-[13px] border border-[rgba(14,150,176,0.3)] rounded-lg focus:ring-2 focus:ring-[#0E96B0] focus:border-transparent"
-                        >
-                          <option value="">Select a calendar...</option>
-                          {calendars.map((cal) => (
-                            <option key={cal.id} value={cal.id}>
-                              {cal.summary}
-                            </option>
-                          ))}
-                        </select>
-                      )}
+                    <div className="space-y-3">
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#2E5566] mb-1.5">
+                          Calendar
+                        </label>
+                        {loadingCalendars ? (
+                          <div className="text-[12px] text-[#5A8399]">Loading calendars...</div>
+                        ) : (
+                          <select
+                            value={state.calendarId}
+                            onChange={(e) => {
+                              const cal = calendars.find(c => c.id === e.target.value);
+                              set({ 
+                                calendarId: e.target.value,
+                                calendarName: cal?.summary || ""
+                              });
+                            }}
+                            className="w-full px-3 py-2 text-[13px] border border-[rgba(14,150,176,0.3)] rounded-lg focus:ring-2 focus:ring-[#0E96B0] focus:border-transparent"
+                          >
+                            <option value="">Select a calendar...</option>
+                            {calendars.map((cal) => (
+                              <option key={cal.id} value={cal.id}>
+                                {cal.summary}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                      </div>
+                      
+                      <Toggle
+                        checked={state.inviteLeader}
+                        onChange={(v) => set({ inviteLeader: v })}
+                        label="Send Google Calendar invitations to the leader"
+                        help="When enabled, the leader will receive Google Calendar invitation emails."
+                      />
                     </div>
                   )}
                 </div>

@@ -56,6 +56,23 @@ function formatSessionDate(iso: string, withYear = false): string {
   });
 }
 
+/** Format last sync time as relative time (e.g. "2m ago", "1h ago") */
+function formatSyncTime(isoString: string): string {
+  const now = Date.now();
+  const then = new Date(isoString).getTime();
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
 export default function AdminPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
   const brand = useBrand();
@@ -88,6 +105,8 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
+  const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(false);
+  const [calendarLastSyncedAt, setCalendarLastSyncedAt] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -187,6 +206,18 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
 
       setEvent(eventData);
       setCoverUrl((eventData as any).cover_image_url ?? null);
+      
+      // Load calendar sync status
+      const { data: calSyncData } = await supabase
+        .from("campaign_calendar_sync")
+        .select("enabled, last_synced_at")
+        .eq("campaign_id", eventId)
+        .maybeSingle();
+      
+      if (calSyncData) {
+        setCalendarSyncEnabled(Boolean(calSyncData.enabled));
+        setCalendarLastSyncedAt(calSyncData.last_synced_at);
+      }
 
       const resolvedType: "spots" | "items" | "rsvp" =
         (eventData as any).event_type === "items" ? "items"
@@ -458,6 +489,17 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                   <h1 className="font-serif text-[clamp(24px,3.5vw,36px)] text-[#0D2B35] tracking-[-0.4px] leading-tight flex-1 min-w-0">
                     {event.name}
                   </h1>
+                  {calendarSyncEnabled && calendarLastSyncedAt && (
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-[#0E96B0] bg-[#E6F7FB] border border-[#0E96B0]/20 rounded-full whitespace-nowrap flex-shrink-0">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                        <line x1="16" y1="2" x2="16" y2="6"/>
+                        <line x1="8" y1="2" x2="8" y2="6"/>
+                        <line x1="3" y1="10" x2="21" y2="10"/>
+                      </svg>
+                      Synced to Google Calendar · {formatSyncTime(calendarLastSyncedAt)}
+                    </div>
+                  )}
                   {/* Mobile: actions in More menu */}
                   <div className="relative flex-shrink-0 sm:hidden" ref={moreMenuRef}>
                     <button

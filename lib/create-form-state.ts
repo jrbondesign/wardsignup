@@ -121,6 +121,7 @@ export interface CreateFormState {
   calendarSyncEnabled: boolean;
   calendarId: string;
   calendarName: string;
+  inviteLeader: boolean;
 
   // ── Misc ─────────────────────────────────────────────────────────────────
   eventTimezone: string;
@@ -203,6 +204,7 @@ export const INITIAL_FORM_STATE: CreateFormState = {
   calendarSyncEnabled: false,
   calendarId: "",
   calendarName: "",
+  inviteLeader: false,
 
   eventTimezone: DEFAULT_TIMEZONE,
 
