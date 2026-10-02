@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from "next/server";
+import { NextRequest, NextResponse, after } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { getBrandFromHost } from "@/lib/brand";
 import { campaignMatchesHostBrand } from "@/lib/campaign-brand-guard";
@@ -6,6 +6,8 @@ import { userCanAdminCampaign, userCanDeleteCampaign } from "@/lib/campaign-acce
 import { isValidIanaTimezone } from "@/lib/event-timezone";
 import type { Campaign } from "@/lib/types";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
+import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
 function hostBrand(request: NextRequest) {
   const host =
@@ -362,6 +364,24 @@ export async function PATCH(
         { error: "Failed to update event" },
         { status: 500 }
       );
+    }
+
+    // Sync to Google Calendar if timezone, leader, or calendar sync settings changed
+    const shouldSync =
+      hasEventTimezone ||
+      "leader_name" in updates ||
+      "leader_email" in updates ||
+      "calendar_sync_enabled" in updates ||
+      "calendar_id" in updates;
+
+    if (shouldSync && isGcalSyncFeatureEnabled()) {
+      after(async () => {
+        try {
+          await syncCampaignCalendar(eventId);
+        } catch (e) {
+          console.error("Calendar sync after event update:", e);
+        }
+      });
     }
 
     return NextResponse.json(

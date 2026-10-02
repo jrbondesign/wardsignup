@@ -1,6 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
+import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
+import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
 /** PATCH /api/sessions/[id] — update a session's time, capacity, location, or notes */
 export async function PATCH(
@@ -115,6 +117,7 @@ export async function DELETE(
       );
     }
 
+    const campaignId = (session as { campaign_id: string }).campaign_id;
     const { error: deleteError } = await supabase
       .from("sessions")
       .delete()
@@ -123,6 +126,17 @@ export async function DELETE(
     if (deleteError) {
       console.error("DELETE /api/sessions/[id] error:", deleteError);
       return NextResponse.json({ error: "Failed to delete session" }, { status: 500 });
+    }
+
+    // Sync to Google Calendar (fire-and-forget; never fails the delete)
+    if (isGcalSyncFeatureEnabled()) {
+      after(async () => {
+        try {
+          await syncCampaignCalendar(campaignId);
+        } catch (e) {
+          console.error("Calendar sync after session delete:", e);
+        }
+      });
     }
 
     return NextResponse.json({ success: true });
