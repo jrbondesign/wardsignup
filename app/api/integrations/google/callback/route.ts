@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { isGcalSyncFeatureEnabled } from '@/lib/gcal-feature';
+import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
 import { verifyState, exchangeCode, encryptToken } from '@/lib/google-oauth';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
 import { getPostHogClient } from '@/lib/posthog-server';
@@ -33,6 +33,12 @@ export async function GET(request: Request) {
     if (!state) {
       console.error('[google/callback] Invalid or expired state');
       return NextResponse.redirect('/settings?error=gcal_invalid_state');
+    }
+
+    // Require org allowlist check
+    if (!isGcalSyncEnabledForOrg(state.orgId)) {
+      console.error('[google/callback] Org not in allowlist:', state.orgId);
+      return NextResponse.redirect('/settings?error=gcal_org_not_enabled');
     }
 
     // Exchange code for tokens

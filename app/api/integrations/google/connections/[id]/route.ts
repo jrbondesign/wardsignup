@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuthFromRequest } from '@/lib/auth';
-import { isGcalSyncFeatureEnabled } from '@/lib/gcal-feature';
+import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
 import { revokeToken } from '@/lib/google-oauth';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
 
@@ -41,6 +41,14 @@ export async function DELETE(
       return NextResponse.json(
         { error: 'Connection not found' },
         { status: 404 }
+      );
+    }
+
+    // Require org allowlist check
+    if (!isGcalSyncEnabledForOrg((connection as any).organization_id)) {
+      return NextResponse.json(
+        { error: 'Google Calendar sync is not enabled for this organization' },
+        { status: 403 }
       );
     }
 

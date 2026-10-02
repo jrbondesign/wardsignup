@@ -22,8 +22,8 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
   const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
 
-  // Don't show the section if feature flag is off
-  if (!isGcalSyncUIEnabled()) {
+  // Don't show the section if feature flag is off or org not in allowlist
+  if (!isGcalSyncUIEnabled(organizationId)) {
     return null;
   }
 
