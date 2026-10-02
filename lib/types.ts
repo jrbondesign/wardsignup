@@ -535,7 +535,6 @@ export interface Database {
           last_error: string | null;
         };
       };
-      [_ in never]: never;
     };
     Functions: {
       get_public_campaign: {

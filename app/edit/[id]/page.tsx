@@ -352,12 +352,12 @@ export default function EditEventPage() {
           .maybeSingle();
         
         if (calSyncData) {
-          setCalendarSyncEnabled(Boolean(calSyncData.enabled));
-          setCalendarId(calSyncData.calendar_id || "");
-          setCalendarName(calSyncData.calendar_name || "");
-          setInviteLeader(Boolean(calSyncData.invite_leader));
-          setCalendarLastSyncedAt(calSyncData.last_synced_at);
-          setCalendarLastError(calSyncData.last_error);
+          setCalendarSyncEnabled(Boolean((calSyncData as any).enabled));
+          setCalendarId((calSyncData as any).calendar_id || "");
+          setCalendarName((calSyncData as any).calendar_name || "");
+          setInviteLeader(Boolean((calSyncData as any).invite_leader));
+          setCalendarLastSyncedAt((calSyncData as any).last_synced_at);
+          setCalendarLastError((calSyncData as any).last_error);
         }
 
         // Items events: load items and render the items editor

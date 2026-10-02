@@ -79,7 +79,7 @@ export async function GET(request: NextRequest) {
       // Get unique campaign IDs
       const uniqueCampaignIds = new Set<string>();
       for (const row of campaigns || []) {
-        uniqueCampaignIds.add(row.campaign_id);
+        uniqueCampaignIds.add((row as any).campaign_id);
       }
 
       const campaignIds = Array.from(uniqueCampaignIds);
