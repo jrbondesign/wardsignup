@@ -111,7 +111,7 @@ export default function NotificationsSection({ state, set, organizationId }: Pro
                 <div className="mt-3 ml-6">
                   {!hasConnection && (
                     <p className="text-[12px] text-[#5A8399] mb-2">
-                      <a href="/settings" className="text-[#0E96B0] hover:underline">
+                      <a href="/settings/organization" className="text-[#0E96B0] hover:underline">
                         Connect your Google account
                       </a>{" "}
                       first to enable calendar sync.
