@@ -585,26 +585,21 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-6">
             {/* Future: Cover image support */}
             <div className="p-7">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
-              <div className="flex-1 min-w-0 w-full">
-                <div className="flex items-start gap-3">
-                  {/* Future: Org logo support */}
-                  <h1 className="font-serif text-[clamp(24px,3.5vw,36px)] text-[#0D2B35] tracking-[-0.4px] leading-tight flex-1 min-w-0">
-                    {event.name}
-                  </h1>
-                  {calendarSyncEnabled && calendarLastSyncedAt && (
-                    <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-[#0E96B0] bg-[#E6F7FB] border border-[#0E96B0]/20 rounded-full whitespace-nowrap flex-shrink-0">
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
-                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-                        <line x1="16" y1="2" x2="16" y2="6"/>
-                        <line x1="8" y1="2" x2="8" y2="6"/>
-                        <line x1="3" y1="10" x2="21" y2="10"/>
-                      </svg>
-                      On Google Calendar · {formatSyncTime(calendarLastSyncedAt)}
-                    </div>
-                  )}
-                  {/* Mobile: actions in More menu */}
-                  <div className="relative flex-shrink-0 sm:hidden" ref={moreMenuRef}>
+            <div className="mb-6">
+              <div className="flex items-center justify-end gap-2 sm:gap-3 flex-wrap mb-3">
+                {calendarSyncEnabled && calendarLastSyncedAt && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-[#0E96B0] bg-[#E6F7FB] border border-[#0E96B0]/20 rounded-full whitespace-nowrap flex-shrink-0 mr-auto">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                      <line x1="16" y1="2" x2="16" y2="6"/>
+                      <line x1="8" y1="2" x2="8" y2="6"/>
+                      <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                    On Google Calendar · {formatSyncTime(calendarLastSyncedAt)}
+                  </div>
+                )}
+                {/* Mobile: actions in More menu */}
+                <div className="relative flex-shrink-0 sm:hidden" ref={moreMenuRef}>
                     <button
                       type="button"
                       onClick={() => setMoreMenuOpen((o) => !o)}
@@ -689,16 +684,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                       </div>
                     )}
                   </div>
-                </div>
-                {event.description && (
-                  <p className="text-sm text-[#5A8399] mt-2 leading-relaxed whitespace-pre-wrap">
-                    {event.description}
-                  </p>
-                )}
-              </div>
-
-              {/* sm+: inline actions */}
-              <div className="hidden sm:flex flex-shrink-0 flex-row flex-wrap items-center justify-end gap-x-3 gap-y-2">
+                <div className="hidden sm:flex flex-shrink-0 flex-row flex-wrap items-center justify-end gap-x-3 gap-y-2">
                 <Link
                   href={`/edit/${eventId}`}
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2E5566] hover:text-[#0E96B0] transition-colors no-underline"
@@ -779,7 +765,16 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                   </svg>
                   Delete
                 </button>
+                </div>
               </div>
+              <h1 className="font-serif text-[clamp(24px,3.5vw,36px)] text-[#0D2B35] tracking-[-0.4px] leading-tight">
+                {event.name}
+              </h1>
+              {event.description && (
+                <p className="text-sm text-[#5A8399] mt-2 leading-relaxed whitespace-pre-wrap">
+                  {event.description}
+                </p>
+              )}
             </div>
 
             {/* Stats */}
