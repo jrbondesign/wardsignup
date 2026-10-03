@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 import { claimCronRun, hourBucketDate } from "@/lib/rate-limit";
+import { loadEnabledCampaignIdsWithUpcomingSessions } from "@/lib/calendar-reconcile";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -50,23 +51,8 @@ export async function GET(request: NextRequest) {
     const admin = createServiceRoleClient();
 
     try {
-      // Find enabled campaigns with future sessions
-      const now = new Date().toISOString();
-      const { data: campaigns, error: campaignsError } = await admin
-        .from("campaign_calendar_sync")
-        .select(`
-          campaign_id,
-          campaigns!inner (
-            id,
-            sessions!inner (
-              id,
-              start_time
-            )
-          )
-        `)
-        .eq("enabled", true)
-        .gte("campaigns.sessions.start_time", now)
-        .limit(50);
+      const { campaignIds, error: campaignsError } =
+        await loadEnabledCampaignIdsWithUpcomingSessions(admin);
 
       if (campaignsError) {
         console.error("Calendar reconcile: failed to load campaigns:", campaignsError);
@@ -76,13 +62,6 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      // Get unique campaign IDs
-      const uniqueCampaignIds = new Set<string>();
-      for (const row of campaigns || []) {
-        uniqueCampaignIds.add((row as any).campaign_id);
-      }
-
-      const campaignIds = Array.from(uniqueCampaignIds);
       const results = {
         total: campaignIds.length,
         success: 0,
