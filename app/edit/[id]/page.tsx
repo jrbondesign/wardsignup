@@ -180,6 +180,8 @@ export default function EditEventPage() {
   const [calendarName, setCalendarName] = useState("");
   const [inviteLeader, setInviteLeader] = useState(false);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarLastSyncedAt, setCalendarLastSyncedAt] = useState<string | null>(null);
+  const [calendarLastError, setCalendarLastError] = useState<string | null>(null);
   
   const [sendingReport, setSendingReport] = useState(false);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
