@@ -140,7 +140,7 @@ export default async function PrivacyPolicy() {
               organizer’s own Google Calendar, or as required by law.
             </p>
             <p className="mb-3">
-              {brand.name}&apos;s use of information received from Google APIs adheres to the{" "}
+              {`${brand.name}'s`} use of information received from Google APIs adheres to the{" "}
               <a
                 href="https://developers.google.com/terms/api-services-user-data-policy"
                 className="text-[#0E96B0] hover:text-[#08647E] font-medium"
@@ -201,7 +201,7 @@ export default async function PrivacyPolicy() {
               <li>Request deletion of your account and associated data</li>
               <li>Withdraw consent for email communications</li>
               <li>
-                Disconnect Google Calendar in organization settings to revoke {brand.name}&apos;s access to
+                Disconnect Google Calendar in organization settings to revoke {`${brand.name}'s`} access to
                 that Google account
               </li>
             </ul>
