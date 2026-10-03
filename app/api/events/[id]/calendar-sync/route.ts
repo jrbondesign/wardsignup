@@ -117,10 +117,22 @@ export async function PATCH(
       }
       result = data;
     } else {
-      // Need connection_id to create a new record
-      if (!("calendar_id" in updates) || !("calendar_name" in updates)) {
+      // If no existing record and we're just turning sync off, that's a no-op
+      if (updates.enabled === false) {
         return NextResponse.json(
-          { error: "calendar_id and calendar_name are required" },
+          {
+            success: true,
+            last_synced_at: null,
+            last_error: null,
+          },
+          { status: 200 }
+        );
+      }
+
+      // Creating a new record requires calendar selection
+      if (!("calendar_id" in updates) || !updates.calendar_id || !("calendar_name" in updates) || !updates.calendar_name) {
+        return NextResponse.json(
+          { error: "Please select a calendar to sync with." },
           { status: 400 }
         );
       }

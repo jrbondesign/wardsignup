@@ -25,7 +25,7 @@ export async function GET(request: Request) {
     const { user } = auth;
     const url = new URL(request.url);
     const orgId = url.searchParams.get('org_id');
-    const returnPath = url.searchParams.get('return_path') || '/settings';
+    const returnPath = url.searchParams.get('return_path') || '/settings/organization';
 
     if (!orgId) {
       return NextResponse.json({ error: 'org_id required' }, { status: 400 });
