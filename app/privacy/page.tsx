@@ -53,7 +53,7 @@ export default async function PrivacyPolicy() {
 
         <div className="space-y-6 text-[#2E5566]">
           <p className="text-sm text-[#5A8399]">
-            Last updated: March 26, 2026
+            Last updated: October 3, 2026
           </p>
 
           <section>
@@ -76,6 +76,9 @@ export default async function PrivacyPolicy() {
               <li>
                 <strong>Invitation Data:</strong> Email addresses and names of individuals you invite to events
               </li>
+              <li>
+                <strong>Google Calendar connection data</strong> (only if an organizer chooses to connect Google Calendar): the Google account email, an encrypted refresh token, the chosen calendar’s identifier and display name, and identifiers of calendar events we create for synced time slots
+              </li>
             </ul>
           </section>
 
@@ -89,6 +92,9 @@ export default async function PrivacyPolicy() {
               <li>Send authentication emails (magic links)</li>
               <li>Send event invitations on your behalf</li>
               <li>Enable event organizers to manage signups and track attendance</li>
+              <li>
+                Optionally write filled time slots onto a Google Calendar the organizer chooses, when they turn on Google Calendar sync
+              </li>
               <li>Communicate important service updates</li>
             </ul>
           </section>
@@ -108,6 +114,9 @@ export default async function PrivacyPolicy() {
                 With email service providers (Resend) to deliver authentication and invitation emails
               </li>
               <li>
+                With Google, when an organizer opts in to Google Calendar sync, so that filled time slots can be written onto the organizer’s chosen calendar (see section 4)
+              </li>
+              <li>
                 When required by law or to protect our rights
               </li>
             </ul>
@@ -115,7 +124,57 @@ export default async function PrivacyPolicy() {
 
           <section>
             <h2 className="text-xl font-semibold text-[#0D2B35] mb-3">
-              4. Data Security
+              4. Google Calendar
+            </h2>
+            <p className="mb-3">
+              Google Calendar sync is optional. An organizer must connect a Google account in organization
+              settings and then enable sync on an event. {brand.name} does not connect to Google Calendar
+              unless the organizer does this.
+            </p>
+            <p className="mb-3">
+              When an organizer connects Google Calendar, we request permission to list calendars they can
+              write to and to create, update, and delete calendar events needed to keep filled signup slots
+              in sync. We use that access only to provide this feature. We do not use Google user data for
+              advertising, credit scoring, or unrelated analytics. We do not sell Google user data. We do
+              not transfer Google user data to other parties except as needed to write events onto the
+              organizer’s own Google Calendar, or as required by law.
+            </p>
+            <p className="mb-3">
+              {brand.name}&apos;s use of information received from Google APIs adheres to the{" "}
+              <a
+                href="https://developers.google.com/terms/api-services-user-data-policy"
+                className="text-[#0E96B0] hover:text-[#08647E] font-medium"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Google API Services User Data Policy
+              </a>
+              , including the Limited Use requirements.
+            </p>
+            <p className="mb-3">
+              If calendar sync is enabled for an event, each filled time slot is written as a Google Calendar
+              event. That event includes the event name and the signup name. It may also include phone number,
+              email address, guest names, and notes. Contact details and notes are placed in the event
+              description, not the title. Anyone with access to that Google Calendar — including people the
+              organizer has shared it with — can see those details. If the organizer turns on leader
+              invitations, we may add the event leader’s email as an attendee so Google can send a calendar
+              invitation.
+            </p>
+            <p className="mb-3">
+              An organizer can disconnect Google Calendar in organization settings. We then revoke our Google
+              access token and stop writing to that calendar. Canceling a signup while sync is still on will
+              update or remove the matching Google Calendar event. Disconnecting or turning sync off does not
+              automatically delete events already on the calendar; the calendar owner can delete those in
+              Google Calendar.
+            </p>
+            <p>
+              Information stored in Google Calendar is also subject to Google’s terms and privacy policy.
+            </p>
+          </section>
+
+          <section>
+            <h2 className="text-xl font-semibold text-[#0D2B35] mb-3">
+              5. Data Security
             </h2>
             <p>
               We use industry-standard security measures to protect your information, including:
@@ -124,12 +183,16 @@ export default async function PrivacyPolicy() {
               <li>Encrypted data transmission (HTTPS/SSL)</li>
               <li>Secure authentication via Supabase</li>
               <li>Database security with row-level security policies</li>
+              <li>
+                Encrypted storage of Google Calendar refresh tokens, with access limited to our server
+                processes that perform calendar sync
+              </li>
             </ul>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-[#0D2B35] mb-3">
-              5. Your Rights
+              6. Your Rights
             </h2>
             <p className="mb-3">You have the right to:</p>
             <ul className="list-disc ml-6 space-y-2">
@@ -137,23 +200,30 @@ export default async function PrivacyPolicy() {
               <li>Request correction of inaccurate information</li>
               <li>Request deletion of your account and associated data</li>
               <li>Withdraw consent for email communications</li>
+              <li>
+                Disconnect Google Calendar in organization settings to revoke {brand.name}&apos;s access to
+                that Google account
+              </li>
             </ul>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-[#0D2B35] mb-3">
-              6. Data Retention
+              7. Data Retention
             </h2>
             <p>
               We retain your information for as long as your account is active or as needed to provide services.
-              Event signup data is retained as long as the event organizer maintains the event. You may request
-              deletion of your data at any time by contacting us.
+              Event signup data is retained as long as the event organizer maintains the event. Encrypted Google
+              Calendar tokens are kept until the organizer disconnects Google Calendar or the connection is
+              revoked. Identifiers of Google Calendar events we created are removed when the matching signup
+              slot is cleared or the event is deleted. You may request deletion of your data at any time by
+              contacting us.
             </p>
           </section>
 
           <section>
             <h2 className="text-xl font-semibold text-[#0D2B35] mb-3">
-              7. Cookies and Tracking
+              8. Cookies and Tracking
             </h2>
             <p>
               {brand.name} uses essential cookies to maintain your authentication session. We do not use
@@ -163,7 +233,7 @@ export default async function PrivacyPolicy() {
 
           <section>
             <h2 className="text-xl font-semibold text-[#0D2B35] mb-3">
-              8. Children's Privacy
+              9. Children's Privacy
             </h2>
             <p>
               {brand.name} is not intended for children under 13. We do not knowingly collect personal
@@ -174,7 +244,7 @@ export default async function PrivacyPolicy() {
 
           <section>
             <h2 className="text-xl font-semibold text-[#0D2B35] mb-3">
-              9. Changes to Privacy Policy
+              10. Changes to Privacy Policy
             </h2>
             <p>
               We may update this Privacy Policy from time to time. We will notify users of significant
@@ -184,7 +254,7 @@ export default async function PrivacyPolicy() {
 
           <section>
             <h2 className="text-xl font-semibold text-[#0D2B35] mb-3">
-              10. Contact Us
+              11. Contact Us
             </h2>
             <p>
               If you have questions about this Privacy Policy or wish to exercise your rights, please contact us at:
