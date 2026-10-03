@@ -28,8 +28,8 @@ export default function RegistrationOptionsSection({ state, set }: Props) {
 
   return (
     <OptionalDisclosureCard
-      title="Registration options"
-      description="Control what participants can see and do on the public signup page."
+      title="Guests & spots remaining"
+      description="Let people add extra names, and show how many spots are left."
       open={isOpen}
       onToggle={toggle}
       active={isRegistrationActive(state)}
