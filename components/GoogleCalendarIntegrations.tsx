@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClientComponentClient } from "@/lib/auth";
 import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
+import { isConnectionExpired, pickDisplayedConnection } from "@/lib/google-calendar-connection";
 
 interface GoogleCalendarIntegrationsProps {
   organizationId: string;
@@ -23,6 +24,16 @@ interface Calendar {
   summary: string;
 }
 
+async function loadOrgConnection(organizationId: string): Promise<Connection | null> {
+  const supabase = createClientComponentClient();
+  const { data } = await supabase
+    .from("google_calendar_connections_safe" as never)
+    .select("*")
+    .eq("organization_id", organizationId);
+
+  return pickDisplayedConnection((data as Connection[] | null) ?? []);
+}
+
 export default function GoogleCalendarIntegrations({ organizationId }: GoogleCalendarIntegrationsProps) {
   const [loading, setLoading] = useState(true);
   const [connection, setConnection] = useState<Connection | null>(null);
@@ -31,36 +42,27 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [loadingCalendars, setLoadingCalendars] = useState(false);
   const [savingCalendar, setSavingCalendar] = useState(false);
-
-  // Don't show the section if feature flag is off or org not in allowlist
-  if (!isGcalSyncUIEnabled(organizationId)) {
-    return null;
-  }
+  const show = isGcalSyncUIEnabled(organizationId);
 
   useEffect(() => {
+    if (!show) {
+      setLoading(false);
+      return;
+    }
+
     const load = async () => {
-      const supabase = createClientComponentClient();
-      
-      // Fetch connection via safe view (including revoked ones to show reconnect option)
-      const { data, error } = await supabase
-        .from("google_calendar_connections_safe" as never)
-        .select("*")
-        .eq("organization_id", organizationId)
-        .maybeSingle();
-
-      if (!error && data) {
-        setConnection(data as Connection);
-      }
-
+      setConnection(await loadOrgConnection(organizationId));
       setLoading(false);
     };
 
     load();
-  }, [organizationId]);
+  }, [organizationId, show]);
 
   // Load calendars when connection is available and not revoked
   useEffect(() => {
-    if (!connection || connection.revoked_at || connection.last_error?.includes("invalid_grant")) {
+    if (!show) return;
+
+    if (!connection || isConnectionExpired(connection)) {
       setCalendars([]);
       return;
     }
@@ -87,7 +89,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
     };
 
     loadCalendars();
-  }, [connection, organizationId]);
+  }, [connection, organizationId, show]);
 
   const handleConnect = async () => {
     setMessage(null);
@@ -217,7 +219,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
         gcal_missing_params: "The connection failed. Please try again.",
         gcal_invalid_state: "The connection session expired. Please try again.",
         gcal_org_not_enabled: "Google Calendar sync is not enabled for your organization.",
-        gcal_no_refresh_token: "Could not complete the connection. Try disconnecting your Google account from the Google security settings page and reconnecting here.",
+        gcal_no_refresh_token: "Google did not return a lasting sign-in. Click Reconnect and allow access again.",
         gcal_token_revoked: "Your previous Google Calendar access was revoked. Please disconnect your Google account from Google security settings, then try connecting again.",
         gcal_token_exchange_failed: "Could not complete the connection with Google. Please try again.",
         gcal_db_error: "Could not save the connection. Please try again.",
@@ -241,24 +243,18 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
       newUrl.searchParams.delete("gcal_connected");
       window.history.replaceState({}, "", newUrl.toString());
       
-      // Reload connection
       setLoading(true);
       const load = async () => {
-        const supabase = createClientComponentClient();
-        const { data } = await supabase
-          .from("google_calendar_connections_safe" as never)
-          .select("*")
-          .eq("organization_id", organizationId)
-          .maybeSingle();
-
-        if (data) {
-          setConnection(data as Connection);
-        }
+        setConnection(await loadOrgConnection(organizationId));
         setLoading(false);
       };
       load();
     }
   }, [organizationId]);
+
+  if (!show) {
+    return null;
+  }
 
   if (loading) {
     return (
@@ -290,7 +286,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
               {connection ? (
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
-                    {!connection.revoked_at && !connection.last_error?.includes("invalid_grant") ? (
+                    {!isConnectionExpired(connection) ? (
                       <span className="inline-flex items-center gap-1.5 text-[12px] text-[#0F6E56] bg-[#E7F5ED] px-2.5 py-1 rounded-full">
                         <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
                           <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
@@ -310,7 +306,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
                     </span>
                   </div>
 
-                  {(connection.revoked_at || connection.last_error?.includes("invalid_grant")) && (
+                  {isConnectionExpired(connection) && (
                     <div className="text-[12px] text-red-600 bg-red-50 px-3 py-2 rounded-lg">
                       Your Google Calendar connection has expired. Writing signups to Google Calendar is paused until you reconnect.
                     </div>
@@ -322,7 +318,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
                     </div>
                   )}
 
-                  {!connection.revoked_at && !connection.last_error?.includes("invalid_grant") && (
+                  {!isConnectionExpired(connection) && (
                     <div className="mt-3 space-y-2">
                       <div>
                         <label className="block text-[12px] font-medium text-[#2E5566] mb-1.5">
@@ -355,7 +351,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
                   )}
 
                   <div className="flex gap-2 mt-3">
-                    {(connection.revoked_at || connection.last_error?.includes("invalid_grant")) ? (
+                    {isConnectionExpired(connection) && (
                       <button
                         type="button"
                         onClick={handleConnect}
@@ -363,16 +359,15 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
                       >
                         Reconnect
                       </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={handleDisconnect}
-                        disabled={disconnecting}
-                        className="text-[12px] font-semibold px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
-                      >
-                        {disconnecting ? "Disconnecting..." : "Disconnect"}
-                      </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={handleDisconnect}
+                      disabled={disconnecting}
+                      className="text-[12px] font-semibold px-3 py-1.5 rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {disconnecting ? "Disconnecting..." : "Disconnect"}
+                    </button>
                   </div>
                 </div>
               ) : (
