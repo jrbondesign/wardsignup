@@ -30,15 +30,16 @@ export async function GET(request: Request) {
       );
     }
 
-    // Get user's connection for this org
+    // Get user's connection for this org (prefer a live row if duplicates exist)
     const admin = createServiceRoleClient();
-    const { data: connection, error: fetchError } = await admin
+    const { data: connections, error: fetchError } = await admin
       .from('google_calendar_connections' as never)
       .select('*')
       .eq('user_id', user.id)
-      .eq('organization_id', orgId)
-      .is('revoked_at', null)
-      .single();
+      .eq('organization_id', orgId);
+
+    const connection = ((connections as { revoked_at: string | null; last_error: string | null }[] | null) ?? [])
+      .find((row) => !row.revoked_at) ?? null;
 
     if (fetchError || !connection) {
       return NextResponse.json(

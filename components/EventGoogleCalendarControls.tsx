@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClientComponentClient } from "@/lib/auth";
 import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
+import { isConnectionExpired, pickDisplayedConnection } from "@/lib/google-calendar-connection";
 
 export type EventGoogleCalendarFields = {
   enabled: boolean;
@@ -93,14 +94,18 @@ export default function EventGoogleCalendarControls({
       const { data: connData } = await supabase
         .from("google_calendar_connections_safe" as never)
         .select("*")
-        .eq("organization_id", organizationId)
-        .maybeSingle();
+        .eq("organization_id", organizationId);
 
-      if (!cancelled && connData) {
-        const conn = connData as {
+      const conn = pickDisplayedConnection(
+        (connData as Array<{
+          revoked_at: string | null;
+          last_error?: string | null;
           default_calendar_id?: string | null;
           default_calendar_name?: string | null;
-        };
+        }> | null) ?? [],
+      );
+
+      if (!cancelled && conn && !isConnectionExpired(conn)) {
         setOrgConnection({
           default_calendar_id: conn.default_calendar_id || null,
           default_calendar_name: conn.default_calendar_name || null,

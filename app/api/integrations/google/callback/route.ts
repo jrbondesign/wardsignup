@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
 import { verifyState, exchangeCode, encryptToken } from '@/lib/google-oauth';
+import { persistGoogleCalendarConnection } from '@/lib/google-calendar-connection';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
 import { getPostHogClient } from '@/lib/posthog-server';
 
@@ -37,10 +38,16 @@ export async function GET(request: Request) {
       return NextResponse.redirect(new URL('/settings/organization?error=gcal_invalid_state', origin));
     }
 
+    const failRedirect = (code: string) => {
+      const fail = new URL(state.returnPath || '/settings/organization', origin);
+      fail.searchParams.set('error', code);
+      return NextResponse.redirect(fail.toString());
+    };
+
     // Require org allowlist check
     if (!isGcalSyncEnabledForOrg(state.orgId)) {
       console.error('[google/callback] Org not in allowlist:', state.orgId);
-      return NextResponse.redirect(new URL('/settings/organization?error=gcal_org_not_enabled', origin));
+      return failRedirect('gcal_org_not_enabled');
     }
 
     // Exchange code for tokens
@@ -53,15 +60,15 @@ export async function GET(request: Request) {
       
       // Check for common OAuth errors
       if (errorMsg.includes('invalid_grant') || errorMsg.includes('expired') || errorMsg.includes('revoked')) {
-        return NextResponse.redirect(new URL('/settings/organization?error=gcal_token_revoked', origin));
+        return failRedirect('gcal_token_revoked');
       }
       
-      return NextResponse.redirect(new URL('/settings/organization?error=gcal_token_exchange_failed', origin));
+      return failRedirect('gcal_token_exchange_failed');
     }
     
     if (!tokens.refresh_token) {
       console.error('[google/callback] No refresh token received');
-      return NextResponse.redirect(new URL('/settings/organization?error=gcal_no_refresh_token', origin));
+      return failRedirect('gcal_no_refresh_token');
     }
 
     // Get user info from Google to get email
@@ -79,30 +86,29 @@ export async function GET(request: Request) {
     }
 
     const userInfo = await userInfoResponse.json();
-    const googleEmail = userInfo.email;
+    const googleEmail = typeof userInfo.email === 'string' ? userInfo.email : '';
+    if (!googleEmail) {
+      console.error('[google/callback] Google user info did not include an email');
+      return failRedirect('gcal_token_exchange_failed');
+    }
 
     // Encrypt refresh token
     const refreshTokenEnc = encryptToken(tokens.refresh_token);
 
-    // Store connection (upsert)
+    // Update the existing org connection (including expired rows) rather than
+    // inserting a second row keyed on google_email.
     const admin = createServiceRoleClient();
-    const { error: dbError } = await admin
-      .from('google_calendar_connections' as never)
-      .upsert({
-        user_id: state.userId,
-        organization_id: state.orgId,
-        google_email: googleEmail,
-        refresh_token_enc: refreshTokenEnc,
-        scopes: tokens.scope,
-        revoked_at: null,
-        last_error: null,
-      } as never, {
-        onConflict: 'user_id,organization_id,google_email',
-      });
+    const { error: dbError } = await persistGoogleCalendarConnection(admin, {
+      userId: state.userId,
+      organizationId: state.orgId,
+      googleEmail,
+      refreshTokenEnc,
+      scopes: tokens.scope || '',
+    });
 
     if (dbError) {
       console.error('[google/callback] DB error:', dbError);
-      return NextResponse.redirect(new URL('/settings/organization?error=gcal_db_error', origin));
+      return failRedirect('gcal_db_error');
     }
     
     // Fire PostHog event for successful connection

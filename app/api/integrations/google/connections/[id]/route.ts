@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getAuthFromRequest } from '@/lib/auth';
 import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
 import { revokeToken } from '@/lib/google-oauth';
+import { CONNECTION_DISCONNECTED_ERROR } from '@/lib/google-calendar-connection';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
 
 /**
@@ -76,14 +77,15 @@ export async function DELETE(
       );
     }
 
-    // Disable all campaign syncs using this connection
+    // Disable currently enabled campaign syncs using this connection
     await admin
       .from('campaign_calendar_sync' as never)
       .update({
         enabled: false,
-        last_error: 'Connection was disconnected',
+        last_error: CONNECTION_DISCONNECTED_ERROR,
       } as never)
-      .eq('connection_id', connectionId);
+      .eq('connection_id', connectionId)
+      .eq('enabled', true);
 
     return NextResponse.json({ success: true });
   } catch (err) {
