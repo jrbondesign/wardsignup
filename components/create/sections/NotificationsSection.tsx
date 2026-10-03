@@ -10,6 +10,11 @@ interface Props {
   organizationId?: string;
 }
 
+interface OrgConnection {
+  default_calendar_id: string | null;
+  default_calendar_name: string | null;
+}
+
 export default function NotificationsSection({ state, set, organizationId }: Props) {
   const open = state.expanded.notifications ?? false;
   const toggle = () => set({ expanded: { ...state.expanded, notifications: !open } });
@@ -17,6 +22,7 @@ export default function NotificationsSection({ state, set, organizationId }: Pro
   const [calendars, setCalendars] = useState<Array<{ id: string; summary: string }>>([]);
   const [hasConnection, setHasConnection] = useState(false);
   const [loadingCalendars, setLoadingCalendars] = useState(false);
+  const [orgConnection, setOrgConnection] = useState<OrgConnection | null>(null);
   
   const showCalendarSync = isGcalSyncUIEnabled(organizationId) && (state.eventType === "spots" || state.eventType === "rsvp");
 
@@ -24,22 +30,45 @@ export default function NotificationsSection({ state, set, organizationId }: Pro
     if (!showCalendarSync || !open || !organizationId) return;
     
     setLoadingCalendars(true);
-    fetch(`/api/integrations/google/calendars?org_id=${encodeURIComponent(organizationId)}`)
-      .then(async (res) => {
-        if (res.ok) {
-          const data = await res.json();
-          setCalendars(data.calendars || []);
-          setHasConnection(true);
-        } else {
+    
+    const load = async () => {
+      const supabase = createClientComponentClient();
+      
+      // Fetch org connection including default calendar
+      const { data: connData } = await supabase
+        .from("google_calendar_connections_safe" as never)
+        .select("*")
+        .eq("organization_id", organizationId)
+        .maybeSingle();
+      
+      if (connData) {
+        const conn = connData as any;
+        setOrgConnection({
+          default_calendar_id: conn.default_calendar_id || null,
+          default_calendar_name: conn.default_calendar_name || null,
+        });
+      }
+      
+      // Fetch calendars
+      fetch(`/api/integrations/google/calendars?org_id=${encodeURIComponent(organizationId)}`)
+        .then(async (res) => {
+          if (res.ok) {
+            const data = await res.json();
+            setCalendars(data.calendars || []);
+            setHasConnection(true);
+          } else {
+            setHasConnection(false);
+            setCalendars([]);
+          }
+        })
+        .catch(() => {
           setHasConnection(false);
           setCalendars([]);
-        }
-      })
-      .catch(() => {
-        setHasConnection(false);
-        setCalendars([]);
-      })
-      .finally(() => setLoadingCalendars(false));
+        })
+        .finally(() => setLoadingCalendars(false));
+    };
+    
+    load();
   }, [showCalendarSync, open, organizationId]);
 
   return (
@@ -95,17 +124,26 @@ export default function NotificationsSection({ state, set, organizationId }: Pro
           
           {showCalendarSync && (
             <div className="pt-2 border-t border-[rgba(14,150,176,0.15)]">
-              <Toggle
-                checked={state.calendarSyncEnabled}
-                onChange={(v) => {
-                  set({ calendarSyncEnabled: v });
-                  if (!v) {
-                    set({ calendarId: "", calendarName: "" });
-                  }
-                }}
-                label="Sync signups to Google Calendar"
-                help="Member names, contact details, and notes will be written to your selected calendar."
-              />
+          <Toggle
+            checked={state.calendarSyncEnabled}
+            onChange={(v) => {
+              if (v && !state.calendarId && orgConnection?.default_calendar_id) {
+                // Default to org default calendar when enabling sync
+                set({
+                  calendarSyncEnabled: v,
+                  calendarId: orgConnection.default_calendar_id,
+                  calendarName: orgConnection.default_calendar_name || "",
+                });
+              } else {
+                set({ calendarSyncEnabled: v });
+                if (!v) {
+                  set({ calendarId: "", calendarName: "" });
+                }
+              }
+            }}
+            label="Sync signups to Google Calendar"
+            help="Member names, contact details, and notes will be written to your selected calendar."
+          />
               
               {state.calendarSyncEnabled && (
                 <div className="mt-3 ml-6">
@@ -114,7 +152,7 @@ export default function NotificationsSection({ state, set, organizationId }: Pro
                       <a href="/settings/organization" className="text-[#0E96B0] hover:underline">
                         Connect your Google account
                       </a>{" "}
-                      first to enable calendar sync.
+                      in organization settings first to enable calendar sync.
                     </p>
                   )}
                   
@@ -127,24 +165,31 @@ export default function NotificationsSection({ state, set, organizationId }: Pro
                         {loadingCalendars ? (
                           <div className="text-[12px] text-[#5A8399]">Loading calendars...</div>
                         ) : (
-                          <select
-                            value={state.calendarId}
-                            onChange={(e) => {
-                              const cal = calendars.find(c => c.id === e.target.value);
-                              set({ 
-                                calendarId: e.target.value,
-                                calendarName: cal?.summary || ""
-                              });
-                            }}
-                            className="w-full px-3 py-2 text-[13px] border border-[rgba(14,150,176,0.3)] rounded-lg focus:ring-2 focus:ring-[#0E96B0] focus:border-transparent"
-                          >
-                            <option value="">Select a calendar...</option>
-                            {calendars.map((cal) => (
-                              <option key={cal.id} value={cal.id}>
-                                {cal.summary}
-                              </option>
-                            ))}
-                          </select>
+                          <>
+                            <select
+                              value={state.calendarId}
+                              onChange={(e) => {
+                                const cal = calendars.find(c => c.id === e.target.value);
+                                set({ 
+                                  calendarId: e.target.value,
+                                  calendarName: cal?.summary || ""
+                                });
+                              }}
+                              className="w-full px-3 py-2 text-[13px] border border-[rgba(14,150,176,0.3)] rounded-lg focus:ring-2 focus:ring-[#0E96B0] focus:border-transparent"
+                            >
+                              <option value="">Select a calendar...</option>
+                              {calendars.map((cal) => (
+                                <option key={cal.id} value={cal.id}>
+                                  {cal.summary}
+                                </option>
+                              ))}
+                            </select>
+                            {!state.calendarId && orgConnection?.default_calendar_name && (
+                              <p className="text-[11px] text-[#5A8399] mt-1">
+                                Your organization default is {orgConnection.default_calendar_name}. You can override it for this event.
+                              </p>
+                            )}
+                          </>
                         )}
                       </div>
                       
