@@ -50,23 +50,31 @@ export default function NotificationsSection({ state, set, organizationId }: Pro
         });
       }
       
-      // Fetch calendars
-      fetch(`/api/integrations/google/calendars?org_id=${encodeURIComponent(organizationId)}`)
-        .then(async (res) => {
-          if (res.ok) {
-            const data = await res.json();
-            setCalendars(data.calendars || []);
-            setHasConnection(true);
-          } else {
-            setHasConnection(false);
-            setCalendars([]);
-          }
-        })
-        .catch(() => {
+      // Fetch calendars with auth
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        const res = await fetch(`/api/integrations/google/calendars?org_id=${encodeURIComponent(organizationId)}`, {
+          headers: {
+            Authorization: `Bearer ${session?.access_token ?? ""}`,
+          },
+        });
+        
+        if (res.ok) {
+          const data = await res.json();
+          setCalendars(data.calendars || []);
+          setHasConnection(true);
+        } else {
           setHasConnection(false);
           setCalendars([]);
-        })
-        .finally(() => setLoadingCalendars(false));
+        }
+      } catch (err) {
+        console.error("Failed to load calendars:", err);
+        setHasConnection(false);
+        setCalendars([]);
+      } finally {
+        setLoadingCalendars(false);
+      }
     };
     
     load();
