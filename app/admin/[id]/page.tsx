@@ -18,6 +18,7 @@ import OrgLogoButton from "@/components/OrgLogoButton";
 import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
 import { formatTime } from "@/lib/utils";
 import { downloadEventQr } from "@/lib/download-qr";
+import EventGoogleCalendarControls from "@/components/EventGoogleCalendarControls";
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -106,7 +107,11 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
   const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(false);
+  const [calendarId, setCalendarId] = useState("");
+  const [calendarName, setCalendarName] = useState("");
+  const [inviteLeader, setInviteLeader] = useState(false);
   const [calendarLastSyncedAt, setCalendarLastSyncedAt] = useState<string | null>(null);
+  const [calendarLastError, setCalendarLastError] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -210,13 +215,17 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       // Load calendar sync status
       const { data: calSyncData } = await supabase
         .from("campaign_calendar_sync")
-        .select("enabled, last_synced_at")
+        .select("enabled, last_synced_at, last_error, calendar_id, calendar_name, invite_leader")
         .eq("campaign_id", eventId)
         .maybeSingle();
       
       if (calSyncData) {
         setCalendarSyncEnabled(Boolean((calSyncData as any).enabled));
+        setCalendarId((calSyncData as any).calendar_id || "");
+        setCalendarName((calSyncData as any).calendar_name || "");
+        setInviteLeader(Boolean((calSyncData as any).invite_leader));
         setCalendarLastSyncedAt((calSyncData as any).last_synced_at);
+        setCalendarLastError((calSyncData as any).last_error);
       }
 
       const resolvedType: "spots" | "items" | "rsvp" =
@@ -497,7 +506,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                         <line x1="8" y1="2" x2="8" y2="6"/>
                         <line x1="3" y1="10" x2="21" y2="10"/>
                       </svg>
-                      Synced to Google Calendar · {formatSyncTime(calendarLastSyncedAt)}
+                      On Google Calendar · {formatSyncTime(calendarLastSyncedAt)}
                     </div>
                   )}
                   {/* Mobile: actions in More menu */}
@@ -826,6 +835,40 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                 </label>
               </div>
             </div>
+
+            <EventGoogleCalendarControls
+              organizationId={(event as { organization_id?: string | null }).organization_id}
+              eventType={eventType}
+              eventId={eventId}
+              layout="card"
+              showUpdateNow
+              lastSyncedAt={calendarLastSyncedAt}
+              lastError={calendarLastError}
+              value={{
+                enabled: calendarSyncEnabled,
+                calendarId,
+                calendarName,
+                inviteLeader,
+              }}
+              onChange={(patch) => {
+                if ("enabled" in patch && typeof patch.enabled === "boolean") {
+                  setCalendarSyncEnabled(patch.enabled);
+                }
+                if ("calendarId" in patch && typeof patch.calendarId === "string") {
+                  setCalendarId(patch.calendarId);
+                }
+                if ("calendarName" in patch && typeof patch.calendarName === "string") {
+                  setCalendarName(patch.calendarName);
+                }
+                if ("inviteLeader" in patch && typeof patch.inviteLeader === "boolean") {
+                  setInviteLeader(patch.inviteLeader);
+                }
+              }}
+              onSyncResult={({ lastSyncedAt, lastError }) => {
+                if (lastSyncedAt !== undefined) setCalendarLastSyncedAt(lastSyncedAt);
+                if (lastError !== undefined) setCalendarLastError(lastError);
+              }}
+            />
 
             <div className="mb-4 rounded-xl border border-[#0E96B0]/18 bg-[#F8FCFD] px-4 py-3">
               <h3 className="text-sm font-semibold text-[#0D2B35] mb-1">Signup visibility</h3>

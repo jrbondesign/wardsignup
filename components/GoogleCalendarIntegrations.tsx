@@ -130,7 +130,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
 
   const handleDisconnect = async () => {
     if (!connection) return;
-    if (!confirm("Disconnect Google Calendar? This will disable calendar sync for all events in this organization.")) {
+    if (!confirm("Disconnect Google Calendar? This will stop writing signups to Google Calendar for events in this organization.")) {
       return;
     }
 
@@ -191,12 +191,12 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setMessage({ kind: "error", text: data?.error ?? "Failed to save calendar selection." });
+        setMessage({ kind: "error", text: data?.error ?? "Could not save the default Google Calendar." });
         return;
       }
 
       setConnection(prev => prev ? { ...prev, default_calendar_id: calendarId, default_calendar_name: calendarName } : null);
-      setMessage({ kind: "ok", text: "Default calendar saved." });
+      setMessage({ kind: "ok", text: "Default Google Calendar saved." });
     } catch {
       setMessage({ kind: "error", text: "Network error. Please try again." });
     } finally {
@@ -284,7 +284,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
                 Google Calendar
               </h3>
               <p className="text-[12px] text-[#5A8399] mb-3">
-                Sync signups to your Google Calendar automatically. Member names, contact details, and notes will be visible in calendar events.
+                Connect a Google account for this organization, then choose the default Google Calendar for new events. Names, phone numbers, emails, and notes from signups are written onto that calendar.
               </p>
 
               {connection ? (
@@ -312,7 +312,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
 
                   {(connection.revoked_at || connection.last_error?.includes("invalid_grant")) && (
                     <div className="text-[12px] text-red-600 bg-red-50 px-3 py-2 rounded-lg">
-                      Your Google Calendar connection has expired. Calendar sync is paused until you reconnect.
+                      Your Google Calendar connection has expired. Writing signups to Google Calendar is paused until you reconnect.
                     </div>
                   )}
                   
@@ -326,10 +326,10 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
                     <div className="mt-3 space-y-2">
                       <div>
                         <label className="block text-[12px] font-medium text-[#2E5566] mb-1.5">
-                          Default calendar for new events
+                          Default Google Calendar for this organization
                         </label>
                         {loadingCalendars ? (
-                          <div className="text-[12px] text-[#5A8399]">Loading calendars...</div>
+                          <div className="text-[12px] text-[#5A8399]">Loading Google Calendars</div>
                         ) : (
                           <select
                             value={connection.default_calendar_id || ""}
@@ -337,7 +337,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
                             disabled={savingCalendar}
                             className="w-full px-3 py-2 text-[13px] border border-[rgba(14,150,176,0.3)] rounded-lg focus:ring-2 focus:ring-[#0E96B0] focus:border-transparent disabled:opacity-50"
                           >
-                            <option value="">Select a calendar...</option>
+                            <option value="">Choose a Google Calendar</option>
                             {calendars.map((cal) => (
                               <option key={cal.id} value={cal.id}>
                                 {cal.summary}
@@ -347,7 +347,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
                         )}
                         {!connection.default_calendar_id && !loadingCalendars && calendars.length > 0 && (
                           <p className="text-[11px] text-[#5A8399] mt-1">
-                            Choose which calendar events should sync to by default.
+                            New events use this calendar unless you pick a different one on the event.
                           </p>
                         )}
                       </div>

@@ -1,84 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import type { CreateFormState } from "@/lib/create-form-state";
-import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
-import { createClientComponentClient } from "@/lib/auth";
 
 interface Props {
   state: CreateFormState;
   set: (patch: Partial<CreateFormState>) => void;
-  organizationId?: string;
 }
 
-interface OrgConnection {
-  default_calendar_id: string | null;
-  default_calendar_name: string | null;
-}
-
-export default function NotificationsSection({ state, set, organizationId }: Props) {
+export default function NotificationsSection({ state, set }: Props) {
   const open = state.expanded.notifications ?? false;
   const toggle = () => set({ expanded: { ...state.expanded, notifications: !open } });
-  
-  const [calendars, setCalendars] = useState<Array<{ id: string; summary: string }>>([]);
-  const [hasConnection, setHasConnection] = useState(false);
-  const [loadingCalendars, setLoadingCalendars] = useState(false);
-  const [orgConnection, setOrgConnection] = useState<OrgConnection | null>(null);
-  
-  const showCalendarSync = isGcalSyncUIEnabled(organizationId) && (state.eventType === "spots" || state.eventType === "rsvp");
-
-  useEffect(() => {
-    if (!showCalendarSync || !open || !organizationId) return;
-    
-    setLoadingCalendars(true);
-    
-    const load = async () => {
-      const supabase = createClientComponentClient();
-      
-      // Fetch org connection including default calendar
-      const { data: connData } = await supabase
-        .from("google_calendar_connections_safe" as never)
-        .select("*")
-        .eq("organization_id", organizationId)
-        .maybeSingle();
-      
-      if (connData) {
-        const conn = connData as any;
-        setOrgConnection({
-          default_calendar_id: conn.default_calendar_id || null,
-          default_calendar_name: conn.default_calendar_name || null,
-        });
-      }
-      
-      // Fetch calendars with auth
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        const res = await fetch(`/api/integrations/google/calendars?org_id=${encodeURIComponent(organizationId)}`, {
-          headers: {
-            Authorization: `Bearer ${session?.access_token ?? ""}`,
-          },
-        });
-        
-        if (res.ok) {
-          const data = await res.json();
-          setCalendars(data.calendars || []);
-          setHasConnection(true);
-        } else {
-          setHasConnection(false);
-          setCalendars([]);
-        }
-      } catch (err) {
-        console.error("Failed to load calendars:", err);
-        setHasConnection(false);
-        setCalendars([]);
-      } finally {
-        setLoadingCalendars(false);
-      }
-    };
-    
-    load();
-  }, [showCalendarSync, open, organizationId]);
 
   return (
     <section className="rounded-2xl border-[1.5px] border-[rgba(14,150,176,0.18)] bg-[#F8FCFD] p-4 sm:p-5">
@@ -130,90 +61,6 @@ export default function NotificationsSection({ state, set, organizationId }: Pro
             onChange={(v) => set({ organizerDigestEnabled: v })}
             label="Send me a daily digest of new signups"
           />
-          
-          {showCalendarSync && (
-            <div className="pt-2 border-t border-[rgba(14,150,176,0.15)]">
-          <Toggle
-            checked={state.calendarSyncEnabled}
-            onChange={(v) => {
-              if (v && !state.calendarId && orgConnection?.default_calendar_id) {
-                // Default to org default calendar when enabling sync
-                set({
-                  calendarSyncEnabled: v,
-                  calendarId: orgConnection.default_calendar_id,
-                  calendarName: orgConnection.default_calendar_name || "",
-                });
-              } else {
-                set({ calendarSyncEnabled: v });
-                if (!v) {
-                  set({ calendarId: "", calendarName: "" });
-                }
-              }
-            }}
-            label="Sync signups to Google Calendar"
-            help="Member names, contact details, and notes will be written to your selected calendar."
-          />
-              
-              {state.calendarSyncEnabled && (
-                <div className="mt-3 ml-6">
-                  {!hasConnection && (
-                    <p className="text-[12px] text-[#5A8399] mb-2">
-                      <a href="/settings/organization" className="text-[#0E96B0] hover:underline">
-                        Connect your Google account
-                      </a>{" "}
-                      in organization settings first to enable calendar sync.
-                    </p>
-                  )}
-                  
-                  {hasConnection && (
-                    <div className="space-y-3">
-                      <div>
-                        <label className="block text-[12px] font-medium text-[#2E5566] mb-1.5">
-                          Calendar
-                        </label>
-                        {loadingCalendars ? (
-                          <div className="text-[12px] text-[#5A8399]">Loading calendars...</div>
-                        ) : (
-                          <>
-                            <select
-                              value={state.calendarId}
-                              onChange={(e) => {
-                                const cal = calendars.find(c => c.id === e.target.value);
-                                set({ 
-                                  calendarId: e.target.value,
-                                  calendarName: cal?.summary || ""
-                                });
-                              }}
-                              className="w-full px-3 py-2 text-[13px] border border-[rgba(14,150,176,0.3)] rounded-lg focus:ring-2 focus:ring-[#0E96B0] focus:border-transparent"
-                            >
-                              <option value="">Select a calendar...</option>
-                              {calendars.map((cal) => (
-                                <option key={cal.id} value={cal.id}>
-                                  {cal.summary}
-                                </option>
-                              ))}
-                            </select>
-                            {!state.calendarId && orgConnection?.default_calendar_name && (
-                              <p className="text-[11px] text-[#5A8399] mt-1">
-                                Your organization default is {orgConnection.default_calendar_name}. You can override it for this event.
-                              </p>
-                            )}
-                          </>
-                        )}
-                      </div>
-                      
-                      <Toggle
-                        checked={state.inviteLeader}
-                        onChange={(v) => set({ inviteLeader: v })}
-                        label="Send Google Calendar invitations to the leader"
-                        help="When enabled, the leader will receive Google Calendar invitation emails."
-                      />
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
         </div>
       )}
     </section>

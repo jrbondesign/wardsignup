@@ -32,6 +32,7 @@ import {
 import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
 import VisibilitySection from "@/components/create/sections/VisibilitySection";
 import NotificationsSection from "@/components/create/sections/NotificationsSection";
+import GoogleCalendarSection from "@/components/create/sections/GoogleCalendarSection";
 import EventSettingsSection from "@/components/create/sections/EventSettingsSection";
 import ItemsSection from "@/components/create/sections/ItemsSection";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
@@ -178,9 +179,7 @@ export default function EditEventPage() {
   const [calendarId, setCalendarId] = useState("");
   const [calendarName, setCalendarName] = useState("");
   const [inviteLeader, setInviteLeader] = useState(false);
-  const [calendarLastSyncedAt, setCalendarLastSyncedAt] = useState<string | null>(null);
-  const [calendarLastError, setCalendarLastError] = useState<string | null>(null);
-  const [calendarSyncing, setCalendarSyncing] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
   
   const [sendingReport, setSendingReport] = useState(false);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
@@ -356,8 +355,6 @@ export default function EditEventPage() {
           setCalendarId((calSyncData as any).calendar_id || "");
           setCalendarName((calSyncData as any).calendar_name || "");
           setInviteLeader(Boolean((calSyncData as any).invite_leader));
-          setCalendarLastSyncedAt((calSyncData as any).last_synced_at);
-          setCalendarLastError((calSyncData as any).last_error);
         }
 
         // Items events: load items and render the items editor
@@ -571,92 +568,21 @@ export default function EditEventPage() {
     }, 800);
   };
   
-  const handleCalendarSyncPatch = async (patch: Partial<CreateFormState>) => {
-    // Handle calendar sync changes by updating campaign_calendar_sync table
-    const updates: Record<string, unknown> = {};
-    let hasUpdates = false;
-    
+  const applyCalendarFormPatch = (patch: Partial<CreateFormState>) => {
+    if ("expanded" in patch && patch.expanded && "googleCalendar" in patch.expanded) {
+      setCalendarOpen(Boolean(patch.expanded.googleCalendar));
+    }
     if ("calendarSyncEnabled" in patch && typeof patch.calendarSyncEnabled === "boolean") {
       setCalendarSyncEnabled(patch.calendarSyncEnabled);
-      updates.enabled = patch.calendarSyncEnabled;
-      hasUpdates = true;
     }
-    
     if ("calendarId" in patch && typeof patch.calendarId === "string") {
       setCalendarId(patch.calendarId);
-      updates.calendar_id = patch.calendarId;
-      hasUpdates = true;
     }
-    
     if ("calendarName" in patch && typeof patch.calendarName === "string") {
       setCalendarName(patch.calendarName);
-      updates.calendar_name = patch.calendarName;
-      hasUpdates = true;
     }
-    
     if ("inviteLeader" in patch && typeof patch.inviteLeader === "boolean") {
       setInviteLeader(patch.inviteLeader);
-      updates.invite_leader = patch.inviteLeader;
-      hasUpdates = true;
-    }
-    
-    if (!hasUpdates) return;
-    
-    try {
-      const supabase = createClientComponentClient();
-      const session = await supabase.auth.getSession();
-      const res = await fetch(`/api/events/${eventId}/calendar-sync`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.data.session?.access_token}`,
-        },
-        body: JSON.stringify(updates),
-      });
-      
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to update calendar sync");
-      }
-      
-      const data = await res.json();
-      if (data.last_error) setCalendarLastError(data.last_error);
-    } catch (err) {
-      alert(err instanceof Error ? err.message : "Could not save calendar sync settings");
-    }
-  };
-  
-  const handleSyncNow = async () => {
-    setCalendarSyncing(true);
-    setCalendarLastError(null);
-    try {
-      const supabase = createClientComponentClient();
-      const session = await supabase.auth.getSession();
-      const res = await fetch(`/api/events/${eventId}/calendar-sync`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${session.data.session?.access_token}`,
-        },
-      });
-      
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Could not sync this event to Google Calendar.");
-      }
-      
-      const data = await res.json();
-      setCalendarLastSyncedAt(data.last_synced_at);
-      if (data.last_error) {
-        setCalendarLastError(data.last_error);
-      }
-      setToastMessage("Calendar synced successfully");
-      setShowToast(true);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Could not sync this event to Google Calendar.";
-      setCalendarLastError(message);
-      alert(message);
-    } finally {
-      setCalendarSyncing(false);
     }
   };
 
@@ -1655,16 +1581,11 @@ export default function EditEventPage() {
                 }}
               />
               <NotificationsSection
-                organizationId={organizationId ?? undefined}
                 state={{
                   ...INITIAL_FORM_STATE,
                   eventType: "items",
                   organizerDigestEnabled: digestEnabled,
                   organizerInstantNotifyEnabled: instantEnabled,
-                  calendarSyncEnabled,
-                  calendarId,
-                  calendarName,
-                  inviteLeader,
                   expanded: { ...INITIAL_FORM_STATE.expanded, notifications: notificationsOpen },
                 }}
                 set={(patch: Partial<CreateFormState>) => {
@@ -1695,8 +1616,21 @@ export default function EditEventPage() {
                       alert(err instanceof Error ? err.message : "Could not save");
                     });
                   }
-                  handleCalendarSyncPatch(patch);
                 }}
+              />
+              <GoogleCalendarSection
+                organizationId={organizationId}
+                eventId={eventId}
+                state={{
+                  ...INITIAL_FORM_STATE,
+                  eventType: "items",
+                  calendarSyncEnabled,
+                  calendarId,
+                  calendarName,
+                  inviteLeader,
+                  expanded: { ...INITIAL_FORM_STATE.expanded, googleCalendar: calendarOpen },
+                }}
+                set={applyCalendarFormPatch}
               />
               <EventSettingsSection
                 state={{
@@ -1831,7 +1765,6 @@ export default function EditEventPage() {
                 }}
               />
               <NotificationsSection
-                organizationId={organizationId ?? undefined}
                 state={{
                   ...INITIAL_FORM_STATE,
                   eventType: (event as any)?.event_type || "spots",
@@ -1840,10 +1773,6 @@ export default function EditEventPage() {
                   eventTimezone,
                   leaderName,
                   leaderEmail,
-                  calendarSyncEnabled,
-                  calendarId,
-                  calendarName,
-                  inviteLeader,
                   expanded: { ...INITIAL_FORM_STATE.expanded, notifications: notificationsOpen },
                 }}
                 set={(patch: Partial<CreateFormState>) => {
@@ -1883,42 +1812,22 @@ export default function EditEventPage() {
                       alert(err instanceof Error ? err.message : "Could not save");
                     });
                   }
-                  handleCalendarSyncPatch(patch);
                 }}
               />
-              
-              {calendarSyncEnabled && (
-                <div className="mt-4 p-4 rounded-xl border-[1.5px] border-[rgba(14,150,176,0.18)] bg-[#F8FCFD]">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex-1">
-                      <div className="text-[13px] font-semibold text-[#0D2B35]">Calendar Sync Status</div>
-                      {calendarLastSyncedAt && (
-                        <div className="text-[12px] text-[#5A8399] mt-1">
-                          Last synced {new Date(calendarLastSyncedAt).toLocaleString()}
-                        </div>
-                      )}
-                      {calendarLastError && calendarLastError.includes("invalid_grant") && (
-                        <div className="text-[12px] text-red-600 mt-1">
-                          Google Calendar connection expired. <a href="/settings" className="text-[#0E96B0] hover:underline font-medium">Reconnect your account</a> to resume syncing.
-                        </div>
-                      )}
-                      {calendarLastError && !calendarLastError.includes("invalid_grant") && (
-                        <div className="text-[12px] text-red-600 mt-1">
-                          Error: {calendarLastError}
-                        </div>
-                      )}
-                    </div>
-                    <button
-                      type="button"
-                      onClick={handleSyncNow}
-                      disabled={calendarSyncing}
-                      className="flex-shrink-0 px-3 py-1.5 text-[12px] font-semibold text-[#0E96B0] hover:text-white hover:bg-[#0E96B0] border border-[#0E96B0] rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {calendarSyncing ? "Syncing..." : "Sync now"}
-                    </button>
-                  </div>
-                </div>
-              )}
+              <GoogleCalendarSection
+                organizationId={organizationId}
+                eventId={eventId}
+                state={{
+                  ...INITIAL_FORM_STATE,
+                  eventType: (event as any)?.event_type || "spots",
+                  calendarSyncEnabled,
+                  calendarId,
+                  calendarName,
+                  inviteLeader,
+                  expanded: { ...INITIAL_FORM_STATE.expanded, googleCalendar: calendarOpen },
+                }}
+                set={applyCalendarFormPatch}
+              />
               <EventSettingsSection
                 state={{
                   ...INITIAL_FORM_STATE,
