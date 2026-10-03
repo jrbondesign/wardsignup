@@ -197,7 +197,8 @@ describe("buildAuthUrl", () => {
 
     expect(url).toContain("calendar.events");
     expect(url).toContain("calendar.readonly");
-    expect(url).toContain("userinfo.email");
+    expect(url).not.toContain("userinfo.email");
+    expect(url).not.toContain("openid");
   });
 
   it("throws when client ID is missing", () => {

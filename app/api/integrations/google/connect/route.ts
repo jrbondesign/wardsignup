@@ -1,8 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthFromRequest } from '@/lib/auth';
 import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
-import { buildAuthUrl, revokeToken, type OAuthState } from '@/lib/google-oauth';
-import { createServiceRoleClient } from '@/lib/supabase-admin';
+import { buildAuthUrl, type OAuthState } from '@/lib/google-oauth';
 import { randomBytes } from 'crypto';
 
 /**
@@ -38,26 +37,6 @@ export async function GET(request: Request) {
         { error: 'Google Calendar sync is not enabled for this organization' },
         { status: 403 }
       );
-    }
-
-    // Best-effort: revoke any stored Google grant so reconnect gets a new refresh token.
-    try {
-      const admin = createServiceRoleClient();
-      const { data: existing } = await admin
-        .from('google_calendar_connections' as never)
-        .select('refresh_token_enc')
-        .eq('user_id', user.id)
-        .eq('organization_id', orgId);
-      for (const row of (existing as { refresh_token_enc?: string }[] | null) ?? []) {
-        if (!row.refresh_token_enc) continue;
-        try {
-          await revokeToken(row.refresh_token_enc);
-        } catch (err) {
-          console.error('[google/connect] prior token revoke failed:', err);
-        }
-      }
-    } catch (err) {
-      console.error('[google/connect] could not load prior connection:', err);
     }
 
     const state: OAuthState = {
