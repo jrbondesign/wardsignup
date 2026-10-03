@@ -14,6 +14,13 @@ interface Connection {
   created_at: string;
   revoked_at: string | null;
   last_error: string | null;
+  default_calendar_id: string | null;
+  default_calendar_name: string | null;
+}
+
+interface Calendar {
+  id: string;
+  summary: string;
 }
 
 export default function GoogleCalendarIntegrations({ organizationId }: GoogleCalendarIntegrationsProps) {
@@ -21,6 +28,9 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
   const [connection, setConnection] = useState<Connection | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const [message, setMessage] = useState<{ kind: "ok" | "error"; text: string } | null>(null);
+  const [calendars, setCalendars] = useState<Calendar[]>([]);
+  const [loadingCalendars, setLoadingCalendars] = useState(false);
+  const [savingCalendar, setSavingCalendar] = useState(false);
 
   // Don't show the section if feature flag is off or org not in allowlist
   if (!isGcalSyncUIEnabled(organizationId)) {
@@ -47,6 +57,37 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
 
     load();
   }, [organizationId]);
+
+  // Load calendars when connection is available and not revoked
+  useEffect(() => {
+    if (!connection || connection.revoked_at || connection.last_error?.includes("invalid_grant")) {
+      setCalendars([]);
+      return;
+    }
+
+    const loadCalendars = async () => {
+      setLoadingCalendars(true);
+      try {
+        const supabase = createClientComponentClient();
+        const { data: { session } } = await supabase.auth.getSession();
+
+        const res = await fetch(`/api/integrations/google/calendars?org_id=${organizationId}`, {
+          headers: { Authorization: `Bearer ${session?.access_token ?? ""}` },
+        });
+
+        if (res.ok) {
+          const data = await res.json();
+          setCalendars(data.calendars || []);
+        }
+      } catch (err) {
+        console.error("Failed to load calendars:", err);
+      } finally {
+        setLoadingCalendars(false);
+      }
+    };
+
+    loadCalendars();
+  }, [connection, organizationId]);
 
   const handleConnect = async () => {
     setMessage(null);
@@ -120,6 +161,46 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
       setMessage({ kind: "error", text: "Network error. Please try again." });
     } finally {
       setDisconnecting(false);
+    }
+  };
+
+  const handleSaveDefaultCalendar = async (calendarId: string) => {
+    if (!connection) return;
+
+    setSavingCalendar(true);
+    setMessage(null);
+
+    try {
+      const supabase = createClientComponentClient();
+      const { data: { session } } = await supabase.auth.getSession();
+
+      const calendar = calendars.find(c => c.id === calendarId);
+      const calendarName = calendar?.summary || "";
+
+      const res = await fetch(`/api/integrations/google/connections/${connection.id}/default-calendar`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${session?.access_token ?? ""}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          calendar_id: calendarId,
+          calendar_name: calendarName,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setMessage({ kind: "error", text: data?.error ?? "Failed to save calendar selection." });
+        return;
+      }
+
+      setConnection(prev => prev ? { ...prev, default_calendar_id: calendarId, default_calendar_name: calendarName } : null);
+      setMessage({ kind: "ok", text: "Default calendar saved." });
+    } catch {
+      setMessage({ kind: "error", text: "Network error. Please try again." });
+    } finally {
+      setSavingCalendar(false);
     }
   };
 
@@ -214,7 +295,39 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
                     </div>
                   )}
 
-                  <div className="flex gap-2">
+                  {!connection.revoked_at && !connection.last_error?.includes("invalid_grant") && (
+                    <div className="mt-3 space-y-2">
+                      <div>
+                        <label className="block text-[12px] font-medium text-[#2E5566] mb-1.5">
+                          Default calendar for new events
+                        </label>
+                        {loadingCalendars ? (
+                          <div className="text-[12px] text-[#5A8399]">Loading calendars...</div>
+                        ) : (
+                          <select
+                            value={connection.default_calendar_id || ""}
+                            onChange={(e) => handleSaveDefaultCalendar(e.target.value)}
+                            disabled={savingCalendar}
+                            className="w-full px-3 py-2 text-[13px] border border-[rgba(14,150,176,0.3)] rounded-lg focus:ring-2 focus:ring-[#0E96B0] focus:border-transparent disabled:opacity-50"
+                          >
+                            <option value="">Select a calendar...</option>
+                            {calendars.map((cal) => (
+                              <option key={cal.id} value={cal.id}>
+                                {cal.summary}
+                              </option>
+                            ))}
+                          </select>
+                        )}
+                        {!connection.default_calendar_id && !loadingCalendars && calendars.length > 0 && (
+                          <p className="text-[11px] text-[#5A8399] mt-1">
+                            Choose which calendar events should sync to by default.
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 mt-3">
                     {(connection.revoked_at || connection.last_error?.includes("invalid_grant")) ? (
                       <button
                         type="button"

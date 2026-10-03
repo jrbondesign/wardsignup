@@ -129,26 +129,18 @@ export async function PATCH(
         );
       }
 
-      // Creating a new record requires calendar selection
-      if (!("calendar_id" in updates) || !updates.calendar_id || !("calendar_name" in updates) || !updates.calendar_name) {
-        return NextResponse.json(
-          { error: "Please select a calendar to sync with." },
-          { status: 400 }
-        );
-      }
-
-      // Get the user's google calendar connection
+      // Get the user's google calendar connection to check for org default
       const orgId = (event as Campaign).organization_id;
       if (!orgId) {
         return NextResponse.json(
-          { error: "Event has no organization" },
+          { error: "Event has no organization." },
           { status: 400 }
         );
       }
 
       const { data: connection } = await supabase
         .from("google_calendar_connections")
-        .select("id")
+        .select("id, default_calendar_id, default_calendar_name")
         .eq("user_id", user.id)
         .eq("organization_id", orgId)
         .is("revoked_at", null)
@@ -156,7 +148,26 @@ export async function PATCH(
 
       if (!connection) {
         return NextResponse.json(
-          { error: "No Google Calendar connection found. Connect your account first." },
+          { error: "No Google Calendar connection found. Connect your account in organization settings first." },
+          { status: 400 }
+        );
+      }
+
+      const conn = connection as any;
+
+      // Use org default if calendar not specified
+      let finalCalendarId = updates.calendar_id as string | undefined;
+      let finalCalendarName = updates.calendar_name as string | undefined;
+
+      if (!finalCalendarId && conn.default_calendar_id) {
+        finalCalendarId = conn.default_calendar_id;
+        finalCalendarName = conn.default_calendar_name || "";
+      }
+
+      // Require calendar selection (either from request or from org default)
+      if (!finalCalendarId || !finalCalendarName) {
+        return NextResponse.json(
+          { error: "Please select a calendar to sync with." },
           { status: 400 }
         );
       }
@@ -165,7 +176,9 @@ export async function PATCH(
         .from("campaign_calendar_sync")
         .insert({
           campaign_id: eventId,
-          connection_id: (connection as any).id,
+          connection_id: conn.id,
+          calendar_id: finalCalendarId,
+          calendar_name: finalCalendarName,
           ...updates,
         } as never)
         .select()
@@ -174,7 +187,7 @@ export async function PATCH(
       if (error) {
         console.error("Error creating calendar sync:", error);
         return NextResponse.json(
-          { error: "Failed to create calendar sync" },
+          { error: "Failed to create calendar sync." },
           { status: 500 }
         );
       }
