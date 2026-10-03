@@ -54,7 +54,7 @@ interface SessionWithSignups {
     member_email: string | null;
     member_phone: string | null;
     guest_names: string[];
-    note: string | null;
+    signup_note: string | null;
   }>;
 }
 
@@ -158,7 +158,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
           member_email,
           member_phone,
           guest_names,
-          note
+          signup_note
         )
       `)
       .eq('campaign_id', campaignId)
@@ -363,8 +363,8 @@ function buildGoogleEvent(
     if (signup.guest_names && signup.guest_names.length > 0) {
       description += `\n  Guests: ${signup.guest_names.join(', ')}`;
     }
-    if (signup.note) {
-      description += `\n  Note: ${signup.note}`;
+    if (signup.signup_note) {
+      description += `\n  Note: ${signup.signup_note}`;
     }
   }
 
