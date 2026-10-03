@@ -146,7 +146,9 @@ export function buildAuthUrl(state: OAuthState): string {
     client_id: GOOGLE_OAUTH_CLIENT_ID,
     redirect_uri: GOOGLE_OAUTH_CALLBACK_URL,
     response_type: 'code',
-    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly https://www.googleapis.com/auth/userinfo.email',
+    // Calendar scopes only. Mixing Sign-In scopes (userinfo.email / openid) into this
+    // incremental calendar consent URL has caused Google to return a bare 500 page.
+    scope: 'https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly',
     access_type: 'offline',
     prompt: 'consent',
     include_granted_scopes: 'true',

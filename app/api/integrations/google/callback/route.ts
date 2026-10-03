@@ -1,9 +1,45 @@
 import { NextResponse } from 'next/server';
 import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
-import { verifyState, exchangeCode, encryptToken } from '@/lib/google-oauth';
+import { verifyState, exchangeCode, encryptToken, listCalendars } from '@/lib/google-oauth';
 import { persistGoogleCalendarConnection } from '@/lib/google-calendar-connection';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
 import { getPostHogClient } from '@/lib/posthog-server';
+
+async function resolveGoogleEmail(accessToken: string): Promise<string | null> {
+  try {
+    const userInfoResponse = await fetch(
+      'https://www.googleapis.com/oauth2/v2/userinfo',
+      { headers: { Authorization: `Bearer ${accessToken}` } },
+    );
+    if (userInfoResponse.ok) {
+      const userInfo = await userInfoResponse.json();
+      if (typeof userInfo.email === 'string' && userInfo.email.includes('@')) {
+        return userInfo.email;
+      }
+    }
+  } catch (err) {
+    console.error('[google/callback] userinfo lookup failed:', err);
+  }
+
+  // Calendar scopes alone: primary calendar id is usually the account email.
+  try {
+    const calendars = await listCalendars(accessToken);
+    const primary = (calendars.items || []).find((cal: { primary?: boolean; id?: string }) => cal.primary);
+    if (typeof primary?.id === 'string' && primary.id.includes('@')) {
+      return primary.id;
+    }
+    const emailLike = (calendars.items || []).find(
+      (cal: { id?: string }) => typeof cal.id === 'string' && cal.id.includes('@'),
+    );
+    if (typeof emailLike?.id === 'string') {
+      return emailLike.id;
+    }
+  } catch (err) {
+    console.error('[google/callback] calendar email fallback failed:', err);
+  }
+
+  return null;
+}
 
 /**
  * GET /api/integrations/google/callback
@@ -71,24 +107,9 @@ export async function GET(request: Request) {
       return failRedirect('gcal_no_refresh_token');
     }
 
-    // Get user info from Google to get email
-    const userInfoResponse = await fetch(
-      'https://www.googleapis.com/oauth2/v2/userinfo',
-      {
-        headers: {
-          Authorization: `Bearer ${tokens.access_token}`,
-        },
-      }
-    );
-
-    if (!userInfoResponse.ok) {
-      throw new Error('Failed to get user info from Google');
-    }
-
-    const userInfo = await userInfoResponse.json();
-    const googleEmail = typeof userInfo.email === 'string' ? userInfo.email : '';
+    const googleEmail = await resolveGoogleEmail(tokens.access_token);
     if (!googleEmail) {
-      console.error('[google/callback] Google user info did not include an email');
+      console.error('[google/callback] Could not resolve Google account email');
       return failRedirect('gcal_token_exchange_failed');
     }
 
