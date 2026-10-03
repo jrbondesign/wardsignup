@@ -248,5 +248,67 @@ describe("/api/feedback/[token]", () => {
       expect(response.status).toBe(400);
       expect(mockSendNotification).not.toHaveBeenCalled();
     });
+
+    it("includes full text of all answers in notification", async () => {
+      const longValue = "This is a very detailed answer about what makes the product valuable. It includes multiple sentences and specific examples of features that creators appreciate. The response can be quite lengthy and should be preserved in full.";
+      const longBlocker = "Here is detailed feedback about friction points. It might include multiple paragraphs, specific bugs, and feature requests that need to be addressed. Every word matters for product improvement.";
+
+      const mockUpdate = jest.fn().mockReturnValue({
+        eq: jest.fn().mockReturnThis(),
+        in: jest.fn().mockReturnThis(),
+        select: jest.fn().mockReturnThis(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: {
+            id: "req-1",
+            user_id: "user-123",
+            brand_id: "wardsignup",
+            email_lower: "creator@test.com",
+          },
+          error: null,
+        }),
+      });
+
+      const mockFrom = jest.fn().mockReturnValue({
+        update: mockUpdate,
+      });
+
+      mockCreateClient.mockReturnValue({
+        from: mockFrom,
+      } as any);
+
+      mockSendNotification.mockResolvedValue({ ok: true });
+
+      const request = new NextRequest(
+        "http://localhost:3000/api/feedback/abc123def456",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            pmf: "very",
+            retention: "definitely",
+            value: longValue,
+            friction: longBlocker,
+          }),
+        },
+      );
+
+      await POST(request, {
+        params: Promise.resolve({ token: "abc123def456" }),
+      });
+
+      expect(mockSendNotification).toHaveBeenCalledWith({
+        brand: expect.any(Object),
+        creatorEmail: "creator@test.com",
+        pmf: "very",
+        retention: "definitely",
+        value: longValue,
+        blocker: longBlocker,
+        respondedAt: expect.any(String),
+      });
+
+      // Verify full text is passed, not summaries
+      const call = mockSendNotification.mock.calls[0][0];
+      expect(call.value).toBe(longValue);
+      expect(call.blocker).toBe(longBlocker);
+    });
   });
 });

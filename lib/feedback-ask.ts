@@ -282,7 +282,11 @@ export type FeedbackDigestSummary = {
 };
 
 /**
- * Weekly pass (Mondays UTC): email the founder all new responses for this
+ * DEPRECATED: Monday digest is no longer sent. Feedback now sends immediately
+ * to bondesign@gmail.com when submitted. This function remains for backwards
+ * compatibility but is not called from any active cron.
+ *
+ * Historical: Weekly pass (Mondays UTC): email the founder all new responses for this
  * brand, then mark them triaged so next week's digest only shows new ones.
  * A failed send leaves rows as 'responded' and retries next Monday.
  */
