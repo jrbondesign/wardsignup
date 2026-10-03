@@ -29,18 +29,33 @@ export type ConnectionAdmin = {
   from: (table: string) => any;
 };
 
+/** True when Google rejected the refresh token and the user needs to reconnect. */
 export function isConnectionExpired(connection: {
   revoked_at: string | null;
   last_error?: string | null;
 }): boolean {
-  return Boolean(connection.revoked_at) || Boolean(connection.last_error?.includes("invalid_grant"));
+  const err = (connection.last_error ?? "").toLowerCase();
+  return (
+    err.includes("invalid_grant") ||
+    err.includes("invalid grant") ||
+    err.includes("reauthorization needed")
+  );
 }
 
+/**
+ * Choose which connection row to show in Settings / Manage.
+ * - Prefer a live connection
+ * - Else show an expired (invalid_grant) row so Reconnect is available
+ * - Intentional disconnect (revoked_at set, no invalid_grant) → null so the UI
+ *   stays on "Connect Google Calendar" after refresh
+ */
 export function pickDisplayedConnection<T extends { revoked_at: string | null; last_error?: string | null }>(
   rows: T[] | null | undefined,
 ): T | null {
   if (!rows?.length) return null;
-  return rows.find((row) => !isConnectionExpired(row)) ?? rows[0];
+  const live = rows.find((row) => !row.revoked_at && !isConnectionExpired(row));
+  if (live) return live;
+  return rows.find((row) => isConnectionExpired(row)) ?? null;
 }
 
 function normalizeEmail(email: string): string {

@@ -158,6 +158,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
       }
 
       setConnection(null);
+      setCalendars([]);
       setMessage({ kind: "ok", text: "Google Calendar disconnected." });
     } catch {
       setMessage({ kind: "error", text: "Network error. Please try again." });
