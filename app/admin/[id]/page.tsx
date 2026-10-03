@@ -6,7 +6,6 @@ import { usePostHog } from "posthog-js/react";
 import Link from "next/link";
 import { createClientComponentClient } from "@/lib/auth";
 import { Session, Signup, CampaignItemWithSignups } from "@/lib/types";
-import { DigestScheduleLocalTime } from "@/components/DigestScheduleLocalTime";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import Navigation from "@/components/Navigation";
 import Toast from "@/components/Toast";
@@ -18,7 +17,8 @@ import OrgLogoButton from "@/components/OrgLogoButton";
 import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
 import { formatTime } from "@/lib/utils";
 import { downloadEventQr } from "@/lib/download-qr";
-import EventGoogleCalendarControls from "@/components/EventGoogleCalendarControls";
+import EventOptionalSettings from "@/components/event/EventOptionalSettings";
+import { INITIAL_FORM_STATE, type CreateFormState } from "@/lib/create-form-state";
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -97,8 +97,18 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const [digestEnabled, setDigestEnabled] = useState(false);
   const [instantEnabled, setInstantEnabled] = useState(false);
   const [showSignupsPublicly, setShowSignupsPublicly] = useState(false);
+  const [listOnDirectory, setListOnDirectory] = useState(true);
   const [allowGuests, setAllowGuests] = useState(true);
   const [showCapacityPublicly, setShowCapacityPublicly] = useState(true);
+  const [eventTimezone, setEventTimezone] = useState("America/Phoenix");
+  const [leaderName, setLeaderName] = useState("");
+  const [leaderEmail, setLeaderEmail] = useState("");
+  const leaderSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [visibilityOpen, setVisibilityOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [registrationOpen, setRegistrationOpen] = useState(false);
   const [sendingReport, setSendingReport] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -260,10 +270,15 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       setDigestEnabled(Boolean((eventData as any).organizer_digest_enabled));
       setInstantEnabled(Boolean((eventData as any).organizer_instant_notify_enabled));
       setShowSignupsPublicly(Boolean((eventData as any).show_signups_publicly));
+      setListOnDirectory(typeof (eventData as any).list_on_directory === "boolean" ? (eventData as any).list_on_directory : true);
       const ag = (eventData as any).allow_guests;
       setAllowGuests(ag == null ? true : Boolean(ag));
       const scp = (eventData as any).show_capacity_publicly;
       setShowCapacityPublicly(scp == null ? true : Boolean(scp));
+      const tzRaw = (eventData as any).event_timezone;
+      if (typeof tzRaw === "string" && tzRaw.trim()) setEventTimezone(tzRaw.trim());
+      setLeaderName((eventData as any).leader_name ?? "");
+      setLeaderEmail((eventData as any).leader_email ?? "");
 
       // Future: Load org logo if Ward Signup supports custom logos
       const profileLogoUrl = null;
@@ -278,8 +293,12 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
     organizer_digest_enabled?: boolean;
     organizer_instant_notify_enabled?: boolean;
     show_signups_publicly?: boolean;
+    list_on_directory?: boolean;
     allow_guests?: boolean;
     show_capacity_publicly?: boolean;
+    event_timezone?: string;
+    leader_name?: string | null;
+    leader_email?: string | null;
   }) => {
     const supabase = createClientComponentClient();
     const {
@@ -298,6 +317,81 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       throw new Error(data.error || "Failed to save email settings");
     }
     setEvent((prev: any) => (prev ? { ...prev, ...partial } : prev));
+  };
+
+  const applyOptionalSettingsPatch = (patch: Partial<CreateFormState>) => {
+    if ("expanded" in patch && patch.expanded) {
+      if ("visibility" in patch.expanded) setVisibilityOpen(Boolean(patch.expanded.visibility));
+      if ("notifications" in patch.expanded) setNotificationsOpen(Boolean(patch.expanded.notifications));
+      if ("settings" in patch.expanded) setSettingsOpen(Boolean(patch.expanded.settings));
+      if ("googleCalendar" in patch.expanded) setCalendarOpen(Boolean(patch.expanded.googleCalendar));
+      if ("registration" in patch.expanded) setRegistrationOpen(Boolean(patch.expanded.registration));
+    }
+    if ("calendarSyncEnabled" in patch && typeof patch.calendarSyncEnabled === "boolean") {
+      setCalendarSyncEnabled(patch.calendarSyncEnabled);
+    }
+    if ("calendarId" in patch && typeof patch.calendarId === "string") {
+      setCalendarId(patch.calendarId);
+    }
+    if ("calendarName" in patch && typeof patch.calendarName === "string") {
+      setCalendarName(patch.calendarName);
+    }
+    if ("inviteLeader" in patch && typeof patch.inviteLeader === "boolean") {
+      setInviteLeader(patch.inviteLeader);
+    }
+
+    const saveBool = (
+      key: keyof CreateFormState,
+      apiKey: "show_signups_publicly" | "list_on_directory" | "organizer_digest_enabled" | "organizer_instant_notify_enabled" | "allow_guests" | "show_capacity_publicly",
+      current: boolean,
+      setter: (v: boolean) => void,
+    ) => {
+      if (!(key in patch) || typeof patch[key] !== "boolean") return;
+      const next = patch[key] as boolean;
+      setter(next);
+      patchOrganizerEmailPrefs({ [apiKey]: next }).catch((err: unknown) => {
+        setter(current);
+        alert(err instanceof Error ? err.message : "Could not save");
+      });
+    };
+
+    saveBool("showSignupsPublicly", "show_signups_publicly", showSignupsPublicly, setShowSignupsPublicly);
+    saveBool("listOnDirectory", "list_on_directory", listOnDirectory, setListOnDirectory);
+    saveBool("organizerDigestEnabled", "organizer_digest_enabled", digestEnabled, setDigestEnabled);
+    saveBool("organizerInstantNotifyEnabled", "organizer_instant_notify_enabled", instantEnabled, setInstantEnabled);
+    saveBool("allowGuests", "allow_guests", allowGuests, setAllowGuests);
+    saveBool("showCapacityPublicly", "show_capacity_publicly", showCapacityPublicly, setShowCapacityPublicly);
+
+    if ("eventTimezone" in patch && typeof patch.eventTimezone === "string") {
+      const next = patch.eventTimezone;
+      const prev = eventTimezone;
+      setEventTimezone(next);
+      patchOrganizerEmailPrefs({ event_timezone: next }).catch((err: unknown) => {
+        setEventTimezone(prev);
+        alert(err instanceof Error ? err.message : "Could not save");
+      });
+    }
+
+    const hasName = "leaderName" in patch && typeof patch.leaderName === "string";
+    const hasEmail = "leaderEmail" in patch && typeof patch.leaderEmail === "string";
+    if (hasName || hasEmail) {
+      const nextName = hasName ? (patch.leaderName as string) : leaderName;
+      const nextEmail = hasEmail ? (patch.leaderEmail as string) : leaderEmail;
+      if (hasName) setLeaderName(nextName);
+      if (hasEmail) setLeaderEmail(nextEmail);
+      const emailTrim = nextEmail.trim();
+      if (!emailTrim || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
+        if (leaderSaveTimer.current) clearTimeout(leaderSaveTimer.current);
+        leaderSaveTimer.current = setTimeout(() => {
+          patchOrganizerEmailPrefs({
+            leader_name: nextName.trim() || null,
+            leader_email: emailTrim || null,
+          }).catch((err: unknown) => {
+            alert(err instanceof Error ? err.message : "Could not save");
+          });
+        }, 800);
+      }
+    }
   };
 
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -761,197 +855,47 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
               );
             })()}
 
-            {/* Email updates — compact, directly above signup link */}
-            <div className="mb-4 rounded-xl border border-[#0E96B0]/18 bg-[#F8FCFD] px-4 py-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2 gap-y-1 mb-2">
-                <h3 className="text-sm font-semibold text-[#0D2B35]">Email updates</h3>
-                <button
-                  type="button"
-                  disabled={sendingReport}
-                  onClick={sendOrganizerReportNow}
-                  className="text-xs font-semibold text-[#0E96B0] hover:text-[#08647E] disabled:opacity-50 disabled:cursor-not-allowed underline-offset-2 hover:underline"
-                >
-                  {sendingReport ? "Sending…" : "Send report now"}
-                </button>
-              </div>
-              <p className="text-[11px] text-[#5A8399] leading-snug mb-1.5">
-                Metrics and roster details. The daily digest runs once per day at{" "}
-                <span className="text-[#2E5566] font-medium">14:00 UTC</span> (
-                <DigestScheduleLocalTime /> in your time zone). It only sends when something changed
-                since the last email.
-              </p>
-              <p className="text-[11px] text-[#5A8399] leading-snug mb-2.5">
-                Participants who provided an email address automatically receive a reminder ~24 hours before their dated session.
-              </p>
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-2">
-                <label className="flex items-center gap-2 cursor-pointer group min-w-0">
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 shrink-0 rounded border-[#0E96B0]/40 text-[#0E96B0] focus:ring-[#0E96B0]"
-                    checked={digestEnabled}
-                    onChange={async (e) => {
-                      const next = e.target.checked;
-                      setDigestEnabled(next);
-                      try {
-                        await patchOrganizerEmailPrefs({ organizer_digest_enabled: next });
-                      } catch (err: unknown) {
-                        setDigestEnabled(!next);
-                        alert(err instanceof Error ? err.message : "Could not save");
-                      }
-                    }}
-                  />
-                  <span className="text-xs text-[#2E5566] group-hover:text-[#0D2B35]">
-                    <span className="font-medium">Daily digest</span>
-                    <span className="text-[#5A8399] font-normal">
-                      {" · "}
-                      <DigestScheduleLocalTime />
-                      {" · if something changed"}
-                    </span>
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group min-w-0">
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 shrink-0 rounded border-[#0E96B0]/40 text-[#0E96B0] focus:ring-[#0E96B0]"
-                    checked={instantEnabled}
-                    onChange={async (e) => {
-                      const next = e.target.checked;
-                      setInstantEnabled(next);
-                      try {
-                        await patchOrganizerEmailPrefs({ organizer_instant_notify_enabled: next });
-                      } catch (err: unknown) {
-                        setInstantEnabled(!next);
-                        alert(err instanceof Error ? err.message : "Could not save");
-                      }
-                    }}
-                  />
-                  <span className="text-xs text-[#2E5566] group-hover:text-[#0D2B35]">
-                    <span className="font-medium">Faster alerts</span>
-                    <span className="text-[#5A8399] font-normal">
-                      {" "}
-                      · about every 30 minutes when there are new signups
-                    </span>
-                  </span>
-                </label>
-              </div>
+            {/* Optional settings — same disclosure controls as edit */}
+            <div className="mb-4">
+              <EventOptionalSettings
+                state={{
+                  ...INITIAL_FORM_STATE,
+                  eventType,
+                  showSignupsPublicly,
+                  listOnDirectory,
+                  organizerDigestEnabled: digestEnabled,
+                  organizerInstantNotifyEnabled: instantEnabled,
+                  calendarSyncEnabled,
+                  calendarId,
+                  calendarName,
+                  inviteLeader,
+                  eventTimezone,
+                  leaderName,
+                  leaderEmail,
+                  allowGuests,
+                  showCapacityPublicly,
+                  expanded: {
+                    ...INITIAL_FORM_STATE.expanded,
+                    visibility: visibilityOpen,
+                    notifications: notificationsOpen,
+                    settings: settingsOpen,
+                    googleCalendar: calendarOpen,
+                    registration: registrationOpen,
+                  },
+                }}
+                set={applyOptionalSettingsPatch}
+                organizationId={(event as { organization_id?: string | null }).organization_id}
+                eventId={eventId}
+                includeRegistration={eventType !== "items"}
+                lastSyncedAt={calendarLastSyncedAt}
+                lastError={calendarLastError}
+                onSyncResult={({ lastSyncedAt, lastError }) => {
+                  if (lastSyncedAt !== undefined) setCalendarLastSyncedAt(lastSyncedAt);
+                  if (lastError !== undefined) setCalendarLastError(lastError);
+                }}
+                reportAction={{ sending: sendingReport, onSend: sendOrganizerReportNow }}
+              />
             </div>
-
-            <EventGoogleCalendarControls
-              organizationId={(event as { organization_id?: string | null }).organization_id}
-              eventType={eventType}
-              eventId={eventId}
-              layout="card"
-              showUpdateNow
-              lastSyncedAt={calendarLastSyncedAt}
-              lastError={calendarLastError}
-              value={{
-                enabled: calendarSyncEnabled,
-                calendarId,
-                calendarName,
-                inviteLeader,
-              }}
-              onChange={(patch) => {
-                if ("enabled" in patch && typeof patch.enabled === "boolean") {
-                  setCalendarSyncEnabled(patch.enabled);
-                }
-                if ("calendarId" in patch && typeof patch.calendarId === "string") {
-                  setCalendarId(patch.calendarId);
-                }
-                if ("calendarName" in patch && typeof patch.calendarName === "string") {
-                  setCalendarName(patch.calendarName);
-                }
-                if ("inviteLeader" in patch && typeof patch.inviteLeader === "boolean") {
-                  setInviteLeader(patch.inviteLeader);
-                }
-              }}
-              onSyncResult={({ lastSyncedAt, lastError }) => {
-                if (lastSyncedAt !== undefined) setCalendarLastSyncedAt(lastSyncedAt);
-                if (lastError !== undefined) setCalendarLastError(lastError);
-              }}
-            />
-
-            <div className="mb-4 rounded-xl border border-[#0E96B0]/18 bg-[#F8FCFD] px-4 py-3">
-              <h3 className="text-sm font-semibold text-[#0D2B35] mb-1">Signup visibility</h3>
-              <p className="text-[11px] text-[#5A8399] leading-snug mb-2.5">
-                When on, visitors can see who else has signed up (name and note).
-              </p>
-              <label className="flex items-center gap-2 cursor-pointer group min-w-0">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 shrink-0 rounded border-[#0E96B0]/40 text-[#0E96B0] focus:ring-[#0E96B0]"
-                  checked={showSignupsPublicly}
-                  onChange={async (e) => {
-                    const next = e.target.checked;
-                    setShowSignupsPublicly(next);
-                    try {
-                      await patchOrganizerEmailPrefs({ show_signups_publicly: next });
-                    } catch (err: unknown) {
-                      setShowSignupsPublicly(!next);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    }
-                  }}
-                />
-                <span className="text-xs text-[#2E5566] group-hover:text-[#0D2B35]">
-                  <span className="font-medium">Show who signed up</span>
-                  <span className="text-[#5A8399] font-normal"> · visible on the public signup page</span>
-                </span>
-              </label>
-            </div>
-
-
-            {/* Allow guests + show capacity — for spots/rsvp type events */}
-            {eventType !== "items" && (
-              <div className="mb-4 rounded-xl border border-[#0E96B0]/18 bg-[#F8FCFD] px-4 py-3">
-                <h3 className="text-sm font-semibold text-[#0D2B35] mb-1">Registration options</h3>
-                <p className="text-[11px] text-[#5A8399] leading-snug mb-2.5">
-                  Control what participants can see and do on the public signup page.
-                </p>
-                <div className="space-y-2.5">
-                  <label className="flex items-center gap-2 cursor-pointer group min-w-0">
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 shrink-0 rounded border-[#0E96B0]/40 text-[#0E96B0] focus:ring-[#0E96B0]"
-                      checked={allowGuests}
-                      onChange={async (e) => {
-                        const next = e.target.checked;
-                        setAllowGuests(next);
-                        try {
-                          await patchOrganizerEmailPrefs({ allow_guests: next });
-                        } catch (err: unknown) {
-                          setAllowGuests(!next);
-                          alert(err instanceof Error ? err.message : "Could not save");
-                        }
-                      }}
-                    />
-                    <span className="text-xs text-[#2E5566] group-hover:text-[#0D2B35]">
-                      <span className="font-medium">Allow guests</span>
-                      <span className="text-[#5A8399] font-normal"> · participants can register additional people by name</span>
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer group min-w-0">
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 shrink-0 rounded border-[#0E96B0]/40 text-[#0E96B0] focus:ring-[#0E96B0]"
-                      checked={showCapacityPublicly}
-                      onChange={async (e) => {
-                        const next = e.target.checked;
-                        setShowCapacityPublicly(next);
-                        try {
-                          await patchOrganizerEmailPrefs({ show_capacity_publicly: next });
-                        } catch (err: unknown) {
-                          setShowCapacityPublicly(!next);
-                          alert(err instanceof Error ? err.message : "Could not save");
-                        }
-                      }}
-                    />
-                    <span className="text-xs text-[#2E5566] group-hover:text-[#0D2B35]">
-                      <span className="font-medium">Show spots remaining</span>
-                      <span className="text-[#5A8399] font-normal"> · visible on the public signup page</span>
-                    </span>
-                  </label>
-                </div>
-              </div>
-            )}
 
             <div className="rounded-xl border border-[#0E96B0]/18 bg-[#F8FCFD] px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="min-w-0">
