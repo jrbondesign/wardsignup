@@ -104,6 +104,89 @@ export type FeedbackDigestRow = {
   responded_at: string | null;
 };
 
+/**
+ * Send immediate notification to bondesign@gmail.com when a creator submits
+ * feedback. This runs inline with the submission route so the founder sees it
+ * right away instead of waiting for the Monday digest.
+ */
+export async function sendFeedbackResponseNotification(params: {
+  brand: PublicBrand;
+  creatorEmail: string;
+  pmf: string;
+  retention: string | null;
+  value: string | null;
+  blocker: string | null;
+  respondedAt: string;
+}): Promise<FeedbackSendResult> {
+  const { brand, creatorEmail, pmf, retention, value, blocker, respondedAt } =
+    params;
+
+  const pmfLabel = PMF_LABELS[pmf] ?? pmf;
+  const retentionLabel = retention ? RETENTION_LABELS[retention] ?? retention : "—";
+  const valueText = value?.trim() || "—";
+  const blockerText = blocker?.trim() || "—";
+  const when = new Date(respondedAt).toISOString().slice(0, 16).replace("T", " ");
+
+  const text = `New ${brand.name} feedback from ${creatorEmail}
+
+Responded: ${when} UTC
+
+Q1. How would you feel if you could no longer use ${brand.name}?
+→ ${pmfLabel}
+
+Q2. Will you use it for your next event?
+→ ${retentionLabel}
+
+Q3. What's the single most valuable part of it for you?
+→ ${valueText}
+
+Q4. What's the #1 thing holding it back from being perfect?
+→ ${blockerText}`;
+
+  const html = `
+    <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; max-width: 600px; margin: 0 auto; padding: 24px; color: #111827;">
+      <h2 style="margin: 0 0 16px; font-size: 18px; font-weight: 600;">New ${escapeHtml(brand.name)} feedback from ${escapeHtml(creatorEmail)}</h2>
+      <p style="margin: 0 0 20px; font-size: 13px; color: #6b7280;">Responded: ${escapeHtml(when)} UTC</p>
+      
+      <div style="background: #f9fafb; border-left: 3px solid #0E96B0; padding: 16px; margin-bottom: 12px;">
+        <p style="margin: 0 0 6px; font-size: 13px; font-weight: 500; color: #374151;">Q1. How would you feel if you could no longer use ${escapeHtml(brand.name)}?</p>
+        <p style="margin: 0; font-size: 15px; font-weight: 600; color: #111827;">→ ${escapeHtml(pmfLabel)}</p>
+      </div>
+
+      <div style="background: #f9fafb; border-left: 3px solid #d1d5db; padding: 16px; margin-bottom: 12px;">
+        <p style="margin: 0 0 6px; font-size: 13px; font-weight: 500; color: #374151;">Q2. Will you use it for your next event?</p>
+        <p style="margin: 0; font-size: 15px; color: #111827;">→ ${escapeHtml(retentionLabel)}</p>
+      </div>
+
+      <div style="background: #f9fafb; border-left: 3px solid #d1d5db; padding: 16px; margin-bottom: 12px;">
+        <p style="margin: 0 0 6px; font-size: 13px; font-weight: 500; color: #374151;">Q3. What's the single most valuable part of it for you?</p>
+        <p style="margin: 0; font-size: 15px; color: #111827; white-space: pre-wrap;">→ ${escapeHtml(valueText)}</p>
+      </div>
+
+      <div style="background: #f9fafb; border-left: 3px solid #d1d5db; padding: 16px;">
+        <p style="margin: 0 0 6px; font-size: 13px; font-weight: 500; color: #374151;">Q4. What's the #1 thing holding it back from being perfect?</p>
+        <p style="margin: 0; font-size: 15px; color: #111827; white-space: pre-wrap;">→ ${escapeHtml(blockerText)}</p>
+      </div>
+    </div>
+  `;
+
+  const send = await sendGuardedEmail({
+    brand,
+    category: "transactional",
+    from: feedbackEmailFrom(brand),
+    replyTo: creatorEmail,
+    to: "bondesign@gmail.com",
+    subject: `New ${brand.name} feedback from ${creatorEmail}`,
+    text,
+    html,
+  });
+
+  if (!send.ok) {
+    return { ok: false, error: send.error || send.skipped || "send failed" };
+  }
+  return { ok: true };
+}
+
 const PMF_LABELS: Record<string, string> = {
   very: "Very disappointed",
   somewhat: "Somewhat disappointed",
