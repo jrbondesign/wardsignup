@@ -20,7 +20,7 @@ export default function EventSettingsSection({ state, set }: Props) {
 
   return (
     <OptionalDisclosureCard
-      title="Event settings"
+      title="Leader & timezone"
       description="Event leader, timezone."
       open={open}
       onToggle={toggle}
