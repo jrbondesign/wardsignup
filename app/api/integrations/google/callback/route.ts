@@ -44,7 +44,20 @@ export async function GET(request: Request) {
     }
 
     // Exchange code for tokens
-    const tokens = await exchangeCode(code);
+    let tokens;
+    try {
+      tokens = await exchangeCode(code);
+    } catch (err: any) {
+      console.error('[google/callback] Token exchange failed:', err);
+      const errorMsg = err.message || String(err);
+      
+      // Check for common OAuth errors
+      if (errorMsg.includes('invalid_grant') || errorMsg.includes('expired') || errorMsg.includes('revoked')) {
+        return NextResponse.redirect(new URL('/settings/organization?error=gcal_token_revoked', origin));
+      }
+      
+      return NextResponse.redirect(new URL('/settings/organization?error=gcal_token_exchange_failed', origin));
+    }
     
     if (!tokens.refresh_token) {
       console.error('[google/callback] No refresh token received');

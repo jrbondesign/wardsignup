@@ -204,9 +204,36 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
     }
   };
 
-  // Check for connection success from OAuth callback
+  // Check for connection success or error from OAuth callback
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    
+    // Handle OAuth callback error
+    const error = params.get("error");
+    if (error) {
+      const errorMessages: Record<string, string> = {
+        gcal_disabled: "Google Calendar sync is not available at this time.",
+        gcal_oauth_denied: "You denied access to Google Calendar. Please try again and allow access.",
+        gcal_missing_params: "The connection failed. Please try again.",
+        gcal_invalid_state: "The connection session expired. Please try again.",
+        gcal_org_not_enabled: "Google Calendar sync is not enabled for your organization.",
+        gcal_no_refresh_token: "Could not complete the connection. Try disconnecting your Google account from the Google security settings page and reconnecting here.",
+        gcal_token_revoked: "Your previous Google Calendar access was revoked. Please disconnect your Google account from Google security settings, then try connecting again.",
+        gcal_token_exchange_failed: "Could not complete the connection with Google. Please try again.",
+        gcal_db_error: "Could not save the connection. Please try again.",
+        gcal_internal_error: "An unexpected error occurred. Please try again.",
+      };
+      
+      const message = errorMessages[error] || "Could not connect to Google Calendar. Please try again.";
+      setMessage({ kind: "error", text: message });
+      
+      // Clear the error param
+      const newUrl = new URL(window.location.href);
+      newUrl.searchParams.delete("error");
+      window.history.replaceState({}, "", newUrl.toString());
+    }
+    
+    // Handle OAuth callback success
     if (params.get("gcal_connected") === "1") {
       setMessage({ kind: "ok", text: "Google Calendar connected successfully!" });
       // Clear the param

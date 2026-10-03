@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import type { CreateFormState } from "@/lib/create-form-state";
 import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
+import { createClientComponentClient } from "@/lib/auth";
 
 interface Props {
   state: CreateFormState;

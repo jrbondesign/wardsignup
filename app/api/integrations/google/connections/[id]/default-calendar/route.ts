@@ -3,6 +3,8 @@ import { getAuthFromRequest } from '@/lib/auth';
 import { isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
 
+export const dynamic = 'force-dynamic';
+
 /**
  * PATCH /api/integrations/google/connections/[id]/default-calendar
  * Update the default calendar for an organization
