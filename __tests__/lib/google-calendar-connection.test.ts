@@ -84,17 +84,43 @@ function createAdmin(options: {
 describe("pickDisplayedConnection", () => {
   it("prefers a live connection over an expired one", () => {
     const picked = pickDisplayedConnection([
-      { id: "old", revoked_at: "2026-10-03T05:32:21.517Z", last_error: null },
+      {
+        id: "old",
+        revoked_at: "2026-10-03T05:32:21.517Z",
+        last_error: "Invalid grant - reauthorization needed",
+      },
       { id: "live", revoked_at: null, last_error: null },
     ]);
     expect(picked?.id).toBe("live");
   });
 
-  it("falls back to the expired row when that is all there is", () => {
+  it("shows invalid_grant rows so Reconnect is available", () => {
+    const picked = pickDisplayedConnection([
+      {
+        id: "old",
+        revoked_at: "2026-10-03T05:32:21.517Z",
+        last_error: "Invalid grant - reauthorization needed",
+      },
+    ]);
+    expect(picked?.id).toBe("old");
+  });
+
+  it("hides intentional disconnect so Connect stays after refresh", () => {
+    const picked = pickDisplayedConnection([
+      {
+        id: "disconnected",
+        revoked_at: "2026-10-03T05:32:21.517Z",
+        last_error: CONNECTION_DISCONNECTED_ERROR,
+      },
+    ]);
+    expect(picked).toBeNull();
+  });
+
+  it("hides legacy revoked rows with no invalid_grant error", () => {
     const picked = pickDisplayedConnection([
       { id: "old", revoked_at: "2026-10-03T05:32:21.517Z", last_error: null },
     ]);
-    expect(picked?.id).toBe("old");
+    expect(picked).toBeNull();
   });
 
   it("returns null for an empty list", () => {
@@ -103,12 +129,31 @@ describe("pickDisplayedConnection", () => {
 });
 
 describe("isConnectionExpired", () => {
-  it("treats revoked_at as expired", () => {
-    expect(isConnectionExpired({ revoked_at: "2026-10-03T00:00:00Z", last_error: null })).toBe(true);
+  it("does not treat intentional disconnect as expired", () => {
+    expect(
+      isConnectionExpired({
+        revoked_at: "2026-10-03T00:00:00Z",
+        last_error: CONNECTION_DISCONNECTED_ERROR,
+      }),
+    ).toBe(false);
   });
 
   it("treats invalid_grant as expired", () => {
-    expect(isConnectionExpired({ revoked_at: null, last_error: "invalid_grant: Token has been expired or revoked" })).toBe(true);
+    expect(
+      isConnectionExpired({
+        revoked_at: null,
+        last_error: "invalid_grant: Token has been expired or revoked",
+      }),
+    ).toBe(true);
+  });
+
+  it("treats Invalid grant reauthorization text as expired", () => {
+    expect(
+      isConnectionExpired({
+        revoked_at: "2026-10-03T00:00:00Z",
+        last_error: "Invalid grant - reauthorization needed",
+      }),
+    ).toBe(true);
   });
 
   it("treats a live row as active", () => {

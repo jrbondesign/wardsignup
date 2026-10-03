@@ -61,11 +61,13 @@ export async function DELETE(
       // Continue anyway - we'll mark it revoked in our DB
     }
 
-    // Mark as revoked and disable dependent sync configs
+    // Mark as intentionally disconnected (UI treats this as "no connection",
+    // not "Connection Expired" — that badge is reserved for invalid_grant).
     const { error: revokeError } = await admin
       .from('google_calendar_connections' as never)
       .update({
         revoked_at: new Date().toISOString(),
+        last_error: CONNECTION_DISCONNECTED_ERROR,
       } as never)
       .eq('id', connectionId);
 
