@@ -5,6 +5,7 @@ import { campaignMatchesHostBrand } from "@/lib/campaign-brand-guard";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
 import type { Campaign } from "@/lib/types";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
+import { userFacingCalendarSyncError } from "@/lib/google-calendar-sync-format";
 import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from "@/lib/gcal-feature";
 import { getPostHogClient } from "@/lib/posthog-server";
 
@@ -279,12 +280,13 @@ export async function POST(
     const result = await syncCampaignCalendar(eventId);
 
     if (result.error) {
+      const message = userFacingCalendarSyncError(result.error);
       return NextResponse.json(
         {
           success: false,
-          error: result.error,
+          error: message,
           last_synced_at: result.lastSyncedAt,
-          last_error: result.error,
+          last_error: message,
         },
         { status: 500 }
       );
