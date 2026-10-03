@@ -134,6 +134,7 @@ export interface CreateFormState {
     visibility: boolean;
     notifications: boolean;
     settings: boolean;
+    googleCalendar: boolean;
   };
 
   /** Per-type "user has edited something" flags. Set when the user touches a
@@ -214,6 +215,7 @@ export const INITIAL_FORM_STATE: CreateFormState = {
     visibility: false,
     notifications: false,
     settings: false,
+    googleCalendar: false,
   },
 
   dirty: {

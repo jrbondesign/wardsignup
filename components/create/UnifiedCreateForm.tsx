@@ -11,6 +11,7 @@ import AttendeeFieldsSection from "@/components/create/sections/AttendeeFieldsSe
 import ItemsSection from "@/components/create/sections/ItemsSection";
 import VisibilitySection from "@/components/create/sections/VisibilitySection";
 import NotificationsSection from "@/components/create/sections/NotificationsSection";
+import GoogleCalendarSection from "@/components/create/sections/GoogleCalendarSection";
 import EventSettingsSection from "@/components/create/sections/EventSettingsSection";
 import ComponentCard from "@/components/create/sections/ComponentCard";
 import {
@@ -368,6 +369,26 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
         }
       }
 
+      if (
+        (state.eventType === "spots" || state.eventType === "rsvp") &&
+        state.calendarSyncEnabled
+      ) {
+        const calRes = await fetch(`/api/events/${event.id}/calendar-sync`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            enabled: true,
+            calendar_id: state.calendarId,
+            calendar_name: state.calendarName,
+            invite_leader: state.inviteLeader,
+          }),
+        });
+        if (!calRes.ok) {
+          router.push(`/admin/${event.id}?created=1&warn=calendar`);
+          return;
+        }
+      }
+
       router.push(`/admin/${event.id}?created=1`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Something went wrong");
@@ -518,7 +539,8 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
       )}
 
       <VisibilitySection state={state} set={(patch) => dispatch({ type: "set", patch })} />
-      <NotificationsSection state={state} set={(patch) => dispatch({ type: "set", patch })} organizationId={organizationId} />
+      <NotificationsSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
+      <GoogleCalendarSection state={state} set={(patch) => dispatch({ type: "set", patch })} organizationId={organizationId} />
       <EventSettingsSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
 
       {error && (
