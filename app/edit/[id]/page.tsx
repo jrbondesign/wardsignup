@@ -641,7 +641,7 @@ export default function EditEventPage() {
       
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Failed to sync calendar");
+        throw new Error(data.error || "Could not sync this event to Google Calendar.");
       }
       
       const data = await res.json();
@@ -652,7 +652,7 @@ export default function EditEventPage() {
       setToastMessage("Calendar synced successfully");
       setShowToast(true);
     } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to sync calendar";
+      const message = err instanceof Error ? err.message : "Could not sync this event to Google Calendar.";
       setCalendarLastError(message);
       alert(message);
     } finally {

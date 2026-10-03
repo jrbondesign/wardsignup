@@ -10,6 +10,8 @@ import { createClient } from '@supabase/supabase-js';
 import { refreshAccessToken } from './google-oauth';
 import { createHash } from 'crypto';
 import { getPostHogClient } from './posthog-server';
+import { resolveEffectiveEventTimezone, sessionStartUtc } from './event-timezone';
+import { googleDateTimesForSession, userFacingCalendarSyncError } from './google-calendar-sync-format';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -46,8 +48,9 @@ interface GoogleEvent {
 
 interface SessionWithSignups {
   id: string;
-  start_time: string;
-  end_time: string;
+  session_date: string | null;
+  time: string;
+  end_time: string | null;
   label: string | null;
   signups: Array<{
     member_name: string;
@@ -146,11 +149,13 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
       return { success: false, error: 'Campaign not found' };
     }
 
+    const timezone = resolveEffectiveEventTimezone(campaign.event_timezone);
     const { data: sessions, error: sessionsError } = await supabase
       .from('sessions')
       .select(`
         id,
-        start_time,
+        session_date,
+        time,
         end_time,
         label,
         signups (
@@ -162,14 +167,24 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
         )
       `)
       .eq('campaign_id', campaignId)
-      .gte('start_time', new Date().toISOString()) // Future sessions only
-      .order('start_time');
+      .not('session_date', 'is', null)
+      .order('session_date')
+      .order('time');
 
     if (sessionsError) {
-      return { success: false, error: `Failed to load sessions: ${sessionsError.message}` };
+      console.error('[gcal-sync] Failed to load sessions:', sessionsError);
+      return { success: false, error: userFacingCalendarSyncError(`Failed to load sessions: ${sessionsError.message}`) };
     }
 
-    const sessionsWithSignups = (sessions || []) as SessionWithSignups[];
+    const now = Date.now();
+    const sessionsWithSignups = ((sessions || []) as SessionWithSignups[]).filter((session) => {
+      if (!session.session_date || !session.time) return false;
+      try {
+        return sessionStartUtc(session.session_date, session.time, timezone).getTime() >= now;
+      } catch {
+        return false;
+      }
+    });
 
     // 4. Load existing event links
     const { data: existingLinks, error: linksError } = await supabase
@@ -215,11 +230,14 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
         continue;
       }
 
+      if (!session.session_date) continue;
+
       // Build desired event
       const event = buildGoogleEvent(
         campaign,
         session,
-        syncConfig.invite_leader
+        syncConfig.invite_leader,
+        timezone
       );
       const contentHash = computeContentHash(event);
 
@@ -305,7 +323,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
       eventsDeleted,
     };
   } catch (err: any) {
-    const errorMsg = err.message || String(err);
+    const errorMsg = userFacingCalendarSyncError(err.message || String(err));
     
     // Try to record error (best effort)
     try {
@@ -330,10 +348,15 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
 function buildGoogleEvent(
   campaign: any,
   session: SessionWithSignups,
-  inviteLeader: boolean
+  inviteLeader: boolean,
+  timezone: string
 ): GoogleEvent {
   const signups = session.signups || [];
-  const timezone = campaign.event_timezone || 'America/Denver';
+  const { startDateTime, endDateTime } = googleDateTimesForSession({
+    session_date: session.session_date as string,
+    time: session.time,
+    end_time: session.end_time,
+  });
 
   // Title: event name + first signup name (or "Multiple signups")
   const firstName = signups[0]?.member_name || 'Unknown';
@@ -374,11 +397,11 @@ function buildGoogleEvent(
     summary: title,
     description,
     start: {
-      dateTime: session.start_time,
+      dateTime: startDateTime,
       timeZone: timezone,
     },
     end: {
-      dateTime: session.end_time,
+      dateTime: endDateTime,
       timeZone: timezone,
     },
     extendedProperties: {

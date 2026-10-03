@@ -3,6 +3,11 @@
  */
 
 import { createHash } from "crypto";
+import {
+  googleDateTimesForSession,
+  toWallTime,
+  userFacingCalendarSyncError,
+} from "@/lib/google-calendar-sync-format";
 
 // Test data structures
 interface GoogleEvent {
@@ -26,15 +31,16 @@ interface GoogleEvent {
 
 interface SessionWithSignups {
   id: string;
-  start_time: string;
-  end_time: string;
+  session_date: string | null;
+  time: string;
+  end_time: string | null;
   label: string | null;
   signups: Array<{
     member_name: string;
     member_email: string | null;
     member_phone: string | null;
     guest_names: string[];
-    note: string | null;
+    signup_note: string | null;
   }>;
 }
 
@@ -75,22 +81,28 @@ function buildGoogleEvent(
     if (signup.guest_names && signup.guest_names.length > 0) {
       description += `\n  Guests: ${signup.guest_names.join(", ")}`;
     }
-    if (signup.note) {
-      description += `\n  Note: ${signup.note}`;
+    if (signup.signup_note) {
+      description += `\n  Note: ${signup.signup_note}`;
     }
   }
 
   description += `\n\nManage signups: ${adminUrl}`;
 
+  const { startDateTime, endDateTime } = googleDateTimesForSession({
+    session_date: session.session_date as string,
+    time: session.time,
+    end_time: session.end_time,
+  });
+
   const event: GoogleEvent = {
     summary: title,
     description,
     start: {
-      dateTime: session.start_time,
+      dateTime: startDateTime,
       timeZone: timezone,
     },
     end: {
-      dateTime: session.end_time,
+      dateTime: endDateTime,
       timeZone: timezone,
     },
     extendedProperties: {
@@ -130,8 +142,9 @@ describe("Google Calendar sync", () => {
 
     const session: SessionWithSignups = {
       id: "session-456",
-      start_time: "2026-12-15T09:00:00Z",
-      end_time: "2026-12-15T09:15:00Z",
+      session_date: "2026-12-15",
+      time: "09:00",
+      end_time: "09:15",
       label: "9:00 AM",
       signups: [
         {
@@ -139,7 +152,7 @@ describe("Google Calendar sync", () => {
           member_email: "john@example.com",
           member_phone: "555-1234",
           guest_names: ["Jane Smith"],
-          note: "Prefer Spanish",
+          signup_note: "Prefer Spanish",
         },
       ],
     };
@@ -154,7 +167,8 @@ describe("Google Calendar sync", () => {
       expect(event.description).toContain("Guests: Jane Smith");
       expect(event.description).toContain("Note: Prefer Spanish");
       expect(event.description).toContain("/admin/campaign-123");
-      expect(event.start.dateTime).toBe("2026-12-15T09:00:00Z");
+      expect(event.start.dateTime).toBe("2026-12-15T09:00:00");
+      expect(event.end.dateTime).toBe("2026-12-15T09:15:00");
       expect(event.start.timeZone).toBe("America/Phoenix");
       expect(event.extendedProperties?.private?.wardsignup_session_id).toBe("session-456");
       expect(event.attendees).toBeUndefined();
@@ -170,7 +184,7 @@ describe("Google Calendar sync", () => {
             member_email: null,
             member_phone: null,
             guest_names: [],
-            note: null,
+            signup_note: null,
           },
         ],
       };
@@ -267,6 +281,28 @@ describe("Google Calendar sync", () => {
       const hash2 = computeContentHash(event2);
 
       expect(hash1).not.toBe(hash2);
+    });
+  });
+
+  describe("session wall times", () => {
+    it("pads HH:mm into a local dateTime", () => {
+      expect(toWallTime("9:00")).toBe("09:00:00");
+      expect(googleDateTimesForSession({
+        session_date: "2026-12-15",
+        time: "09:00",
+        end_time: null,
+      })).toEqual({
+        startDateTime: "2026-12-15T09:00:00",
+        endDateTime: "2026-12-15T10:00:00",
+      });
+    });
+  });
+
+  describe("userFacingCalendarSyncError", () => {
+    it("hides database column names", () => {
+      expect(
+        userFacingCalendarSyncError("Failed to load sessions: column sessions.start_time does not exist")
+      ).toBe("Could not load this event's time slots. Please try again.");
     });
   });
 });
