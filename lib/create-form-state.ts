@@ -27,8 +27,15 @@ export type ItemDraft = {
  *  its own start/end time so an organizer can run e.g.
  *    Apr 26  5:00 PM – 6:00 PM
  *    Apr 28  6:00 PM – 7:00 PM
- *  with different windows per date, edited individually. */
-export type PickedDate = { date: string; start: string; end: string };
+ *  with different windows per date, edited individually.
+ *  
+ *  Multiple windows can exist for the same date, each with a unique id. */
+export type PickedDate = { 
+  id: string;
+  date: string; 
+  start: string; 
+  end: string;
+};
 
 /** spots: pick dates by range (with weekday filter) or by individual calendar picks. */
 export type SpotsDateMode = "range" | "specific";

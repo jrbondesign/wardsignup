@@ -236,7 +236,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
       }
       plannedSpotsSessions = generateSpotsSessions(state);
       if (plannedSpotsSessions.length === 0) {
-        setError("No sessions would be created — check the date range, weekdays, and time window.");
+        setError("No sessions would be created. Please check the date range, weekdays, and time window.");
         return;
       }
     }
