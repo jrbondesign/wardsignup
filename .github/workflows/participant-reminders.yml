@@ -1,0 +1,42 @@
+name: Participant Reminders
+
+on:
+  schedule:
+    - cron: "0 * * * *"  # every hour
+  workflow_dispatch:       # allow manual trigger
+
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ward Signup — participant reminders
+        run: |
+          curl -sf -X GET https://wardsignup.com/api/cron/participant-reminders \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 60
+
+      - name: Ward Signup — organizer faster alerts
+        run: |
+          curl -sf -X GET https://wardsignup.com/api/cron/organizer-faster \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 60
+
+      - name: Ward Signup — organizer digest + feedback loop
+        run: |
+          curl -sf -X GET https://wardsignup.com/api/cron/organizer-digest \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 90
+
+      - name: Ward Signup — geography map daily refresh
+        run: |
+          curl -sf -X GET https://wardsignup.com/api/cron/geography-refresh \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            -H "Content-Type: application/json" \
+            --max-time 60
+
+      # Soft pause 2026-09-07: MinistrySignup + OrgSignup automation stopped.
+      # Do NOT re-add ministriesignup.com / www.orgsignup.com curls here until
+      # soft pause is intentionally lifted. Ward paths above must keep running.
