@@ -218,7 +218,7 @@ export default function MetricsPage() {
                   New creators (leading)
                 </div>
                 <p className="text-[15px] text-[#5A8399] mb-6 max-w-2xl">
-                  A <strong className="text-[#2E5566] font-semibold">creator</strong> is a new Supabase auth account (Google or magic link).
+                  A <strong className="text-[#2E5566] font-semibold">creator</strong> is counted on their first confirmed sign-in (Google or magic link), not when a magic link was first requested.
                   Compare calendar weeks for weekly reviews; rolling 7 days can differ from the current week boundary.
                 </p>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
