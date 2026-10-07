@@ -14,15 +14,21 @@ interface Props {
   /** When set, the frame offers drag-to-reposition with Save / Cancel. */
   onSavePosition?: (position: string) => Promise<void>;
   busy?: boolean;
+  /** Extra buttons shown beside "Reposition" (e.g. Change / Remove). */
+  actions?: React.ReactNode;
   children?: React.ReactNode;
 }
+
+/** Style for buttons overlaid on the cover (Reposition and any `actions`). */
+export const COVER_OVERLAY_BUTTON =
+  "rounded-full bg-black/55 text-white text-xs font-semibold px-3 py-1.5 shadow hover:bg-black/70 disabled:opacity-50";
 
 /**
  * Fixed 2:1 cover frame. The image always uses object-fit: cover (cropped, never
  * stretched); object-position picks the visible crop. Dragging moves the focal point
  * along whichever axis overflows the frame.
  */
-export default function CoverImageFrame({ src, position, onSavePosition, busy, children }: Props) {
+export default function CoverImageFrame({ src, position, onSavePosition, busy, actions, children }: Props) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [editing, setEditing] = useState(false);
@@ -124,13 +130,16 @@ export default function CoverImageFrame({ src, position, onSavePosition, busy, c
               </button>
             </>
           ) : (
-            <button
-              type="button"
-              onClick={startEditing}
-              className="rounded-full bg-black/55 text-white text-xs font-semibold px-3 py-1.5 shadow hover:bg-black/70"
-            >
-              Reposition
-            </button>
+            <>
+              {actions}
+              <button
+                type="button"
+                onClick={startEditing}
+                className={COVER_OVERLAY_BUTTON}
+              >
+                Reposition
+              </button>
+            </>
           )}
         </div>
       )}
