@@ -20,7 +20,7 @@ interface SessionWithSignups extends Session {
 export default function FlyerPage({ params }: { params: Promise<{ id: string }> }) {
   const brand = useBrand();
   const { id: eventId } = use(params);
-  const publicCoverUrl = usePublicCover(eventId);
+  const publicCover = usePublicCover(eventId);
   const [event, setEvent] = useState<any>(null);
   const [eventType, setEventType] = useState<"spots" | "items" | "rsvp">("spots");
   const [showCapacityPublicly, setShowCapacityPublicly] = useState(true);
@@ -255,13 +255,14 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
 
         {/* Event card */}
         <div className="flyer-event-card">
-          {publicCoverUrl && (
+          {publicCover && (
             <div className="flyer-cover-wrap">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={publicCoverUrl}
+                src={publicCover.url}
                 alt={event.name}
                 className="flyer-cover"
+                style={{ objectPosition: publicCover.position }}
               />
             </div>
           )}
@@ -396,13 +397,13 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
         }
         .flyer-cover-wrap {
           width: 100%;
-          max-height: 3.5in;
+          aspect-ratio: 2 / 1;
           overflow: hidden;
           background: #F4FAFB;
         }
         .flyer-cover {
           width: 100%;
-          height: auto;
+          height: 100%;
           display: block;
           object-fit: cover;
         }

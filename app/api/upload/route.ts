@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
       // Update campaigns.cover_image_url
       const { error: patchErr } = await admin
         .from("campaigns")
-        .update({ cover_image_url: urlWithVersion } as never)
+        .update({ cover_image_url: urlWithVersion, cover_position: null } as never)
         .eq("id", eventId!);
       if (patchErr) {
         console.error("campaigns cover_image_url update error:", patchErr);
@@ -219,7 +219,7 @@ export async function DELETE(request: NextRequest) {
       // Clear DB column
       await admin
         .from("campaigns")
-        .update({ cover_image_url: null } as never)
+        .update({ cover_image_url: null, cover_position: null } as never)
         .eq("id", eventId!);
       // Remove the actual stored object (may belong to another admin's folder
       // or be shared with a duplicated event — the helper checks references).

@@ -39,6 +39,7 @@ import { INITIAL_FORM_STATE, type CreateFormState, type ItemDraft } from "@/lib/
 import { formatTime, formatTimeRange } from "@/lib/utils";
 import { resizeImage } from "@/lib/resize-image";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
+import { COVER_SIZE_HINT, coverObjectPosition } from "@/lib/cover-position";
 
 interface SessionData {
   id?: string;
@@ -187,6 +188,7 @@ export default function EditEventPage() {
   
   const [sendingReport, setSendingReport] = useState(false);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [coverPosition, setCoverPosition] = useState<string | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -380,6 +382,7 @@ export default function EditEventPage() {
           setEventName((event as any).name || "");
           setEventDescription((event as any).description || "");
           setCoverUrl((event as any).cover_image_url ?? null);
+          setCoverPosition((event as any).cover_position ?? null);
           // Prefer the multi-date list; fall back to the legacy single event_date
           // so older items events still show their date in the editor (and migrate
           // to event_dates on the next save).
@@ -439,6 +442,7 @@ export default function EditEventPage() {
         setEventDescription(loadedDesc);
         setEventTimezone(loadedTz);
         setCoverUrl((event as any).cover_image_url ?? null);
+          setCoverPosition((event as any).cover_position ?? null);
 
         // Load sessions
         const { data: sessionData, error: sessionError } = await supabase
@@ -678,7 +682,7 @@ export default function EditEventPage() {
     const img = new window.Image();
     img.onload = async () => {
       if (img.width / img.height < 0.9) {
-        alert("Please upload a landscape image (wider than tall). A 2:1 ratio is ideal, e.g. 800×400 px.");
+        alert("Please upload a landscape image (wider than tall). Recommended 1600 × 800 px (2:1), at least 1200 × 600.");
         URL.revokeObjectURL(objectUrl);
         return;
       }
@@ -699,6 +703,7 @@ export default function EditEventPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Upload failed");
         setCoverUrl(data.url);
+        setCoverPosition(null);
         setCoverPreview(null);
         URL.revokeObjectURL(objectUrl);
       } catch (err: unknown) {
@@ -725,6 +730,7 @@ export default function EditEventPage() {
         body: JSON.stringify({ type: "cover", eventId }),
       });
       setCoverUrl(null);
+      setCoverPosition(null);
       setCoverPreview(null);
     } finally {
       setCoverUploading(false);
@@ -1512,7 +1518,7 @@ export default function EditEventPage() {
                         <LoadingSpinner size="lg" />
                       ) : (coverPreview || coverUrl) ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={coverPreview ?? coverUrl!} alt="Event cover" className="w-full h-full object-cover" />
+                        <img src={coverPreview ?? coverUrl!} alt="Event cover" className="w-full h-full object-cover" style={{ objectPosition: coverPreview ? undefined : coverObjectPosition(coverPosition) }} />
                       ) : (
                         <div className="text-center text-[#5A8399] px-4">
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 mx-auto mb-2 opacity-30">
@@ -1520,7 +1526,7 @@ export default function EditEventPage() {
                             <polyline points="21 15 16 10 5 21"/>
                           </svg>
                           <p className="text-sm font-medium opacity-50">Add a cover image</p>
-                          <p className="text-xs opacity-40 mt-1">2:1 landscape · 800×400 px min · JPEG, PNG, or WebP</p>
+                          <p className="text-xs opacity-40 mt-1">1600 × 800 px recommended (2:1) · JPEG, PNG, or WebP</p>
                         </div>
                       )}
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
@@ -1549,6 +1555,9 @@ export default function EditEventPage() {
                       </svg>
                     </button>
                 )}
+                <p className="mt-2 text-[11px] text-[#7A9BAE] leading-relaxed">
+                  {COVER_SIZE_HINT.replace("Drag to reposition", "Reposition it from the event page")}
+                </p>
               </div>
                 )}
               <div className="flex items-center gap-3 mb-6">

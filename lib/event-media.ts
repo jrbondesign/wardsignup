@@ -1,5 +1,6 @@
 import type { createServiceRoleClient } from "@/lib/supabase-admin";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
+import { coverObjectPosition } from "@/lib/cover-position";
 
 type AdminClient = ReturnType<typeof createServiceRoleClient>;
 
@@ -63,20 +64,26 @@ export async function removeCoverIfUnreferenced(
 }
 
 /**
- * Server-only: the event's cover URL if the cover feature is enabled for its org and
- * the URL is a valid cover in this project's bucket; otherwise null. Public pages read
- * campaigns through an RPC that omits organization_id, so they ask the server.
+ * Server-only: the event's cover URL and focal point if the cover feature is enabled
+ * for its org and the URL is a valid cover in this project's bucket; otherwise null.
+ * Public pages read campaigns through an RPC that omits organization_id, so they ask
+ * the server.
  */
-export async function publicCoverUrlForCampaign(
+export async function publicCoverForCampaign(
   admin: AdminClient,
   campaignId: string
-): Promise<string | null> {
+): Promise<{ url: string; position: string } | null> {
   const { data } = await admin
     .from("campaigns")
-    .select("organization_id, cover_image_url")
+    .select("organization_id, cover_image_url, cover_position")
     .eq("id", campaignId)
     .maybeSingle();
-  const row = data as { organization_id: string | null; cover_image_url: string | null } | null;
+  const row = data as {
+    organization_id: string | null;
+    cover_image_url: string | null;
+    cover_position: string | null;
+  } | null;
   if (!row || !isCoverImageEnabledForOrg(row.organization_id)) return null;
-  return isEventCoverUrl(row.cover_image_url) ? row.cover_image_url : null;
+  if (!isEventCoverUrl(row.cover_image_url)) return null;
+  return { url: row.cover_image_url, position: coverObjectPosition(row.cover_position) };
 }

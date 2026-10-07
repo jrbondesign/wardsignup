@@ -1,6 +1,6 @@
 /**
  * Downscale an image in the browser before upload so covers stay small
- * (~150–300 KB) in the event-media bucket. Outputs JPEG because the OG image
+ * (~150–400 KB) in the event-media bucket. Outputs JPEG because the OG image
  * renderer (Satori) can't decode WebP. Returns the original file if the
  * browser can't encode or the result isn't smaller.
  */
@@ -12,7 +12,9 @@ export async function resizeImage(
 ): Promise<File> {
   try {
     const bitmap = await createImageBitmap(file);
-    const scale = Math.min(1, maxWidth / bitmap.width, maxHeight / bitmap.height);
+    // Scale to *cover* the 2:1 frame (not fit inside it) so there's spare image to
+    // reposition without upscaling; never enlarge. Aspect ratio is always preserved.
+    const scale = Math.min(1, Math.max(maxWidth / bitmap.width, maxHeight / bitmap.height));
     const width = Math.round(bitmap.width * scale);
     const height = Math.round(bitmap.height * scale);
 
