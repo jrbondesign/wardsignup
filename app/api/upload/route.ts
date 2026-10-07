@@ -100,7 +100,8 @@ export async function POST(request: NextRequest) {
       .upload(storagePath, bytes, {
         contentType: file.type,
         upsert: true,
-        cacheControl: "public, max-age=31536000, immutable",
+        // Seconds only; supabase-js builds the header. URLs carry ?v= so a year is safe.
+        cacheControl: "31536000",
       });
     if (uploadErr) {
       console.error("Storage upload error:", uploadErr);
