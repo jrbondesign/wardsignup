@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
-  creatorNotifyEmailFrom,
   getBrandFromHost,
   welcomeEmailFrom,
 } from "@/lib/brand";
@@ -9,25 +8,10 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { escapeHtml } from "@/lib/html-escape";
 import { getResendForBrand } from "@/lib/resend-for-brand";
 import { withUtm } from "@/lib/utm";
-const creatorNotifyTo = process.env.CREATOR_NOTIFY_TO || "jon@jrbond.com";
 
 /** Welcome replies: must be an address that receives mail (e.g. Cloudflare Email Routing → your inbox). */
 const welcomeReplyTo =
   process.env.WELCOME_REPLY_TO?.trim() || "jonathan@wardsignup.com";
-
-/** Comma-separated emails that never trigger “new creator” founder email (lowercased). */
-function creatorNotifySkipEmails(): Set<string> {
-  const raw = process.env.CREATOR_NOTIFY_SKIP_EMAILS?.trim();
-  const set = new Set<string>();
-  set.add(creatorNotifyTo.trim().toLowerCase());
-  if (raw) {
-    for (const part of raw.split(",")) {
-      const e = part.trim().toLowerCase();
-      if (e) set.add(e);
-    }
-  }
-  return set;
-}
 
 function alreadyWelcomedForBrand(
   meta: { welcome_sent_by_brand?: Record<string, unknown> } | undefined,
@@ -269,58 +253,7 @@ Made with ❤️ in Arizona`;
       );
     }
 
-    // Founder notify: atomic slot per email (RPC); never for founder / internal inboxes
-    const skipFounderFor = creatorNotifySkipEmails();
-    let shouldNotifyFounder = false;
-    if (
-      normalizedEmail &&
-      !skipFounderFor.has(normalizedEmail) &&
-      adminForWelcome
-    ) {
-      try {
-        const { data: notifyFirst, error: notifyRpcErr } =
-          await adminForWelcome.rpc("try_insert_creator_signup_notification", {
-            p_email: normalizedEmail,
-          } as never);
-        if (notifyRpcErr) {
-          console.error("try_insert_creator_signup_notification:", notifyRpcErr);
-        } else if (notifyFirst === true) {
-          shouldNotifyFounder = true;
-        }
-      } catch (e) {
-        console.error("Creator notify dedupe:", e);
-      }
-    }
-
-    // Notify founder of a new creator (best-effort; do not block login)
-    if (shouldNotifyFounder) {
-      try {
-        const notifySend = await resend.emails.send({
-          from: creatorNotifyEmailFrom(brand),
-          to: creatorNotifyTo,
-          subject: `New ${brand.name} creator`,
-          html: `
-          <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; max-width: 640px; margin: 0 auto; padding: 24px; color: #111827;">
-            <h2 style="margin: 0 0 12px; font-size: 18px;">New creator signed in</h2>
-            <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;">
-              <strong>Email:</strong> ${escapeHtml(canonicalUser.email ?? "(none)")}
-            </p>
-            <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;">
-              <strong>Name:</strong> ${escapeHtml(String(canonicalUser.user_metadata?.full_name ?? canonicalUser.user_metadata?.name ?? "(none)"))}
-            </p>
-            <p style="margin: 0; font-size: 12px; color: #6b7280;">
-              User ID: ${escapeHtml(canonicalUser.id)}
-            </p>
-          </div>
-        `,
-        });
-        if (notifySend.error) {
-          console.error("Creator notify Resend error:", notifySend.error);
-        }
-      } catch (notifyErr) {
-        console.error("Creator notify email error:", notifyErr);
-      }
-    }
+    // Founder "new creator" email now fires on first event creation (lib/founder-notify.ts).
 
     // Persist per-brand welcome flags so future JWTs skip duplicate sends on this brand only
     const prevMeta = (canonicalUser.user_metadata as Record<string, unknown>) ?? {};
