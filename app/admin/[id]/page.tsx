@@ -19,6 +19,8 @@ import { formatTime } from "@/lib/utils";
 import { downloadEventQr } from "@/lib/download-qr";
 import { resizeImage } from "@/lib/resize-image";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
+import CoverImageFrame from "@/components/CoverImageFrame";
+import { COVER_SIZE_HINT } from "@/lib/cover-position";
 import EventOptionalSettings from "@/components/event/EventOptionalSettings";
 import { INITIAL_FORM_STATE, type CreateFormState } from "@/lib/create-form-state";
 
@@ -116,6 +118,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const moreMenuRef = useRef<HTMLDivElement>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [coverPosition, setCoverPosition] = useState<string | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
   const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(false);
@@ -223,6 +226,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
 
       setEvent(eventData);
       setCoverUrl((eventData as any).cover_image_url ?? null);
+      setCoverPosition((eventData as any).cover_position ?? null);
       
       // Load calendar sync status
       const { data: calSyncData } = await supabase
@@ -403,7 +407,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
     const img = new window.Image();
     img.onload = async () => {
       if (img.width / img.height < 0.9) {
-        alert("Please upload a landscape image (wider than tall). 2:1 ratio recommended, 800×400 px minimum.");
+        alert("Please upload a landscape image (wider than tall). Recommended 1600 × 800 px (2:1), at least 1200 × 600.");
         URL.revokeObjectURL(objectUrl);
         return;
       }
@@ -424,6 +428,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Upload failed");
         setCoverUrl(data.url);
+        setCoverPosition(null);
         setCoverPreview(null);
         URL.revokeObjectURL(objectUrl);
       } catch (err: unknown) {
@@ -438,6 +443,24 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
     e.target.value = "";
   };
 
+  const handleCoverPositionSave = async (position: string) => {
+    const supabase = createClientComponentClient();
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`/api/events/${eventId}/cover`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token}`,
+      },
+      body: JSON.stringify({ position }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Couldn't save position");
+    }
+    setCoverPosition(position);
+  };
+
   const handleCoverRemove = async () => {
     if (!confirm("Remove the cover image for this event?")) return;
     setCoverUploading(true);
@@ -450,6 +473,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
         body: JSON.stringify({ type: "cover", eventId }),
       });
       setCoverUrl(null);
+      setCoverPosition(null);
       setCoverPreview(null);
     } finally {
       setCoverUploading(false);
@@ -590,19 +614,18 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
           {/* Event header card */}
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-6">
             {coverEnabled && (coverUrl || coverPreview) && (
-              <div className="relative w-full aspect-[2/1] bg-[#F4FAFB]">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={coverPreview || coverUrl!}
-                  alt="Event cover"
-                  className="w-full h-full object-cover"
-                />
+              <CoverImageFrame
+                src={coverPreview || coverUrl!}
+                position={coverPreview ? null : coverPosition}
+                onSavePosition={coverPreview ? undefined : handleCoverPositionSave}
+                busy={coverUploading}
+              >
                 {coverUploading && (
                   <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
                     <LoadingSpinner size="lg" />
                   </div>
                 )}
-              </div>
+              </CoverImageFrame>
             )}
             <div className="p-7">
             <div className="mb-6">
@@ -828,6 +851,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                     Remove cover
                   </button>
                 )}
+                <p className="w-full text-[11px] text-[#7A9BAE] leading-relaxed">{COVER_SIZE_HINT}</p>
               </div>
               )}
             </div>

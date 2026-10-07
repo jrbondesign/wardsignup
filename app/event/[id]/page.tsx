@@ -69,7 +69,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const posthog = usePostHog();
   const router = useRouter();
   const { id: eventId } = use(params);
-  const publicCoverUrl = usePublicCover(eventId);
+  const publicCover = usePublicCover(eventId);
   const [event, setEvent] = useState<any>(null);
   const [sessions, setSessions] = useState<SessionWithSignups[]>([]);
   const [loading, setLoading] = useState(true);
@@ -595,15 +595,16 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
         {/* Event card */}
         <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-6">
-          {publicCoverUrl && (
+          {publicCover && (
             <div className="relative w-full aspect-[2/1] bg-[#F4FAFB]">
               <Image
-                src={publicCoverUrl}
+                src={publicCover.url}
                 alt=""
                 fill
                 priority
                 sizes="(max-width: 896px) 100vw, 896px"
                 className="object-cover"
+                style={{ objectPosition: publicCover.position }}
               />
             </div>
           )}
