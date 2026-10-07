@@ -56,7 +56,7 @@ a future slot in an org that has the feature enabled.
 | 7 | Open the event → Manage (or Edit) → Google Calendar controls → open the calendar dropdown | "**calendarlist.readonly**: we read the user's calendar list only to populate this picker, showing calendars they can write to. We don't read events or other calendar contents." |
 | 8 | Pick the test calendar, turn sync on, save | "The organizer chooses which calendar receives signups." |
 | 9 | In a private window, open the public event link and sign up for a slot | "A participant signs up for a time slot." |
-| 10 | Back as organizer, wait a few seconds (sync runs automatically after each signup), then open Google Calendar in another tab at that date; open the event | "**calendar.events**: WardSignup created this event for the filled slot. Names are in the description, not the title." |
+| 10 | Back as organizer, wait a few seconds (sync runs automatically after each signup), then open Google Calendar in another tab at that date; open the event | "**calendar.events**: WardSignup created this event for the filled slot. The title shows the event name and first name; contact details and notes are only in the description." |
 | 11 | Cancel the signup (admin page delete or cancel link) → wait a few seconds → refresh Google Calendar | "When the slot empties, we delete the event we created. We only ever modify events WardSignup created." |
 | 12 | Settings → Integrations → **Disconnect** | "Organizers can disconnect at any time, which revokes our access token at Google." |
 
