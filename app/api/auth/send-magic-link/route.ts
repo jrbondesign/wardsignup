@@ -8,6 +8,7 @@ import { safeReturnPath } from "@/lib/auth-return-path";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { consumeActionRate } from "@/lib/rate-limit";
 import { consumeEmailKeyRate } from "@/lib/email-send";
+import { checkBotId } from "botid/server";
 
 function messageFromResendError(err: unknown): string {
   if (
@@ -63,6 +64,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { error: "Please enter a valid email address." },
         { status: 400 },
+      );
+    }
+
+    // Invisible bot check (Vercel BotID). Bots requesting links create unconfirmed
+    // auth accounts and burn email quota; humans never see a challenge.
+    const verification = await checkBotId();
+    if (verification.isBot) {
+      return NextResponse.json(
+        { error: "We couldn't verify this request. Please refresh and try again." },
+        { status: 403 },
       );
     }
 
