@@ -11,6 +11,7 @@ import AttendeeFieldsSection from "@/components/create/sections/AttendeeFieldsSe
 import ItemsSection from "@/components/create/sections/ItemsSection";
 import VisibilitySection from "@/components/create/sections/VisibilitySection";
 import NotificationsSection from "@/components/create/sections/NotificationsSection";
+import GoogleCalendarSection from "@/components/create/sections/GoogleCalendarSection";
 import EventSettingsSection from "@/components/create/sections/EventSettingsSection";
 import ComponentCard from "@/components/create/sections/ComponentCard";
 import {
@@ -126,9 +127,11 @@ interface Props {
   /** Reports whether the user has started filling the form, so the page can confirm
    *  before a template/AI pick remounts (and wipes) in-progress work. */
   onDirtyChange?: (dirty: boolean) => void;
+  /** Organization ID for feature gating (e.g. Google Calendar sync). */
+  organizationId?: string;
 }
 
-export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult, onDirtyChange }: Props) {
+export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult, onDirtyChange, organizationId }: Props) {
   const router = useRouter();
   const [state, dispatch] = useReducer(
     reducer,
@@ -233,7 +236,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
       }
       plannedSpotsSessions = generateSpotsSessions(state);
       if (plannedSpotsSessions.length === 0) {
-        setError("No sessions would be created — check the date range, weekdays, and time window.");
+        setError("No sessions would be created. Please check the date range, weekdays, and time window.");
         return;
       }
     }
@@ -362,6 +365,26 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
         });
         if (!itemsRes.ok) {
           router.push(`/admin/${event.id}?warn=items-failed&created=1`);
+          return;
+        }
+      }
+
+      if (
+        (state.eventType === "spots" || state.eventType === "rsvp") &&
+        state.calendarSyncEnabled
+      ) {
+        const calRes = await fetch(`/api/events/${event.id}/calendar-sync`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            enabled: true,
+            calendar_id: state.calendarId,
+            calendar_name: state.calendarName,
+            invite_leader: state.inviteLeader,
+          }),
+        });
+        if (!calRes.ok) {
+          router.push(`/admin/${event.id}?created=1&warn=calendar`);
           return;
         }
       }
@@ -517,6 +540,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
 
       <VisibilitySection state={state} set={(patch) => dispatch({ type: "set", patch })} />
       <NotificationsSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
+      <GoogleCalendarSection state={state} set={(patch) => dispatch({ type: "set", patch })} organizationId={organizationId} />
       <EventSettingsSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
 
       {error && (

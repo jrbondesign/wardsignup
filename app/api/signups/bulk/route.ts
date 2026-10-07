@@ -8,6 +8,8 @@ import { sendParticipantBatchSignupConfirmation } from "@/lib/participant-email"
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
+import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
 function hashIp(ip: string): string {
   const salt = process.env.RATE_LIMIT_IP_SALT || "wardsignup_signup_rate";
@@ -252,6 +254,17 @@ export async function POST(request: Request) {
           console.error("Bulk confirmation email:", e);
         }
       });
+
+      // Sync to Google Calendar (fire-and-forget; never fails the signup)
+      if (isGcalSyncFeatureEnabled()) {
+        after(async () => {
+          try {
+            await syncCampaignCalendar(campaign_id);
+          } catch (e) {
+            console.error("Calendar sync after bulk signup:", e);
+          }
+        });
+      }
     }
 
     const distinctId = request.headers.get("x-posthog-distinct-id") ?? `anon_signup_${crypto.randomUUID()}`;

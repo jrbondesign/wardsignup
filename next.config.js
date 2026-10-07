@@ -142,4 +142,6 @@ const withBundleAnalyzer = require("@next/bundle-analyzer")({
   enabled: process.env.ANALYZE === "true",
 });
 
-module.exports = withBundleAnalyzer(nextConfig);
+const { withBotId } = require("botid/next/config");
+
+module.exports = withBotId(withBundleAnalyzer(nextConfig));

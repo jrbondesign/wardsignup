@@ -12,7 +12,7 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
 import { usePostHog } from "posthog-js/react";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
-import { isEventCoverUrl } from "@/lib/event-media";
+import { usePublicCover } from "@/lib/use-public-cover";
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -69,6 +69,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const posthog = usePostHog();
   const router = useRouter();
   const { id: eventId } = use(params);
+  const publicCoverUrl = usePublicCover(eventId);
   const [event, setEvent] = useState<any>(null);
   const [sessions, setSessions] = useState<SessionWithSignups[]>([]);
   const [loading, setLoading] = useState(true);
@@ -594,10 +595,10 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
         {/* Event card */}
         <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-6">
-          {isEventCoverUrl(event.cover_image_url) && (
+          {publicCoverUrl && (
             <div className="relative w-full aspect-[2/1] bg-[#F4FAFB]">
               <Image
-                src={event.cover_image_url}
+                src={publicCoverUrl}
                 alt=""
                 fill
                 priority

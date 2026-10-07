@@ -29,6 +29,25 @@ export default function OrgSwitcher({ onSwitch }: Props) {
   const [submitting, setSubmitting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
+  // Horizontal placement relative to the gear, clamped so the menu never
+  // leaves the viewport (fixed positioning breaks under transformed ancestors).
+  const [menuPos, setMenuPos] = useState<{ left: number; width: number } | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const place = () => {
+      const rect = wrapperRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const gutter = 16;
+      const vw = document.documentElement.clientWidth;
+      const width = Math.min(256, vw - gutter * 2);
+      const viewportLeft = Math.min(Math.max(rect.left, gutter), vw - gutter - width);
+      setMenuPos({ left: viewportLeft - rect.left, width });
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open]);
 
   useEffect(() => {
     const load = async () => {
@@ -126,7 +145,9 @@ export default function OrgSwitcher({ onSwitch }: Props) {
         </svg>
       </button>
       {open && (
-        <div className="absolute z-20 mt-2 w-64 right-0 bg-white rounded-xl shadow-[0_8px_32px_rgba(8,100,126,0.18)] border border-[#0E96B0]/10 py-1.5">
+        <div
+          style={menuPos ? { left: menuPos.left, width: menuPos.width } : undefined}
+          className="absolute left-0 w-64 z-20 mt-2 bg-white rounded-xl shadow-[0_8px_32px_rgba(8,100,126,0.18)] border border-[#0E96B0]/10 py-1.5">
           <Link
             href="/settings/organization"
             onClick={() => setOpen(false)}

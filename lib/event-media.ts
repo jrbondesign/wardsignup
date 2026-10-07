@@ -1,4 +1,5 @@
 import type { createServiceRoleClient } from "@/lib/supabase-admin";
+import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 
 type AdminClient = ReturnType<typeof createServiceRoleClient>;
 
@@ -59,4 +60,23 @@ export async function removeCoverIfUnreferenced(
   } catch (e) {
     console.error("removeCoverIfUnreferenced:", path, e);
   }
+}
+
+/**
+ * Server-only: the event's cover URL if the cover feature is enabled for its org and
+ * the URL is a valid cover in this project's bucket; otherwise null. Public pages read
+ * campaigns through an RPC that omits organization_id, so they ask the server.
+ */
+export async function publicCoverUrlForCampaign(
+  admin: AdminClient,
+  campaignId: string
+): Promise<string | null> {
+  const { data } = await admin
+    .from("campaigns")
+    .select("organization_id, cover_image_url")
+    .eq("id", campaignId)
+    .maybeSingle();
+  const row = data as { organization_id: string | null; cover_image_url: string | null } | null;
+  if (!row || !isCoverImageEnabledForOrg(row.organization_id)) return null;
+  return isEventCoverUrl(row.cover_image_url) ? row.cover_image_url : null;
 }

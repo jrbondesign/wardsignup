@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { sendOrganizerMetricsEmail } from "@/lib/organizer-email";
 import { claimCronRun, dayBucketDate } from "@/lib/rate-limit";
-import { runFeedbackAskPass, runFeedbackDigestPass } from "@/lib/feedback-ask";
+import { runFeedbackAskPass } from "@/lib/feedback-ask";
 import { resolveCronBrandId } from "@/lib/cron-brand";
 
 export const dynamic = "force-dynamic";
@@ -44,11 +44,11 @@ async function campaignNeedsDigest(
 
 /**
  * Vercel Cron / GH Actions pinger: daily digest for organizers who opted in,
- * plus independent creator feedback ask + Monday founder digest.
+ * plus independent creator feedback ask.
  * Secured with Authorization: Bearer CRON_SECRET.
  *
- * Feedback passes MUST run even when the organizer-digest day-claim is already
- * taken (or the digest path errors after claiming) — each feedback pass has its
+ * Feedback ask MUST run even when the organizer-digest day-claim is already
+ * taken (or the digest path errors after claiming) — feedback ask has its
  * own brand-scoped claimCronRun.
  */
 export async function GET(request: NextRequest) {
@@ -92,7 +92,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // P0: feedback ask/digest run independently of the organizer-digest claim and
+  // P0: feedback ask runs independently of the organizer-digest claim and
   // of digest early exits / list failures. Same UTC-day claim inside each pass.
   let feedbackAsk: Awaited<ReturnType<typeof runFeedbackAskPass>> | { error: string };
   try {
@@ -100,13 +100,6 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     console.error("feedback-ask pass:", e);
     feedbackAsk = { error: e instanceof Error ? e.message : String(e) };
-  }
-  let feedbackDigest: Awaited<ReturnType<typeof runFeedbackDigestPass>> | { error: string };
-  try {
-    feedbackDigest = await runFeedbackDigestPass(admin, brandId);
-  } catch (e) {
-    console.error("feedback-digest pass:", e);
-    feedbackDigest = { error: e instanceof Error ? e.message : String(e) };
   }
 
   // Idempotency: at most one organizer-digest run per UTC day bucket.
@@ -118,7 +111,6 @@ export async function GET(request: NextRequest) {
       brandId,
       skipped: "already_ran_today",
       feedbackAsk,
-      feedbackDigest,
     });
   }
 
@@ -137,7 +129,6 @@ export async function GET(request: NextRequest) {
         brandId,
         error: "Failed to list campaigns",
         feedbackAsk,
-        feedbackDigest,
       },
       { status: 500 },
     );
@@ -224,6 +215,5 @@ export async function GET(request: NextRequest) {
     skipped,
     errors: errors.length ? errors : undefined,
     feedbackAsk,
-    feedbackDigest,
   });
 }

@@ -4,7 +4,8 @@ import { join } from "path";
 import { headers } from "next/headers";
 import { getBrandFromHost } from "@/lib/brand";
 import { getPublicCampaignById } from "@/lib/supabase";
-import { isEventCoverUrl } from "@/lib/event-media";
+import { publicCoverUrlForCampaign } from "@/lib/event-media";
+import { createServiceRoleClient } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const size = { width: 1200, height: 630 };
@@ -34,9 +35,10 @@ export default async function EventOGImage({ params }: { params: Promise<{ id: s
   const eventDescription = event?.description ?? null;
 
   let coverBase64: string | null = null;
-  if (isEventCoverUrl(event?.cover_image_url)) {
+  const coverUrl = event ? await publicCoverUrlForCampaign(createServiceRoleClient(), id) : null;
+  if (coverUrl) {
     try {
-      const res = await fetch(event.cover_image_url, { signal: AbortSignal.timeout(3000) });
+      const res = await fetch(coverUrl, { signal: AbortSignal.timeout(3000) });
       const type = res.headers.get("content-type") ?? "";
       // Satori can't decode WebP; fall back to the gradient for it.
       if (res.ok && /image\/(jpeg|png)/.test(type)) {

@@ -140,27 +140,37 @@ function SpotsTime({ state, set }: Props) {
     const ds = `${y}-${m}-${dd}`;
     const existing = state.spotsPickedDates.find((p) => p.date === ds);
     if (existing) {
-      set({ spotsPickedDates: state.spotsPickedDates.filter((p) => p.date !== ds) });
-    } else {
-      // Default new picks to the most recent times: prefer the last row's
-      // times so adding several similar dates doesn't require re-typing,
-      // fall back to the global Start/End if no rows exist yet.
-      const last = state.spotsPickedDates[state.spotsPickedDates.length - 1];
-      const start = last?.start ?? state.spotsStartTime;
-      const end = last?.end ?? state.spotsEndTime;
-      const next = [...state.spotsPickedDates, { date: ds, start, end }].sort((a, b) =>
-        a.date.localeCompare(b.date)
-      );
-      set({ spotsPickedDates: next });
+      // Date already has a window — do nothing (user can remove via × button)
+      return;
     }
+    // Default new picks to the most recent times: prefer the last row's
+    // times so adding several similar dates doesn't require re-typing,
+    // fall back to the global Start/End if no rows exist yet.
+    const last = state.spotsPickedDates[state.spotsPickedDates.length - 1];
+    const start = last?.start ?? state.spotsStartTime;
+    const end = last?.end ?? state.spotsEndTime;
+    const id = `${ds}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const next = [...state.spotsPickedDates, { id, date: ds, start, end }].sort((a, b) =>
+      a.date.localeCompare(b.date)
+    );
+    set({ spotsPickedDates: next });
   };
 
-  const updatePickedDate = (date: string, patch: Partial<{ start: string; end: string }>) => {
+  const updatePickedDate = (id: string, patch: Partial<{ start: string; end: string }>) => {
     set({
       spotsPickedDates: state.spotsPickedDates.map((p) =>
-        p.date === date ? { ...p, ...patch } : p
+        p.id === id ? { ...p, ...patch } : p
       ),
     });
+  };
+
+  const addAnotherWindow = (date: string) => {
+    const last = state.spotsPickedDates.filter((p) => p.date === date).slice(-1)[0];
+    const start = last?.start ?? state.spotsStartTime;
+    const end = last?.end ?? state.spotsEndTime;
+    const id = `${date}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const next = [...state.spotsPickedDates, { id, date, start, end }];
+    set({ spotsPickedDates: next });
   };
 
   const isSpecific = state.spotsDateMode === "specific";
@@ -240,46 +250,70 @@ function SpotsTime({ state, set }: Props) {
               Pick a date above and a row will appear here so you can set its start and end time.
             </div>
           )}
-          <ul className="space-y-2">
-            {state.spotsPickedDates.map((p) => {
-              const label = toDate(p.date).toLocaleDateString("en-US", {
-                weekday: "short",
-                month: "short",
-                day: "numeric",
+          <ul className="space-y-3">
+            {(() => {
+              // Group windows by date for better UX
+              const byDate = new Map<string, typeof state.spotsPickedDates>();
+              for (const p of state.spotsPickedDates) {
+                const arr = byDate.get(p.date) ?? [];
+                arr.push(p);
+                byDate.set(p.date, arr);
+              }
+              
+              return Array.from(byDate.entries()).map(([date, windows]) => {
+                const label = toDate(date).toLocaleDateString("en-US", {
+                  weekday: "short",
+                  month: "short",
+                  day: "numeric",
+                });
+                return (
+                  <li key={date} className="space-y-2">
+                    {windows.map((p, idx) => (
+                      <div
+                        key={p.id}
+                        className="grid grid-cols-[minmax(110px,auto)_1fr_1fr_auto] items-center gap-2 bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl px-3 py-2"
+                      >
+                        <span className="text-[13px] font-medium text-[#0D2B35]">
+                          {idx === 0 ? label : ""}
+                        </span>
+                        <TimeInput
+                          value={p.start}
+                          onChange={(v) => updatePickedDate(p.id, { start: v })}
+                          placeholder="Start"
+                          className={inputCls}
+                        />
+                        <TimeInput
+                          value={p.end}
+                          onChange={(v) => updatePickedDate(p.id, { end: v })}
+                          placeholder="End (optional)"
+                          className={inputCls}
+                        />
+                        <button
+                          type="button"
+                          onClick={() =>
+                            set({
+                              spotsPickedDates: state.spotsPickedDates.filter((x) => x.id !== p.id),
+                            })
+                          }
+                          aria-label={`Remove ${label} window ${idx + 1}`}
+                          className="text-[#5A8399] hover:text-red-500 px-2"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => addAnotherWindow(date)}
+                      className="flex items-center gap-1.5 text-[12px] font-medium text-[#0E96B0] hover:text-[#08647E] transition-colors ml-1"
+                    >
+                      <span className="w-4 h-4 rounded bg-[#E6F7FB] flex items-center justify-center text-[10px]">+</span>
+                      Add another window for {label}
+                    </button>
+                  </li>
+                );
               });
-              return (
-                <li
-                  key={p.date}
-                  className="grid grid-cols-[minmax(110px,auto)_1fr_1fr_auto] items-center gap-2 bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl px-3 py-2"
-                >
-                  <span className="text-[13px] font-medium text-[#0D2B35]">{label}</span>
-                  <TimeInput
-                    value={p.start}
-                    onChange={(v) => updatePickedDate(p.date, { start: v })}
-                    placeholder="Start"
-                    className={inputCls}
-                  />
-                  <TimeInput
-                    value={p.end}
-                    onChange={(v) => updatePickedDate(p.date, { end: v })}
-                    placeholder="End (optional)"
-                    className={inputCls}
-                  />
-                  <button
-                    type="button"
-                    onClick={() =>
-                      set({
-                        spotsPickedDates: state.spotsPickedDates.filter((x) => x.date !== p.date),
-                      })
-                    }
-                    aria-label={`Remove ${label}`}
-                    className="text-[#5A8399] hover:text-red-500 px-2"
-                  >
-                    ×
-                  </button>
-                </li>
-              );
-            })}
+            })()}
           </ul>
         </div>
       )}

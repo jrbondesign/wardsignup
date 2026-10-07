@@ -21,6 +21,9 @@ const Popup = dynamic(
   () => import("react-leaflet").then((mod) => mod.Popup),
   { ssr: false },
 );
+const MapScrollWheelZoom = dynamic(() => import("./MapScrollWheelZoom"), {
+  ssr: false,
+});
 
 interface CityData {
   city: string;
@@ -41,6 +44,7 @@ export default function GeographyMap() {
   const [data, setData] = useState<GeographyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [mapActive, setMapActive] = useState(false);
 
   useEffect(() => {
     const loadData = async () => {
@@ -128,13 +132,29 @@ export default function GeographyMap() {
         </div>
       </div>
 
-      <div className="relative h-[500px] w-full rounded-xl overflow-hidden border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)]">
+      <div
+        className="relative z-0 isolate h-[500px] w-full rounded-xl overflow-hidden border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)]"
+        onMouseLeave={() => setMapActive(false)}
+      >
+        {!mapActive && (
+          <button
+            type="button"
+            onClick={() => setMapActive(true)}
+            className="absolute inset-0 z-[1100] flex items-end justify-center pb-4 bg-transparent border-none cursor-pointer"
+            aria-label="Click to explore the map"
+          >
+            <span className="pointer-events-none rounded-full bg-[#0D2B35]/75 text-white text-[13px] font-medium px-3.5 py-1.5 shadow-[0_2px_10px_rgba(8,100,126,0.25)] backdrop-blur-[2px]">
+              Click to explore map
+            </span>
+          </button>
+        )}
         <MapContainer
           center={[39.5, -98]}
           zoom={4}
           style={{ height: "100%", width: "100%" }}
-          scrollWheelZoom={true}
+          scrollWheelZoom={false}
         >
+          <MapScrollWheelZoom enabled={mapActive} />
           <TileLayer
             attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
             url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"

@@ -9,7 +9,7 @@ import type { Session, CampaignItemWithSignups } from "@/lib/types";
 import { formatTime } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
-import { isEventCoverUrl } from "@/lib/event-media";
+import { usePublicCover } from "@/lib/use-public-cover";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -20,6 +20,7 @@ interface SessionWithSignups extends Session {
 export default function FlyerPage({ params }: { params: Promise<{ id: string }> }) {
   const brand = useBrand();
   const { id: eventId } = use(params);
+  const publicCoverUrl = usePublicCover(eventId);
   const [event, setEvent] = useState<any>(null);
   const [eventType, setEventType] = useState<"spots" | "items" | "rsvp">("spots");
   const [showCapacityPublicly, setShowCapacityPublicly] = useState(true);
@@ -254,11 +255,11 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
 
         {/* Event card */}
         <div className="flyer-event-card">
-          {isEventCoverUrl(event.cover_image_url) && (
+          {publicCoverUrl && (
             <div className="flyer-cover-wrap">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img
-                src={event.cover_image_url}
+                src={publicCoverUrl}
                 alt={event.name}
                 className="flyer-cover"
               />

@@ -3,6 +3,7 @@ import { getAuthFromRequest } from "@/lib/auth";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import type { Campaign } from "@/lib/types";
+import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import { EVENT_MEDIA_BUCKET, eventMediaPath, removeCoverIfUnreferenced } from "@/lib/event-media";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -76,6 +77,9 @@ export async function POST(request: NextRequest) {
       previousCoverUrl = (event as { cover_image_url: string | null }).cover_image_url;
       if (!(await userCanAdminCampaign(supabase, user, event as Pick<Campaign, "organization_id">))) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      if (!isCoverImageEnabledForOrg((event as { organization_id: string | null }).organization_id)) {
+        return NextResponse.json({ error: "Cover images aren't available yet" }, { status: 403 });
       }
     }
 

@@ -15,6 +15,7 @@ import { consumeActionRate } from "@/lib/rate-limit";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { withUtm } from "@/lib/utm";
 import { isEventCoverUrl } from "@/lib/event-media";
+import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 
 type EventInviteInsert = Database["public"]["Tables"]["event_invites"]["Insert"];
 
@@ -181,8 +182,12 @@ export async function POST(request: NextRequest) {
           ? escapeHtml(message.trim())
           : "";
 
-      const coverImageHtml = isEventCoverUrl(eventRow.cover_image_url)
-        ? `<img src="${eventRow.cover_image_url}" alt="${evName}" style="width: 100%; max-width: 600px; height: auto; border-radius: 8px; margin-bottom: 20px; display: block;" />`
+      // cover_image_url is admin-writable via RLS and isEventCoverUrl only validates the
+      // path, so drop the query string and escape before it goes into email HTML.
+      const coverImageHtml =
+        isCoverImageEnabledForOrg(eventRow.organization_id) &&
+        isEventCoverUrl(eventRow.cover_image_url)
+        ? `<img src="${escapeHtml(eventRow.cover_image_url.split("?")[0])}" alt="${evName}" style="width: 100%; max-width: 600px; height: auto; border-radius: 8px; margin-bottom: 20px; display: block;" />`
         : "";
 
       const send = await sendGuardedEmail({

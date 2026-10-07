@@ -6,7 +6,6 @@ import { usePostHog } from "posthog-js/react";
 import Link from "next/link";
 import { createClientComponentClient } from "@/lib/auth";
 import { Session, Signup, CampaignItemWithSignups } from "@/lib/types";
-import { DigestScheduleLocalTime } from "@/components/DigestScheduleLocalTime";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import Navigation from "@/components/Navigation";
 import Toast from "@/components/Toast";
@@ -19,6 +18,9 @@ import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
 import { formatTime } from "@/lib/utils";
 import { downloadEventQr } from "@/lib/download-qr";
 import { resizeImage } from "@/lib/resize-image";
+import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
+import EventOptionalSettings from "@/components/event/EventOptionalSettings";
+import { INITIAL_FORM_STATE, type CreateFormState } from "@/lib/create-form-state";
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -57,6 +59,23 @@ function formatSessionDate(iso: string, withYear = false): string {
   });
 }
 
+/** Format last sync time as relative time (e.g. "2m ago", "1h ago") */
+function formatSyncTime(isoString: string): string {
+  const now = Date.now();
+  const then = new Date(isoString).getTime();
+  const diffMs = now - then;
+  const diffMin = Math.floor(diffMs / 60000);
+  
+  if (diffMin < 1) return "just now";
+  if (diffMin < 60) return `${diffMin}m ago`;
+  
+  const diffHours = Math.floor(diffMin / 60);
+  if (diffHours < 24) return `${diffHours}h ago`;
+  
+  const diffDays = Math.floor(diffHours / 24);
+  return `${diffDays}d ago`;
+}
+
 export default function AdminPage({ params }: { params: Promise<{ id: string }> }) {
   const { id: eventId } = use(params);
   const brand = useBrand();
@@ -80,8 +99,18 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const [digestEnabled, setDigestEnabled] = useState(false);
   const [instantEnabled, setInstantEnabled] = useState(false);
   const [showSignupsPublicly, setShowSignupsPublicly] = useState(false);
+  const [listOnDirectory, setListOnDirectory] = useState(true);
   const [allowGuests, setAllowGuests] = useState(true);
   const [showCapacityPublicly, setShowCapacityPublicly] = useState(true);
+  const [eventTimezone, setEventTimezone] = useState("America/Phoenix");
+  const [leaderName, setLeaderName] = useState("");
+  const [leaderEmail, setLeaderEmail] = useState("");
+  const leaderSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [visibilityOpen, setVisibilityOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [registrationOpen, setRegistrationOpen] = useState(false);
   const [sendingReport, setSendingReport] = useState(false);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const moreMenuRef = useRef<HTMLDivElement>(null);
@@ -89,6 +118,12 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
+  const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(false);
+  const [calendarId, setCalendarId] = useState("");
+  const [calendarName, setCalendarName] = useState("");
+  const [inviteLeader, setInviteLeader] = useState(false);
+  const [calendarLastSyncedAt, setCalendarLastSyncedAt] = useState<string | null>(null);
+  const [calendarLastError, setCalendarLastError] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -188,6 +223,22 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
 
       setEvent(eventData);
       setCoverUrl((eventData as any).cover_image_url ?? null);
+      
+      // Load calendar sync status
+      const { data: calSyncData } = await supabase
+        .from("campaign_calendar_sync")
+        .select("enabled, last_synced_at, last_error, calendar_id, calendar_name, invite_leader")
+        .eq("campaign_id", eventId)
+        .maybeSingle();
+      
+      if (calSyncData) {
+        setCalendarSyncEnabled(Boolean((calSyncData as any).enabled));
+        setCalendarId((calSyncData as any).calendar_id || "");
+        setCalendarName((calSyncData as any).calendar_name || "");
+        setInviteLeader(Boolean((calSyncData as any).invite_leader));
+        setCalendarLastSyncedAt((calSyncData as any).last_synced_at);
+        setCalendarLastError((calSyncData as any).last_error);
+      }
 
       const resolvedType: "spots" | "items" | "rsvp" =
         (eventData as any).event_type === "items" ? "items"
@@ -221,10 +272,15 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       setDigestEnabled(Boolean((eventData as any).organizer_digest_enabled));
       setInstantEnabled(Boolean((eventData as any).organizer_instant_notify_enabled));
       setShowSignupsPublicly(Boolean((eventData as any).show_signups_publicly));
+      setListOnDirectory(typeof (eventData as any).list_on_directory === "boolean" ? (eventData as any).list_on_directory : true);
       const ag = (eventData as any).allow_guests;
       setAllowGuests(ag == null ? true : Boolean(ag));
       const scp = (eventData as any).show_capacity_publicly;
       setShowCapacityPublicly(scp == null ? true : Boolean(scp));
+      const tzRaw = (eventData as any).event_timezone;
+      if (typeof tzRaw === "string" && tzRaw.trim()) setEventTimezone(tzRaw.trim());
+      setLeaderName((eventData as any).leader_name ?? "");
+      setLeaderEmail((eventData as any).leader_email ?? "");
 
       // Future: Load org logo if Ward Signup supports custom logos
       const profileLogoUrl = null;
@@ -239,8 +295,12 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
     organizer_digest_enabled?: boolean;
     organizer_instant_notify_enabled?: boolean;
     show_signups_publicly?: boolean;
+    list_on_directory?: boolean;
     allow_guests?: boolean;
     show_capacity_publicly?: boolean;
+    event_timezone?: string;
+    leader_name?: string | null;
+    leader_email?: string | null;
   }) => {
     const supabase = createClientComponentClient();
     const {
@@ -259,6 +319,81 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       throw new Error(data.error || "Failed to save email settings");
     }
     setEvent((prev: any) => (prev ? { ...prev, ...partial } : prev));
+  };
+
+  const applyOptionalSettingsPatch = (patch: Partial<CreateFormState>) => {
+    if ("expanded" in patch && patch.expanded) {
+      if ("visibility" in patch.expanded) setVisibilityOpen(Boolean(patch.expanded.visibility));
+      if ("notifications" in patch.expanded) setNotificationsOpen(Boolean(patch.expanded.notifications));
+      if ("settings" in patch.expanded) setSettingsOpen(Boolean(patch.expanded.settings));
+      if ("googleCalendar" in patch.expanded) setCalendarOpen(Boolean(patch.expanded.googleCalendar));
+      if ("registration" in patch.expanded) setRegistrationOpen(Boolean(patch.expanded.registration));
+    }
+    if ("calendarSyncEnabled" in patch && typeof patch.calendarSyncEnabled === "boolean") {
+      setCalendarSyncEnabled(patch.calendarSyncEnabled);
+    }
+    if ("calendarId" in patch && typeof patch.calendarId === "string") {
+      setCalendarId(patch.calendarId);
+    }
+    if ("calendarName" in patch && typeof patch.calendarName === "string") {
+      setCalendarName(patch.calendarName);
+    }
+    if ("inviteLeader" in patch && typeof patch.inviteLeader === "boolean") {
+      setInviteLeader(patch.inviteLeader);
+    }
+
+    const saveBool = (
+      key: keyof CreateFormState,
+      apiKey: "show_signups_publicly" | "list_on_directory" | "organizer_digest_enabled" | "organizer_instant_notify_enabled" | "allow_guests" | "show_capacity_publicly",
+      current: boolean,
+      setter: (v: boolean) => void,
+    ) => {
+      if (!(key in patch) || typeof patch[key] !== "boolean") return;
+      const next = patch[key] as boolean;
+      setter(next);
+      patchOrganizerEmailPrefs({ [apiKey]: next }).catch((err: unknown) => {
+        setter(current);
+        alert(err instanceof Error ? err.message : "Could not save");
+      });
+    };
+
+    saveBool("showSignupsPublicly", "show_signups_publicly", showSignupsPublicly, setShowSignupsPublicly);
+    saveBool("listOnDirectory", "list_on_directory", listOnDirectory, setListOnDirectory);
+    saveBool("organizerDigestEnabled", "organizer_digest_enabled", digestEnabled, setDigestEnabled);
+    saveBool("organizerInstantNotifyEnabled", "organizer_instant_notify_enabled", instantEnabled, setInstantEnabled);
+    saveBool("allowGuests", "allow_guests", allowGuests, setAllowGuests);
+    saveBool("showCapacityPublicly", "show_capacity_publicly", showCapacityPublicly, setShowCapacityPublicly);
+
+    if ("eventTimezone" in patch && typeof patch.eventTimezone === "string") {
+      const next = patch.eventTimezone;
+      const prev = eventTimezone;
+      setEventTimezone(next);
+      patchOrganizerEmailPrefs({ event_timezone: next }).catch((err: unknown) => {
+        setEventTimezone(prev);
+        alert(err instanceof Error ? err.message : "Could not save");
+      });
+    }
+
+    const hasName = "leaderName" in patch && typeof patch.leaderName === "string";
+    const hasEmail = "leaderEmail" in patch && typeof patch.leaderEmail === "string";
+    if (hasName || hasEmail) {
+      const nextName = hasName ? (patch.leaderName as string) : leaderName;
+      const nextEmail = hasEmail ? (patch.leaderEmail as string) : leaderEmail;
+      if (hasName) setLeaderName(nextName);
+      if (hasEmail) setLeaderEmail(nextEmail);
+      const emailTrim = nextEmail.trim();
+      if (!emailTrim || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrim)) {
+        if (leaderSaveTimer.current) clearTimeout(leaderSaveTimer.current);
+        leaderSaveTimer.current = setTimeout(() => {
+          patchOrganizerEmailPrefs({
+            leader_name: nextName.trim() || null,
+            leader_email: emailTrim || null,
+          }).catch((err: unknown) => {
+            alert(err instanceof Error ? err.message : "Could not save");
+          });
+        }, 800);
+      }
+    }
   };
 
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -389,6 +524,10 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
 
   if (!event) return null;
 
+  const coverEnabled = isCoverImageEnabledForOrg(
+    (event as { organization_id?: string | null }).organization_id,
+  );
+
   // Group by session_date when sessions have specific dates (missionary dinners, RSVP events),
   // otherwise group by day-of-week name (recurring spots without specific dates).
   const hasSessionDates = sessions.some((s) => s.session_date);
@@ -450,7 +589,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
 
           {/* Event header card */}
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-6">
-            {(coverUrl || coverPreview) && (
+            {coverEnabled && (coverUrl || coverPreview) && (
               <div className="relative w-full aspect-[2/1] bg-[#F4FAFB]">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -466,15 +605,21 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
               </div>
             )}
             <div className="p-7">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between mb-6">
-              <div className="flex-1 min-w-0 w-full">
-                <div className="flex items-start gap-3">
-                  {/* Future: Org logo support */}
-                  <h1 className="font-serif text-[clamp(24px,3.5vw,36px)] text-[#0D2B35] tracking-[-0.4px] leading-tight flex-1 min-w-0">
-                    {event.name}
-                  </h1>
-                  {/* Mobile: actions in More menu */}
-                  <div className="relative flex-shrink-0 sm:hidden" ref={moreMenuRef}>
+            <div className="mb-6">
+              <div className="flex items-center justify-end gap-2 sm:gap-3 flex-wrap mb-3">
+                {calendarSyncEnabled && calendarLastSyncedAt && (
+                  <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-[#0E96B0] bg-[#E6F7FB] border border-[#0E96B0]/20 rounded-full whitespace-nowrap flex-shrink-0 mr-auto">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                      <line x1="16" y1="2" x2="16" y2="6"/>
+                      <line x1="8" y1="2" x2="8" y2="6"/>
+                      <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                    On Google Calendar · {formatSyncTime(calendarLastSyncedAt)}
+                  </div>
+                )}
+                {/* Mobile: actions in More menu */}
+                <div className="relative flex-shrink-0 sm:hidden" ref={moreMenuRef}>
                     <button
                       type="button"
                       onClick={() => setMoreMenuOpen((o) => !o)}
@@ -559,49 +704,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                       </div>
                     )}
                   </div>
-                </div>
-                {event.description && (
-                  <p className="text-sm text-[#5A8399] mt-2 leading-relaxed whitespace-pre-wrap">
-                    {event.description}
-                  </p>
-                )}
-
-                {/* Cover image controls */}
-                <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2E5566] hover:text-[#0E96B0] transition-colors cursor-pointer">
-                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                      <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                      <circle cx="8.5" cy="8.5" r="1.5"/>
-                      <polyline points="21 15 16 10 5 21"/>
-                    </svg>
-                    {coverUrl ? "Change cover" : "Add cover"}
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/jpg,image/png,image/webp"
-                      onChange={handleCoverChange}
-                      disabled={coverUploading}
-                      className="hidden"
-                    />
-                  </label>
-                  {coverUrl && (
-                    <button
-                      type="button"
-                      onClick={handleCoverRemove}
-                      disabled={coverUploading}
-                      className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:text-red-600 transition-colors disabled:opacity-50"
-                    >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                        <polyline points="3 6 5 6 21 6"/>
-                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
-                      </svg>
-                      Remove cover
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* sm+: inline actions */}
-              <div className="hidden sm:flex flex-shrink-0 flex-row flex-wrap items-center justify-end gap-x-3 gap-y-2">
+                <div className="hidden sm:flex flex-shrink-0 flex-row flex-wrap items-center justify-end gap-x-3 gap-y-2">
                 <Link
                   href={`/edit/${eventId}`}
                   className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2E5566] hover:text-[#0E96B0] transition-colors no-underline"
@@ -682,7 +785,51 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                   </svg>
                   Delete
                 </button>
+                </div>
               </div>
+              <h1 className="font-serif text-[clamp(24px,3.5vw,36px)] text-[#0D2B35] tracking-[-0.4px] leading-tight">
+                {event.name}
+              </h1>
+              {event.description && (
+                <p className="text-sm text-[#5A8399] mt-2 leading-relaxed whitespace-pre-wrap">
+                  {event.description}
+                </p>
+              )}
+
+              {/* Cover image controls (feature-flagged per org) */}
+              {coverEnabled && (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2E5566] hover:text-[#0E96B0] transition-colors cursor-pointer">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                  {coverUrl ? "Change cover" : "Add cover"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    onChange={handleCoverChange}
+                    disabled={coverUploading}
+                    className="hidden"
+                  />
+                </label>
+                {coverUrl && (
+                  <button
+                    type="button"
+                    onClick={handleCoverRemove}
+                    disabled={coverUploading}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:text-red-600 transition-colors disabled:opacity-50"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    Remove cover
+                  </button>
+                )}
+              </div>
+              )}
             </div>
 
             {/* Stats */}
@@ -758,163 +905,47 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
               );
             })()}
 
-            {/* Email updates — compact, directly above signup link */}
-            <div className="mb-4 rounded-xl border border-[#0E96B0]/18 bg-[#F8FCFD] px-4 py-3">
-              <div className="flex flex-wrap items-baseline justify-between gap-2 gap-y-1 mb-2">
-                <h3 className="text-sm font-semibold text-[#0D2B35]">Email updates</h3>
-                <button
-                  type="button"
-                  disabled={sendingReport}
-                  onClick={sendOrganizerReportNow}
-                  className="text-xs font-semibold text-[#0E96B0] hover:text-[#08647E] disabled:opacity-50 disabled:cursor-not-allowed underline-offset-2 hover:underline"
-                >
-                  {sendingReport ? "Sending…" : "Send report now"}
-                </button>
-              </div>
-              <p className="text-[11px] text-[#5A8399] leading-snug mb-1.5">
-                Metrics and roster details. The daily digest runs once per day at{" "}
-                <span className="text-[#2E5566] font-medium">14:00 UTC</span> (
-                <DigestScheduleLocalTime /> in your time zone). It only sends when something changed
-                since the last email.
-              </p>
-              <p className="text-[11px] text-[#5A8399] leading-snug mb-2.5">
-                Participants who provided an email address automatically receive a reminder ~24 hours before their dated session.
-              </p>
-              <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-x-5 sm:gap-y-2">
-                <label className="flex items-center gap-2 cursor-pointer group min-w-0">
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 shrink-0 rounded border-[#0E96B0]/40 text-[#0E96B0] focus:ring-[#0E96B0]"
-                    checked={digestEnabled}
-                    onChange={async (e) => {
-                      const next = e.target.checked;
-                      setDigestEnabled(next);
-                      try {
-                        await patchOrganizerEmailPrefs({ organizer_digest_enabled: next });
-                      } catch (err: unknown) {
-                        setDigestEnabled(!next);
-                        alert(err instanceof Error ? err.message : "Could not save");
-                      }
-                    }}
-                  />
-                  <span className="text-xs text-[#2E5566] group-hover:text-[#0D2B35]">
-                    <span className="font-medium">Daily digest</span>
-                    <span className="text-[#5A8399] font-normal">
-                      {" · "}
-                      <DigestScheduleLocalTime />
-                      {" · if something changed"}
-                    </span>
-                  </span>
-                </label>
-                <label className="flex items-center gap-2 cursor-pointer group min-w-0">
-                  <input
-                    type="checkbox"
-                    className="h-3.5 w-3.5 shrink-0 rounded border-[#0E96B0]/40 text-[#0E96B0] focus:ring-[#0E96B0]"
-                    checked={instantEnabled}
-                    onChange={async (e) => {
-                      const next = e.target.checked;
-                      setInstantEnabled(next);
-                      try {
-                        await patchOrganizerEmailPrefs({ organizer_instant_notify_enabled: next });
-                      } catch (err: unknown) {
-                        setInstantEnabled(!next);
-                        alert(err instanceof Error ? err.message : "Could not save");
-                      }
-                    }}
-                  />
-                  <span className="text-xs text-[#2E5566] group-hover:text-[#0D2B35]">
-                    <span className="font-medium">Faster alerts</span>
-                    <span className="text-[#5A8399] font-normal">
-                      {" "}
-                      · about every 30 minutes when there are new signups
-                    </span>
-                  </span>
-                </label>
-              </div>
+            {/* Optional settings — same disclosure controls as edit */}
+            <div className="mb-4">
+              <EventOptionalSettings
+                state={{
+                  ...INITIAL_FORM_STATE,
+                  eventType,
+                  showSignupsPublicly,
+                  listOnDirectory,
+                  organizerDigestEnabled: digestEnabled,
+                  organizerInstantNotifyEnabled: instantEnabled,
+                  calendarSyncEnabled,
+                  calendarId,
+                  calendarName,
+                  inviteLeader,
+                  eventTimezone,
+                  leaderName,
+                  leaderEmail,
+                  allowGuests,
+                  showCapacityPublicly,
+                  expanded: {
+                    ...INITIAL_FORM_STATE.expanded,
+                    visibility: visibilityOpen,
+                    notifications: notificationsOpen,
+                    settings: settingsOpen,
+                    googleCalendar: calendarOpen,
+                    registration: registrationOpen,
+                  },
+                }}
+                set={applyOptionalSettingsPatch}
+                organizationId={(event as { organization_id?: string | null }).organization_id}
+                eventId={eventId}
+                includeRegistration={eventType !== "items"}
+                lastSyncedAt={calendarLastSyncedAt}
+                lastError={calendarLastError}
+                onSyncResult={({ lastSyncedAt, lastError }) => {
+                  if (lastSyncedAt !== undefined) setCalendarLastSyncedAt(lastSyncedAt);
+                  if (lastError !== undefined) setCalendarLastError(lastError);
+                }}
+                reportAction={{ sending: sendingReport, onSend: sendOrganizerReportNow }}
+              />
             </div>
-
-            <div className="mb-4 rounded-xl border border-[#0E96B0]/18 bg-[#F8FCFD] px-4 py-3">
-              <h3 className="text-sm font-semibold text-[#0D2B35] mb-1">Signup visibility</h3>
-              <p className="text-[11px] text-[#5A8399] leading-snug mb-2.5">
-                When on, visitors can see who else has signed up (name and note).
-              </p>
-              <label className="flex items-center gap-2 cursor-pointer group min-w-0">
-                <input
-                  type="checkbox"
-                  className="h-3.5 w-3.5 shrink-0 rounded border-[#0E96B0]/40 text-[#0E96B0] focus:ring-[#0E96B0]"
-                  checked={showSignupsPublicly}
-                  onChange={async (e) => {
-                    const next = e.target.checked;
-                    setShowSignupsPublicly(next);
-                    try {
-                      await patchOrganizerEmailPrefs({ show_signups_publicly: next });
-                    } catch (err: unknown) {
-                      setShowSignupsPublicly(!next);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    }
-                  }}
-                />
-                <span className="text-xs text-[#2E5566] group-hover:text-[#0D2B35]">
-                  <span className="font-medium">Show who signed up</span>
-                  <span className="text-[#5A8399] font-normal"> · visible on the public signup page</span>
-                </span>
-              </label>
-            </div>
-
-
-            {/* Allow guests + show capacity — for spots/rsvp type events */}
-            {eventType !== "items" && (
-              <div className="mb-4 rounded-xl border border-[#0E96B0]/18 bg-[#F8FCFD] px-4 py-3">
-                <h3 className="text-sm font-semibold text-[#0D2B35] mb-1">Registration options</h3>
-                <p className="text-[11px] text-[#5A8399] leading-snug mb-2.5">
-                  Control what participants can see and do on the public signup page.
-                </p>
-                <div className="space-y-2.5">
-                  <label className="flex items-center gap-2 cursor-pointer group min-w-0">
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 shrink-0 rounded border-[#0E96B0]/40 text-[#0E96B0] focus:ring-[#0E96B0]"
-                      checked={allowGuests}
-                      onChange={async (e) => {
-                        const next = e.target.checked;
-                        setAllowGuests(next);
-                        try {
-                          await patchOrganizerEmailPrefs({ allow_guests: next });
-                        } catch (err: unknown) {
-                          setAllowGuests(!next);
-                          alert(err instanceof Error ? err.message : "Could not save");
-                        }
-                      }}
-                    />
-                    <span className="text-xs text-[#2E5566] group-hover:text-[#0D2B35]">
-                      <span className="font-medium">Allow guests</span>
-                      <span className="text-[#5A8399] font-normal"> · participants can register additional people by name</span>
-                    </span>
-                  </label>
-                  <label className="flex items-center gap-2 cursor-pointer group min-w-0">
-                    <input
-                      type="checkbox"
-                      className="h-3.5 w-3.5 shrink-0 rounded border-[#0E96B0]/40 text-[#0E96B0] focus:ring-[#0E96B0]"
-                      checked={showCapacityPublicly}
-                      onChange={async (e) => {
-                        const next = e.target.checked;
-                        setShowCapacityPublicly(next);
-                        try {
-                          await patchOrganizerEmailPrefs({ show_capacity_publicly: next });
-                        } catch (err: unknown) {
-                          setShowCapacityPublicly(!next);
-                          alert(err instanceof Error ? err.message : "Could not save");
-                        }
-                      }}
-                    />
-                    <span className="text-xs text-[#2E5566] group-hover:text-[#0D2B35]">
-                      <span className="font-medium">Show spots remaining</span>
-                      <span className="text-[#5A8399] font-normal"> · visible on the public signup page</span>
-                    </span>
-                  </label>
-                </div>
-              </div>
-            )}
 
             <div className="rounded-xl border border-[#0E96B0]/18 bg-[#F8FCFD] px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
               <div className="min-w-0">

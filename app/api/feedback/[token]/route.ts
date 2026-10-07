@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { consumeActionRate } from "@/lib/rate-limit";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
+import { sendFeedbackResponseNotification } from "@/lib/feedback-email";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +71,7 @@ export async function POST(
   const admin = createServiceRoleClient();
 
   // Only pending/sent rows accept a response — a second submit is a no-op 409.
+  const respondedAt = new Date().toISOString();
   const { data: updated, error } = await admin
     .from("feedback_requests")
     .update({
@@ -76,12 +79,12 @@ export async function POST(
       answer_retention: retention,
       answer_value: value || null,
       answer_blocker: friction || null,
-      responded_at: new Date().toISOString(),
+      responded_at: respondedAt,
       status: "responded",
     } as never)
     .eq("token", token)
     .in("status", ["pending", "sent"])
-    .select("id, user_id, brand_id")
+    .select("id, user_id, brand_id, email_lower")
     .maybeSingle();
 
   if (error) {
@@ -107,7 +110,34 @@ export async function POST(
     return NextResponse.json({ error: "Invalid link" }, { status: 404 });
   }
 
-  const row = updated as { user_id: string; brand_id: string };
+  const row = updated as {
+    user_id: string;
+    brand_id: string;
+    email_lower: string;
+  };
+
+  // Send immediate notification to bondesign@gmail.com. This must not block
+  // the response or fail the request — feedback is already saved.
+  try {
+    const { brand } = publicSiteOriginAndBrandForCampaign({
+      brand_id: row.brand_id,
+    });
+    const emailResult = await sendFeedbackResponseNotification({
+      brand,
+      creatorEmail: row.email_lower,
+      pmf,
+      retention,
+      value,
+      blocker: friction,
+      respondedAt,
+    });
+    if (!emailResult.ok) {
+      console.error("feedback immediate notification:", emailResult.error);
+    }
+  } catch (e) {
+    console.error("feedback immediate notification exception:", e);
+  }
+
   try {
     const posthog = getPostHogClient();
     posthog.capture({

@@ -18,6 +18,11 @@ const GeographyMap = dynamic(() => import("@/components/GeographyMap"), {
 });
 
 interface MetricsData {
+  growthCountsSource?: "posthog" | "database";
+  nonCreatorAccounts?: {
+    coAdmins: { total: number; thisWeek: number };
+    noOrgYet: { total: number; thisWeek: number };
+  };
   totalEvents: number;
   totalSessions: number;
   totalSignups: number;
@@ -218,7 +223,7 @@ export default function MetricsPage() {
                   New creators (leading)
                 </div>
                 <p className="text-[15px] text-[#5A8399] mb-6 max-w-2xl">
-                  A <strong className="text-[#2E5566] font-semibold">creator</strong> is a new Supabase auth account (Google or magic link).
+                  A <strong className="text-[#2E5566] font-semibold">creator</strong> is an organization owner, counted on their first confirmed sign-in (Google or magic link). Invited co-admins and people who signed in without creating an org are shown separately.
                   Compare calendar weeks for weekly reviews; rolling 7 days can differ from the current week boundary.
                 </p>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
@@ -230,6 +235,15 @@ export default function MetricsPage() {
                     <div className="text-[12px] text-[#5A8399] mt-2">
                       {data.northStar.totalAccounts.toLocaleString()} total registered accounts
                     </div>
+                    {data.nonCreatorAccounts && (
+                      <div className="text-[12px] text-[#5A8399] mt-2">
+                        Not counted this week: {data.nonCreatorAccounts.coAdmins.thisWeek.toLocaleString()} co-admins joined ·{" "}
+                        {data.nonCreatorAccounts.noOrgYet.thisWeek.toLocaleString()} signed in, no org yet
+                        <span className="block text-[11px] text-[#7A9BAE]">
+                          All time: {data.nonCreatorAccounts.coAdmins.total.toLocaleString()} co-admins · {data.nonCreatorAccounts.noOrgYet.total.toLocaleString()} no org
+                        </span>
+                      </div>
+                    )}
                     <div className="text-[12px] text-[#0D2B35] mt-3 font-medium">
                       This calendar week: Google {data.newAccountsByProviderThisCalendarWeek.google.toLocaleString()} · Magic link{" "}
                       {data.newAccountsByProviderThisCalendarWeek.email.toLocaleString()}
@@ -309,7 +323,10 @@ export default function MetricsPage() {
                   Last 8 weeks
                 </div>
                 <p className="text-[13px] text-[#5A8399] mb-5 max-w-3xl">
-                  Bar height = new creators per week. Table includes signups and new events for context.
+                  Bar height = new creators per week. Table includes signups and new events for context
+                  {data.growthCountsSource === "posthog"
+                    ? " (from PostHog server events: events created and signup submissions, including ones later deleted or cancelled)."
+                    : " (from current database rows; PostHog unavailable, so deleted events and cancelled signups are missing)."}
                 </p>
                 {(() => {
                   const maxC = Math.max(
@@ -405,7 +422,7 @@ export default function MetricsPage() {
                 <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-2">Activation</div>
                 <p className="text-[13px] text-[#5A8399] mb-5 max-w-3xl leading-relaxed">
                   What organizers have done in the app, among{" "}
-                  {data.authUsersListed.toLocaleString()} auth accounts
+                  {data.authUsersListed.toLocaleString()} creators (org owners)
                   {data.authUsersFetchComplete === false ? " (partial fetch)" : ""}.
                   &quot;Invites sent&quot; counts only <strong className="text-[#2E5566] font-semibold">in-app email invites</strong> stored in the database—not copy-link, SMS, or WhatsApp shares.
                 </p>
