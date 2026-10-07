@@ -126,7 +126,7 @@ export default function OrgSwitcher({ onSwitch }: Props) {
         </svg>
       </button>
       {open && (
-        <div className="absolute z-20 mt-2 w-64 right-0 bg-white rounded-xl shadow-[0_8px_32px_rgba(8,100,126,0.18)] border border-[#0E96B0]/10 py-1.5">
+        <div className="fixed inset-x-4 sm:absolute sm:inset-x-auto sm:left-0 sm:w-64 z-20 mt-2 bg-white rounded-xl shadow-[0_8px_32px_rgba(8,100,126,0.18)] border border-[#0E96B0]/10 py-1.5">
           <Link
             href="/settings/organization"
             onClick={() => setOpen(false)}
