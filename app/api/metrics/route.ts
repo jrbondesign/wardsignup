@@ -153,6 +153,31 @@ export async function GET(request: NextRequest) {
     brandUserIds = [...profileUserIdSet];
   }
 
+  // Creators = organization owners. Co-admins (invited into someone else's org) and
+  // signed-in users who never set up an org are reported separately, not as creators.
+  const { data: memberRows } = await admin
+    .from("organization_members")
+    .select("user_id, role, status, organizations!inner(brand_id)")
+    .eq("status", "accepted");
+  const ownerIds = new Set<string>();
+  const memberIds = new Set<string>();
+  for (const r of (memberRows ?? []) as unknown as {
+    user_id: string;
+    role: string;
+    organizations: { brand_id: string } | { brand_id: string }[];
+  }[]) {
+    const org = Array.isArray(r.organizations) ? r.organizations[0] : r.organizations;
+    if (brandFilter && org?.brand_id !== brandFilter) continue;
+    memberIds.add(r.user_id);
+    if (r.role === "owner") ownerIds.add(r.user_id);
+  }
+  const profiledUserIds = brandUserIds!;
+  const coAdminOnlyIds = new Set(
+    profiledUserIds.filter((id) => memberIds.has(id) && !ownerIds.has(id)),
+  );
+  const noOrgIds = new Set(profiledUserIds.filter((id) => !memberIds.has(id)));
+  brandUserIds = profiledUserIds.filter((id) => ownerIds.has(id));
+
   const [
     { count: totalEvents },
     { count: totalSessions },
@@ -485,6 +510,22 @@ export async function GET(request: NextRequest) {
       : last4Weeks.reduce((s, x) => s + x.newCreatorAccounts, 0) / last4Weeks.length;
 
   const currentWeekKey = weeks[weeks.length - 1]!;
+  const profiledById = new Map(allAuthUsers.map((u) => [u.id, u]));
+  const countSet = (ids: Set<string>) => {
+    let total = 0;
+    let thisWeek = 0;
+    for (const id of ids) {
+      const u = profiledById.get(id);
+      if (!u) continue;
+      total += 1;
+      if (toWeekKey(joinedAt(u)) === currentWeekKey) thisWeek += 1;
+    }
+    return { total, thisWeek };
+  };
+  const nonCreatorAccounts = {
+    coAdmins: countSet(coAdminOnlyIds),
+    noOrgYet: countSet(noOrgIds),
+  };
   const thisCalendarWeekUsers = authUserList.filter(
     (u) => toWeekKey(joinedAt(u)) === currentWeekKey,
   );
@@ -581,5 +622,6 @@ export async function GET(request: NextRequest) {
     authUsersListCap: null as number | null,
     authUsersListed: totalUsers,
     authUsersFetchComplete,
+    nonCreatorAccounts,
   });
 }
