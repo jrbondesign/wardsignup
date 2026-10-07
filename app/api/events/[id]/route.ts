@@ -6,6 +6,8 @@ import { userCanAdminCampaign, userCanDeleteCampaign } from "@/lib/campaign-acce
 import { isValidIanaTimezone } from "@/lib/event-timezone";
 import type { Campaign } from "@/lib/types";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { createServiceRoleClient } from "@/lib/supabase-admin";
+import { removeCoverIfUnreferenced } from "@/lib/event-media";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
@@ -62,6 +64,12 @@ export async function DELETE(
         { status: 500 }
       );
     }
+
+    // Best-effort storage cleanup; skipped if a duplicated event shares the file.
+    await removeCoverIfUnreferenced(
+      createServiceRoleClient(),
+      (event as Campaign).cover_image_url
+    );
 
     const posthog = getPostHogClient();
     posthog.capture({

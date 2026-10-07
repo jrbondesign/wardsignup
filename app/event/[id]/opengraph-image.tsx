@@ -4,6 +4,8 @@ import { join } from "path";
 import { headers } from "next/headers";
 import { getBrandFromHost } from "@/lib/brand";
 import { getPublicCampaignById } from "@/lib/supabase";
+import { publicCoverUrlForCampaign } from "@/lib/event-media";
+import { createServiceRoleClient } from "@/lib/supabase-admin";
 
 export const runtime = "nodejs";
 export const size = { width: 1200, height: 630 };
@@ -32,8 +34,21 @@ export default async function EventOGImage({ params }: { params: Promise<{ id: s
   const eventName = event?.name ?? brand.shortName;
   const eventDescription = event?.description ?? null;
 
-  // Future: Cover image support
   let coverBase64: string | null = null;
+  const coverUrl = event ? await publicCoverUrlForCampaign(createServiceRoleClient(), id) : null;
+  if (coverUrl) {
+    try {
+      const res = await fetch(coverUrl, { signal: AbortSignal.timeout(3000) });
+      const type = res.headers.get("content-type") ?? "";
+      // Satori can't decode WebP; fall back to the gradient for it.
+      if (res.ok && /image\/(jpeg|png)/.test(type)) {
+        const buf = Buffer.from(await res.arrayBuffer());
+        coverBase64 = `data:${type};base64,${buf.toString("base64")}`;
+      }
+    } catch (e) {
+      console.error("OG cover fetch failed:", e);
+    }
+  }
 
   return new ImageResponse(
     (

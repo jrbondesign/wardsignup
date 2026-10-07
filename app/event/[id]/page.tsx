@@ -12,6 +12,7 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
 import { usePostHog } from "posthog-js/react";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
+import { usePublicCover } from "@/lib/use-public-cover";
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -68,6 +69,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const posthog = usePostHog();
   const router = useRouter();
   const { id: eventId } = use(params);
+  const publicCoverUrl = usePublicCover(eventId);
   const [event, setEvent] = useState<any>(null);
   const [sessions, setSessions] = useState<SessionWithSignups[]>([]);
   const [loading, setLoading] = useState(true);
@@ -593,6 +595,18 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
         {/* Event card */}
         <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-6">
+          {publicCoverUrl && (
+            <div className="relative w-full aspect-[2/1] bg-[#F4FAFB]">
+              <Image
+                src={publicCoverUrl}
+                alt=""
+                fill
+                priority
+                sizes="(max-width: 896px) 100vw, 896px"
+                className="object-cover"
+              />
+            </div>
+          )}
           {/* Gradient strip */}
           <div className="h-1.5 bg-gradient-to-r from-[#22C8D8] via-[#0E96B0] to-[#08647E]" />
           <div className="p-7">

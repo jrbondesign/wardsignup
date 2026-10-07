@@ -17,6 +17,8 @@ import OrgLogoButton from "@/components/OrgLogoButton";
 import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
 import { formatTime } from "@/lib/utils";
 import { downloadEventQr } from "@/lib/download-qr";
+import { resizeImage } from "@/lib/resize-image";
+import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import EventOptionalSettings from "@/components/event/EventOptionalSettings";
 import { INITIAL_FORM_STATE, type CreateFormState } from "@/lib/create-form-state";
 
@@ -411,7 +413,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
         const supabase = createClientComponentClient();
         const { data: { session } } = await supabase.auth.getSession();
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", await resizeImage(file));
         form.append("type", "cover");
         form.append("eventId", eventId);
         const res = await fetch("/api/upload", {
@@ -522,6 +524,10 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
 
   if (!event) return null;
 
+  const coverEnabled = isCoverImageEnabledForOrg(
+    (event as { organization_id?: string | null }).organization_id,
+  );
+
   // Group by session_date when sessions have specific dates (missionary dinners, RSVP events),
   // otherwise group by day-of-week name (recurring spots without specific dates).
   const hasSessionDates = sessions.some((s) => s.session_date);
@@ -583,7 +589,21 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
 
           {/* Event header card */}
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-6">
-            {/* Future: Cover image support */}
+            {coverEnabled && (coverUrl || coverPreview) && (
+              <div className="relative w-full aspect-[2/1] bg-[#F4FAFB]">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={coverPreview || coverUrl!}
+                  alt="Event cover"
+                  className="w-full h-full object-cover"
+                />
+                {coverUploading && (
+                  <div className="absolute inset-0 bg-black/30 flex items-center justify-center">
+                    <LoadingSpinner size="lg" />
+                  </div>
+                )}
+              </div>
+            )}
             <div className="p-7">
             <div className="mb-6">
               <div className="flex items-center justify-end gap-2 sm:gap-3 flex-wrap mb-3">
@@ -774,6 +794,41 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                 <p className="text-sm text-[#5A8399] mt-2 leading-relaxed whitespace-pre-wrap">
                   {event.description}
                 </p>
+              )}
+
+              {/* Cover image controls (feature-flagged per org) */}
+              {coverEnabled && (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2E5566] hover:text-[#0E96B0] transition-colors cursor-pointer">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
+                    <circle cx="8.5" cy="8.5" r="1.5"/>
+                    <polyline points="21 15 16 10 5 21"/>
+                  </svg>
+                  {coverUrl ? "Change cover" : "Add cover"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/jpg,image/png,image/webp"
+                    onChange={handleCoverChange}
+                    disabled={coverUploading}
+                    className="hidden"
+                  />
+                </label>
+                {coverUrl && (
+                  <button
+                    type="button"
+                    onClick={handleCoverRemove}
+                    disabled={coverUploading}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold text-red-500 hover:text-red-600 transition-colors disabled:opacity-50"
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                    </svg>
+                    Remove cover
+                  </button>
+                )}
+              </div>
               )}
             </div>
 

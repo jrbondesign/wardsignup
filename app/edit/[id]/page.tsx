@@ -37,6 +37,8 @@ import { groupSessionsForDisplay } from "@/lib/edit-session-classes";
 import { isMissingSortOrderError, stripSortOrder } from "@/lib/session-sort-order";
 import { INITIAL_FORM_STATE, type CreateFormState, type ItemDraft } from "@/lib/create-form-state";
 import { formatTime, formatTimeRange } from "@/lib/utils";
+import { resizeImage } from "@/lib/resize-image";
+import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 
 interface SessionData {
   id?: string;
@@ -686,7 +688,7 @@ export default function EditEventPage() {
         const supabase = createClientComponentClient();
         const { data: { session } } = await supabase.auth.getSession();
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", await resizeImage(file));
         form.append("type", "cover");
         form.append("eventId", eventId);
         const res = await fetch("/api/upload", {
@@ -1501,8 +1503,8 @@ export default function EditEventPage() {
             {itemsError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm">{itemsError}</div>}
             {/* Event details */}
             <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-4">
-              {/* Future: Cover image support */}
               <div className="p-4 md:p-8">
+                {isCoverImageEnabledForOrg(organizationId) && (
                 <div className="relative">
                   <label className="cursor-pointer group block">
                     <div className="w-full aspect-[2/1] relative overflow-hidden bg-[#F4FAFB] flex items-center justify-center">
@@ -1548,6 +1550,7 @@ export default function EditEventPage() {
                     </button>
                 )}
               </div>
+                )}
               <div className="flex items-center gap-3 mb-6">
                 {/* Future: Org logo support */}
                 <h1 className="font-serif text-[28px] text-[#0D2B35]">Edit Event</h1>
