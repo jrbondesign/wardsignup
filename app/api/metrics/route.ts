@@ -13,6 +13,15 @@ function toWeekKey(dateStr: string): string {
 
 const MS_DAY = 24 * 60 * 60 * 1000;
 
+/**
+ * When a creator actually joined: first confirmed sign-in, not auth row creation.
+ * Magic-link requests create the auth row immediately, so an account requested weeks
+ * ago and first clicked today must count today (matches the founder notify email).
+ */
+function joinedAt(u: User): string {
+  return u.email_confirmed_at ?? u.confirmed_at ?? u.created_at;
+}
+
 function median(nums: number[]): number | null {
   if (nums.length === 0) return null;
   const s = [...nums].sort((a, b) => a - b);
@@ -144,6 +153,31 @@ export async function GET(request: NextRequest) {
     brandUserIds = [...profileUserIdSet];
   }
 
+  // Creators = organization owners. Co-admins (invited into someone else's org) and
+  // signed-in users who never set up an org are reported separately, not as creators.
+  const { data: memberRows } = await admin
+    .from("organization_members")
+    .select("user_id, role, status, organizations!inner(brand_id)")
+    .eq("status", "accepted");
+  const ownerIds = new Set<string>();
+  const memberIds = new Set<string>();
+  for (const r of (memberRows ?? []) as unknown as {
+    user_id: string;
+    role: string;
+    organizations: { brand_id: string } | { brand_id: string }[];
+  }[]) {
+    const org = Array.isArray(r.organizations) ? r.organizations[0] : r.organizations;
+    if (brandFilter && org?.brand_id !== brandFilter) continue;
+    memberIds.add(r.user_id);
+    if (r.role === "owner") ownerIds.add(r.user_id);
+  }
+  const profiledUserIds = brandUserIds!;
+  const coAdminOnlyIds = new Set(
+    profiledUserIds.filter((id) => memberIds.has(id) && !ownerIds.has(id)),
+  );
+  const noOrgIds = new Set(profiledUserIds.filter((id) => !memberIds.has(id)));
+  brandUserIds = profiledUserIds.filter((id) => ownerIds.has(id));
+
   const [
     { count: totalEvents },
     { count: totalSessions },
@@ -250,7 +284,7 @@ export async function GET(request: NextRequest) {
 
   const accountWeekMap: Record<string, number> = {};
   for (const u of authUserList) {
-    const w = toWeekKey(u.created_at);
+    const w = toWeekKey(joinedAt(u));
     accountWeekMap[w] = (accountWeekMap[w] ?? 0) + 1;
   }
 
@@ -284,7 +318,7 @@ export async function GET(request: NextRequest) {
   const sevenDaysAgo = new Date(now - 7 * MS_DAY).toISOString();
   const thirtyDaysAgo = new Date(now - 30 * MS_DAY).toISOString();
   const totalUsers = authUserList.length;
-  const newUsersThisWeek = authUserList.filter((u) => u.created_at >= sevenDaysAgo).length;
+  const newUsersThisWeek = authUserList.filter((u) => joinedAt(u) >= sevenDaysAgo).length;
   const activeUsersThisWeek = authUserList.filter(
     (u) => u.last_sign_in_at && u.last_sign_in_at >= sevenDaysAgo,
   ).length;
@@ -402,7 +436,7 @@ export async function GET(request: NextRequest) {
     (inviteInviterRows ?? []).map((r: { inviter_id: string }) => r.inviter_id).filter(Boolean),
   );
 
-  const newUsersWeek = authUserList.filter((u) => u.created_at >= sevenDaysAgo);
+  const newUsersWeek = authUserList.filter((u) => joinedAt(u) >= sevenDaysAgo);
   const newAccountsByProviderThisWeek = {
     google: newUsersWeek.filter((u) => u.app_metadata?.provider === "google").length,
     email: newUsersWeek.filter((u) => u.app_metadata?.provider !== "google").length,
@@ -441,14 +475,14 @@ export async function GET(request: NextRequest) {
     if (hasInAppInvite) usersWithInAppInvite += 1;
     if (hasMemberSignup) usersWithMemberSignup += 1;
 
-    if (u.created_at >= sevenDaysAgo) {
+    if (joinedAt(u) >= sevenDaysAgo) {
       cohort7d.newUsers += 1;
       if (hasEvent) cohort7d.withEvent += 1;
       if (hasSession) cohort7d.withSession += 1;
       if (hasInAppInvite) cohort7d.withInAppInvite += 1;
       if (hasMemberSignup) cohort7d.withMemberSignup += 1;
     }
-    if (u.created_at >= thirtyDaysAgo) {
+    if (joinedAt(u) >= thirtyDaysAgo) {
       cohort30d.newUsers += 1;
       if (hasEvent) cohort30d.withEvent += 1;
       if (hasSession) cohort30d.withSession += 1;
@@ -476,8 +510,24 @@ export async function GET(request: NextRequest) {
       : last4Weeks.reduce((s, x) => s + x.newCreatorAccounts, 0) / last4Weeks.length;
 
   const currentWeekKey = weeks[weeks.length - 1]!;
+  const profiledById = new Map(allAuthUsers.map((u) => [u.id, u]));
+  const countSet = (ids: Set<string>) => {
+    let total = 0;
+    let thisWeek = 0;
+    for (const id of ids) {
+      const u = profiledById.get(id);
+      if (!u) continue;
+      total += 1;
+      if (toWeekKey(joinedAt(u)) === currentWeekKey) thisWeek += 1;
+    }
+    return { total, thisWeek };
+  };
+  const nonCreatorAccounts = {
+    coAdmins: countSet(coAdminOnlyIds),
+    noOrgYet: countSet(noOrgIds),
+  };
   const thisCalendarWeekUsers = authUserList.filter(
-    (u) => toWeekKey(u.created_at) === currentWeekKey,
+    (u) => toWeekKey(joinedAt(u)) === currentWeekKey,
   );
   const newAccountsByProviderThisCalendarWeek = {
     google: thisCalendarWeekUsers.filter((u) => u.app_metadata?.provider === "google")
@@ -572,5 +622,6 @@ export async function GET(request: NextRequest) {
     authUsersListCap: null as number | null,
     authUsersListed: totalUsers,
     authUsersFetchComplete,
+    nonCreatorAccounts,
   });
 }
