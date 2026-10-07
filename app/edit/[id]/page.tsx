@@ -37,7 +37,7 @@ import { groupSessionsForDisplay } from "@/lib/edit-session-classes";
 import { isMissingSortOrderError, stripSortOrder } from "@/lib/session-sort-order";
 import { INITIAL_FORM_STATE, type CreateFormState, type ItemDraft } from "@/lib/create-form-state";
 import { formatTime, formatTimeRange } from "@/lib/utils";
-import { resizeImage } from "@/lib/resize-image";
+import { coverFileError, prepareCoverUpload } from "@/lib/cover-upload";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import { COVER_SIZE_HINT, coverObjectPosition } from "@/lib/cover-position";
 
@@ -678,8 +678,18 @@ export default function EditEventPage() {
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const fileError = coverFileError(file);
+    if (fileError) {
+      alert(fileError);
+      e.target.value = "";
+      return;
+    }
     const objectUrl = URL.createObjectURL(file);
     const img = new window.Image();
+    img.onerror = () => {
+      alert("We couldn't read that image. Please try a different JPEG, PNG, or WebP file.");
+      URL.revokeObjectURL(objectUrl);
+    };
     img.onload = async () => {
       if (img.width / img.height < 0.9) {
         alert("Please upload a landscape image (wider than tall). Recommended 1600 × 800 px (2:1), at least 1200 × 600.");
@@ -692,7 +702,7 @@ export default function EditEventPage() {
         const supabase = createClientComponentClient();
         const { data: { session } } = await supabase.auth.getSession();
         const form = new FormData();
-        form.append("file", await resizeImage(file));
+        form.append("file", await prepareCoverUpload(file));
         form.append("type", "cover");
         form.append("eventId", eventId);
         const res = await fetch("/api/upload", {
@@ -1526,7 +1536,7 @@ export default function EditEventPage() {
                             <polyline points="21 15 16 10 5 21"/>
                           </svg>
                           <p className="text-sm font-medium opacity-50">Add a cover image</p>
-                          <p className="text-xs opacity-40 mt-1">1600 × 800 px recommended (2:1) · JPEG, PNG, or WebP</p>
+                          <p className="text-xs opacity-40 mt-1">1600 × 800 px recommended (2:1) · JPEG, PNG, or WebP · max 20 MB</p>
                         </div>
                       )}
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">

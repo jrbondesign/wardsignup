@@ -17,7 +17,7 @@ import OrgLogoButton from "@/components/OrgLogoButton";
 import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
 import { formatTime } from "@/lib/utils";
 import { downloadEventQr } from "@/lib/download-qr";
-import { resizeImage } from "@/lib/resize-image";
+import { coverFileError, prepareCoverUpload } from "@/lib/cover-upload";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import CoverImageFrame from "@/components/CoverImageFrame";
 import { COVER_SIZE_HINT } from "@/lib/cover-position";
@@ -403,8 +403,18 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const fileError = coverFileError(file);
+    if (fileError) {
+      alert(fileError);
+      e.target.value = "";
+      return;
+    }
     const objectUrl = URL.createObjectURL(file);
     const img = new window.Image();
+    img.onerror = () => {
+      alert("We couldn't read that image. Please try a different JPEG, PNG, or WebP file.");
+      URL.revokeObjectURL(objectUrl);
+    };
     img.onload = async () => {
       if (img.width / img.height < 0.9) {
         alert("Please upload a landscape image (wider than tall). Recommended 1600 × 800 px (2:1), at least 1200 × 600.");
@@ -417,7 +427,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
         const supabase = createClientComponentClient();
         const { data: { session } } = await supabase.auth.getSession();
         const form = new FormData();
-        form.append("file", await resizeImage(file));
+        form.append("file", await prepareCoverUpload(file));
         form.append("type", "cover");
         form.append("eventId", eventId);
         const res = await fetch("/api/upload", {

@@ -3,7 +3,7 @@ export const DEFAULT_COVER_POSITION = "50% 50%";
 
 /** Recommended upload size, shown as helper text. Covers render in a fixed 2:1 frame. */
 export const COVER_SIZE_HINT =
-  "Recommended: 1600 × 800 px (2:1), at least 1200 × 600. Drag to reposition — the image is cropped to fit, never stretched.";
+  "Recommended: 1600 × 800 px (2:1), at least 1200 × 600. JPEG, PNG, or WebP up to 20 MB. Drag to reposition — the image is cropped to fit, never stretched.";
 
 const RE = /^(100|[1-9]?[0-9])% (100|[1-9]?[0-9])%$/;
 
