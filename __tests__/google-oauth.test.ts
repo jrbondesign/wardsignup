@@ -196,7 +196,7 @@ describe("buildAuthUrl", () => {
     const url = buildAuthUrl(state);
 
     expect(url).toContain("calendar.events");
-    expect(url).toContain("calendar.readonly");
+    expect(url).toContain("calendar.calendarlist.readonly");
     expect(url).not.toContain("userinfo.email");
     expect(url).not.toContain("openid");
   });
