@@ -19,7 +19,9 @@ const GeographyMap = dynamic(() => import("@/components/GeographyMap"), {
 
 interface MetricsData {
   growthCountsSource?: "posthog" | "database";
+  totalCreators?: number;
   nonCreatorAccounts?: {
+    ownersNoEvent: { total: number; thisWeek: number };
     coAdmins: { total: number; thisWeek: number };
     noOrgYet: { total: number; thisWeek: number };
   };
@@ -198,7 +200,7 @@ export default function MetricsPage() {
               </Link>
               <h1 className="font-serif text-[32px] text-[#0D2B35]">Founder metrics</h1>
               <p className="text-[15px] text-[#5A8399] mt-1 max-w-2xl">
-                New creators per week (registered accounts) for GTM tracking. Weeks are UTC Monday–Sunday.
+                New creators per week (org owners who created their first event) for GTM tracking. Weeks are UTC Monday–Sunday.
               </p>
             </div>
             {refreshed && (
@@ -223,7 +225,7 @@ export default function MetricsPage() {
                   New creators (leading)
                 </div>
                 <p className="text-[15px] text-[#5A8399] mb-6 max-w-2xl">
-                  A <strong className="text-[#2E5566] font-semibold">creator</strong> is an organization owner, counted on their first confirmed sign-in (Google or magic link). Invited co-admins and people who signed in without creating an org are shown separately.
+                  A <strong className="text-[#2E5566] font-semibold">creator</strong> is an organization owner who has created at least one event that members can sign up for, counted in the week of their first event. This matches the &ldquo;New creator&rdquo; founder email. Owners with no event yet, invited co-admins, and people who signed in without an org are shown separately.
                   Compare calendar weeks for weekly reviews; rolling 7 days can differ from the current week boundary.
                 </p>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
@@ -233,14 +235,15 @@ export default function MetricsPage() {
                       {data.northStar.newCreatorsThisCalendarWeek.toLocaleString()}
                     </div>
                     <div className="text-[12px] text-[#5A8399] mt-2">
-                      {data.northStar.totalAccounts.toLocaleString()} total registered accounts
+                      {(data.totalCreators ?? 0).toLocaleString()} creators all time · {data.northStar.totalAccounts.toLocaleString()} org owners
                     </div>
                     {data.nonCreatorAccounts && (
                       <div className="text-[12px] text-[#5A8399] mt-2">
-                        Not counted this week: {data.nonCreatorAccounts.coAdmins.thisWeek.toLocaleString()} co-admins joined ·{" "}
+                        Not counted this week: {data.nonCreatorAccounts.ownersNoEvent.thisWeek.toLocaleString()} owners with no event ·{" "}
+                        {data.nonCreatorAccounts.coAdmins.thisWeek.toLocaleString()} co-admins joined ·{" "}
                         {data.nonCreatorAccounts.noOrgYet.thisWeek.toLocaleString()} signed in, no org yet
                         <span className="block text-[11px] text-[#7A9BAE]">
-                          All time: {data.nonCreatorAccounts.coAdmins.total.toLocaleString()} co-admins · {data.nonCreatorAccounts.noOrgYet.total.toLocaleString()} no org
+                          All time: {data.nonCreatorAccounts.ownersNoEvent.total.toLocaleString()} owners with no event · {data.nonCreatorAccounts.coAdmins.total.toLocaleString()} co-admins · {data.nonCreatorAccounts.noOrgYet.total.toLocaleString()} no org
                         </span>
                       </div>
                     )}
@@ -320,7 +323,7 @@ export default function MetricsPage() {
               {/* Weekly trend — bars + table */}
               <div className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6">
                 <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-1">
-                  Last 8 weeks
+                  Weekly history since launch
                 </div>
                 <p className="text-[13px] text-[#5A8399] mb-5 max-w-3xl">
                   Bar height = new creators per week. Table includes signups and new events for context
@@ -356,9 +359,9 @@ export default function MetricsPage() {
                   );
                 })()}
                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[#5A8399] mb-6 justify-center sm:justify-between">
-                  {data.growth.map((row) => (
-                    <span key={row.week} className="whitespace-nowrap">
-                      {weekLabel(row.week)}
+                  {[data.growth[0], data.growth[data.growth.length - 1]].filter(Boolean).map((row) => (
+                    <span key={row!.week} className="whitespace-nowrap">
+                      {weekLabel(row!.week)}
                     </span>
                   ))}
                 </div>
