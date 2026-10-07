@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { posthogWeeklyEventCounts } from "@/lib/posthog-query";
 import { isMetricsAdminEmail } from "@/lib/metrics-admin";
 
 function toWeekKey(dateStr: string): string {
@@ -280,6 +281,21 @@ export async function GET(request: NextRequest) {
     const row = s as { signed_up_at: string };
     const w = toWeekKey(row.signed_up_at);
     signupWeekMap[w] = (signupWeekMap[w] ?? 0) + 1;
+  }
+
+  // Events created / member signups come from PostHog server-side events: the DB only
+  // holds rows that still exist, so deleted events and cancelled signups vanish from
+  // their week. Falls back to DB counts when PostHog isn't reachable.
+  const phCounts = await posthogWeeklyEventCounts(
+    ["event_created", "signup_batch_created"],
+    oldestIso,
+  );
+  const growthCountsSource: "posthog" | "database" = phCounts ? "posthog" : "database";
+  if (phCounts) {
+    for (const k of Object.keys(campaignWeekMap)) delete campaignWeekMap[k];
+    for (const k of Object.keys(signupWeekMap)) delete signupWeekMap[k];
+    Object.assign(campaignWeekMap, phCounts["event_created"] ?? {});
+    Object.assign(signupWeekMap, phCounts["signup_batch_created"] ?? {});
   }
 
   const accountWeekMap: Record<string, number> = {};
@@ -623,5 +639,6 @@ export async function GET(request: NextRequest) {
     authUsersListed: totalUsers,
     authUsersFetchComplete,
     nonCreatorAccounts,
+    growthCountsSource,
   });
 }

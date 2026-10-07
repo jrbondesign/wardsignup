@@ -18,6 +18,7 @@ const GeographyMap = dynamic(() => import("@/components/GeographyMap"), {
 });
 
 interface MetricsData {
+  growthCountsSource?: "posthog" | "database";
   nonCreatorAccounts?: {
     coAdmins: { total: number; thisWeek: number };
     noOrgYet: { total: number; thisWeek: number };
@@ -322,7 +323,10 @@ export default function MetricsPage() {
                   Last 8 weeks
                 </div>
                 <p className="text-[13px] text-[#5A8399] mb-5 max-w-3xl">
-                  Bar height = new creators per week. Table includes signups and new events for context.
+                  Bar height = new creators per week. Table includes signups and new events for context
+                  {data.growthCountsSource === "posthog"
+                    ? " (from PostHog server events: events created and signup submissions, including ones later deleted or cancelled)."
+                    : " (from current database rows; PostHog unavailable, so deleted events and cancelled signups are missing)."}
                 </p>
                 {(() => {
                   const maxC = Math.max(
