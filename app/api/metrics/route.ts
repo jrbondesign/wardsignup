@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { posthogWeeklyEventCounts } from "@/lib/posthog-query";
 import { isMetricsAdminEmail } from "@/lib/metrics-admin";
+import { founderNotifySkipEmails } from "@/lib/founder-notify";
 
 function toWeekKey(dateStr: string): string {
   const d = new Date(dateStr);
@@ -38,6 +39,7 @@ type RecentSignupJoined = {
 
 type SlimCampaign = {
   id: string;
+  created_at: string;
   created_by: string | null;
   user_email: string | null;
 };
@@ -121,11 +123,22 @@ export async function GET(request: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   );
 
+  // History runs from launch (week of the first event ever created) to the current week.
+  const { data: firstCampaign } = await admin
+    .from("campaigns")
+    .select("created_at")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const launchIso =
+    (firstCampaign as { created_at: string } | null)?.created_at ?? new Date().toISOString();
   const weeks: string[] = [];
-  for (let i = 7; i >= 0; i--) {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - i * 7);
-    weeks.push(toWeekKey(d.toISOString()));
+  const currentWeek = toWeekKey(new Date().toISOString());
+  for (let w = toWeekKey(launchIso); w <= currentWeek; ) {
+    weeks.push(w);
+    const d = new Date(`${w}T00:00:00.000Z`);
+    d.setUTCDate(d.getUTCDate() + 7);
+    w = d.toISOString().slice(0, 10);
   }
   const oldestWeekStart = weeks[0]!;
   const oldestIso = `${oldestWeekStart}T00:00:00.000Z`;
@@ -236,8 +249,8 @@ export async function GET(request: NextRequest) {
       ? admin.from("signups").select("member_email").in("campaign_id", brandCampaignIds).not("member_email", "is", null)
       : admin.from("signups").select("member_email").not("member_email", "is", null),
     brandCampaignIds !== null
-      ? admin.from("campaigns").select("id, created_by, user_email").in("id", brandCampaignIds)
-      : admin.from("campaigns").select("id, created_by, user_email"),
+      ? admin.from("campaigns").select("id, created_at, created_by, user_email").in("id", brandCampaignIds)
+      : admin.from("campaigns").select("id, created_at, created_by, user_email"),
     brandCampaignIds !== null
       ? admin.from("sessions").select("campaign_id").in("campaign_id", brandCampaignIds)
       : admin.from("sessions").select("campaign_id"),
@@ -298,9 +311,25 @@ export async function GET(request: NextRequest) {
     Object.assign(signupWeekMap, phCounts["signup_batch_created"] ?? {});
   }
 
+  // Creator = org owner who has created at least one event (others can sign up).
+  // Counted in the week of their first event. Owners with no event yet are
+  // "lookie-loos" and reported separately.
+  const firstEventAt = new Map<string, string>();
+  for (const row of (campaignsSlim ?? []) as SlimCampaign[]) {
+    if (!row.created_by) continue;
+    const prev = firstEventAt.get(row.created_by);
+    if (!prev || row.created_at < prev) firstEventAt.set(row.created_by, row.created_at);
+  }
+  const skipEmails = founderNotifySkipEmails();
+  const activatedCreators = authUserList.filter(
+    (u) => firstEventAt.has(u.id) && !skipEmails.has(u.email?.toLowerCase() ?? ""),
+  );
+  const ownerNoEventIds = new Set(
+    authUserList.filter((u) => !firstEventAt.has(u.id)).map((u) => u.id),
+  );
   const accountWeekMap: Record<string, number> = {};
-  for (const u of authUserList) {
-    const w = toWeekKey(joinedAt(u));
+  for (const u of activatedCreators) {
+    const w = toWeekKey(firstEventAt.get(u.id)!);
     accountWeekMap[w] = (accountWeekMap[w] ?? 0) + 1;
   }
 
@@ -539,6 +568,7 @@ export async function GET(request: NextRequest) {
     return { total, thisWeek };
   };
   const nonCreatorAccounts = {
+    ownersNoEvent: countSet(ownerNoEventIds),
     coAdmins: countSet(coAdminOnlyIds),
     noOrgYet: countSet(noOrgIds),
   };
@@ -640,5 +670,6 @@ export async function GET(request: NextRequest) {
     authUsersFetchComplete,
     nonCreatorAccounts,
     growthCountsSource,
+    totalCreators: activatedCreators.length,
   });
 }

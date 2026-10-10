@@ -9,7 +9,7 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { parseMetricsAdminEmails } from "@/lib/metrics-admin";
 
 const BRAND_ID = process.env.NEXT_PUBLIC_BRAND_ID?.trim() || "wardsignup";
-const creatorNotifyTo = process.env.CREATOR_NOTIFY_TO || "jon@jrbond.com";
+const creatorNotifyTo = "jonathan@wardsignup.com";
 
 function askDelayDays(): number {
   const n = Number(process.env.FEEDBACK_ASK_DELAY_DAYS);

@@ -11,10 +11,11 @@ import { feedbackEmailFrom } from "@/lib/brand/email-from";
 import { parseMetricsAdminEmails } from "@/lib/metrics-admin";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { isFeedbackAskPaused } from "@/lib/feedback-ask-pause";
+import { FOUNDER_NOTIFY_TO } from "@/lib/founder-notify";
 
 type Admin = ReturnType<typeof createServiceRoleClient>;
 
-const creatorNotifyTo = process.env.CREATOR_NOTIFY_TO || "jon@jrbond.com";
+const creatorNotifyTo = FOUNDER_NOTIFY_TO;
 
 function askDelayDays(): number {
   const n = Number(process.env.FEEDBACK_ASK_DELAY_DAYS);
@@ -29,6 +30,7 @@ function askDelayDays(): number {
 const DEFAULT_SKIP_EMAILS = [
   "bondesign@gmail.com",
   "bondesign+test@gmail.com",
+  "jon@jrbond.com",
 ];
 
 /** Founder/internal/test inboxes that should never receive the feedback ask. */

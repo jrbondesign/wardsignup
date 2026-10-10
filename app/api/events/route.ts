@@ -7,6 +7,7 @@ import { isValidIanaTimezone } from "@/lib/event-timezone";
 import { getCurrentOrganization, listUserOrganizations } from "@/lib/organizations";
 import type { Database } from "@/lib/types";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { notifyFounderIfFirstEvent } from "@/lib/founder-notify";
 
 type CampaignInsert = Database["public"]["Tables"]["campaigns"]["Insert"];
 
@@ -187,6 +188,18 @@ export async function POST(request: Request) {
         has_timezone: Boolean(eventTimezone),
       },
     });
+
+    const created = data as { id?: string; name?: string };
+    if (created?.id) {
+      await notifyFounderIfFirstEvent({
+        user,
+        orgId: org.id,
+        orgName: org.name,
+        eventId: created.id,
+        eventName: created.name ?? "",
+        brand,
+      });
+    }
 
     return NextResponse.json({ event: data });
   } catch (error) {
