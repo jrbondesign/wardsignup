@@ -183,7 +183,7 @@ export async function POST(
       : `${inviterEsc} invited you to help manage events for <strong style="color:#054F64;">${orgNameEsc}</strong> on ${escapeHtml(hostBrand.name)}.`;
     const roleLine = transferOwnership
       ? `As the owner you can manage events and signups, invite co-admins, rename the organization, and transfer ownership again later.`
-      : `As a co-admin you can edit events, manage signups, send invites, and view analytics. Only the owner can delete the organization or its events.`;
+      : `As a co-admin you can edit and delete events, manage signups, send invites, and view analytics. Only the owner can invite or remove co-admins and manage the organization.`;
 
     try {
       const send = await sendGuardedEmail({
