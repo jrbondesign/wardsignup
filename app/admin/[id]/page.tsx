@@ -23,6 +23,7 @@ import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import CoverImageFrame, { COVER_OVERLAY_BUTTON } from "@/components/CoverImageFrame";
 import { COVER_SIZE_HINT } from "@/lib/cover-position";
 import EventOptionalSettings from "@/components/event/EventOptionalSettings";
+import ReconnectGoogleBanner from "@/components/event/ReconnectGoogleBanner";
 import { INITIAL_FORM_STATE, type CreateFormState } from "@/lib/create-form-state";
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
@@ -676,6 +677,11 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
               />
             )}
             <div className="p-7">
+            <ReconnectGoogleBanner
+              campaignId={eventId}
+              organizationId={(event as { organization_id?: string | null }).organization_id}
+              lastError={calendarLastError}
+            />
             <div className="mb-6">
               <div className="flex items-center justify-end gap-2 sm:gap-3 flex-wrap mb-3">
                 {calendarSyncEnabled && calendarLastSyncedAt && (

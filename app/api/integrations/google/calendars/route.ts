@@ -3,6 +3,7 @@ import { getAuthFromRequest } from '@/lib/auth';
 import { isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
 import { refreshAccessToken, listCalendars } from '@/lib/google-oauth';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
+import { isGoogleAuthFailure, markConnectionBroken } from '@/lib/google-calendar-health';
 
 /**
  * GET /api/integrations/google/calendars?org_id=...
@@ -48,8 +49,19 @@ export async function GET(request: Request) {
       );
     }
 
-    // Refresh access token
-    const tokens = await refreshAccessToken((connection as any).refresh_token_enc);
+    // Refresh access token. A dead grant marks the connection broken (once) and notifies.
+    let tokens;
+    try {
+      tokens = await refreshAccessToken((connection as any).refresh_token_enc);
+    } catch (refreshErr) {
+      if (isGoogleAuthFailure(refreshErr)) {
+        await markConnectionBroken(admin, {
+          connectionId: (connection as any).id,
+          reason: refreshErr instanceof Error ? refreshErr.message : String(refreshErr),
+        });
+      }
+      throw refreshErr;
+    }
 
     // List calendars
     const calendarsData = await listCalendars(tokens.access_token);
@@ -67,7 +79,7 @@ export async function GET(request: Request) {
     console.error('[google/calendars] error:', err);
     
     // Check if it's an invalid_grant error (token revoked)
-    if (err instanceof Error && err.message.includes('invalid_grant')) {
+    if (isGoogleAuthFailure(err)) {
       return NextResponse.json(
         { error: 'Connection expired or revoked', revoked: true },
         { status: 401 }

@@ -10,8 +10,10 @@ export const maxDuration = 60;
 
 /**
  * Reconcile cron — sync enabled campaigns with future sessions.
- * Runs hourly via GitHub Actions.
- * Bound to ~50 campaigns per run to stay under Actions 60s timeout.
+ * Runs hourly via GitHub Actions (.github/workflows/calendar-reconcile.yml), Bearer CRON_SECRET.
+ * Bound to ~50 campaigns per run to stay under the 60s function limit.
+ * Failed syncs (including ones that failed at signup time) are retried here; a dead
+ * Google grant is marked broken once and the creator + founder are emailed.
  */
 export async function GET(request: NextRequest) {
   try {

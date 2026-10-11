@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
 import { verifyState, exchangeCode, encryptToken, listCalendars } from '@/lib/google-oauth';
 import { persistGoogleCalendarConnection } from '@/lib/google-calendar-connection';
+import { clearConnectionBroken } from '@/lib/google-calendar-health';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
 import { getPostHogClient } from '@/lib/posthog-server';
 
@@ -119,7 +120,7 @@ export async function GET(request: Request) {
     // Update the existing org connection (including expired rows) rather than
     // inserting a second row keyed on google_email.
     const admin = createServiceRoleClient();
-    const { error: dbError } = await persistGoogleCalendarConnection(admin, {
+    const { error: dbError, connectionId } = await persistGoogleCalendarConnection(admin, {
       userId: state.userId,
       organizationId: state.orgId,
       googleEmail,
@@ -130,6 +131,12 @@ export async function GET(request: Request) {
     if (dbError) {
       console.error('[google/callback] DB error:', dbError);
       return failRedirect('gcal_db_error');
+    }
+
+    // Reconnect succeeded: clear any broken state so the banner goes away and the
+    // next breakage notifies again. The hourly reconcile cron catches the calendar up.
+    if (connectionId) {
+      await clearConnectionBroken(admin, connectionId);
     }
     
     // Fire PostHog event for successful connection
