@@ -84,10 +84,10 @@ export async function DELETE(
     }
     const { supabase, user } = auth;
 
-    // Verify ownership
+    // Any accepted org member (owner or co-admin) may delete sessions
     const { data: session, error: fetchError } = await supabase
       .from("sessions")
-      .select("id, campaign_id, campaigns(created_by, user_email)")
+      .select("id, campaign_id, campaigns(organization_id)")
       .eq("id", sessionId)
       .single();
 
@@ -95,12 +95,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const campaign = (session as { campaigns?: { created_by?: string; user_email?: string } }).campaigns;
-    const ownedByUser =
-      campaign?.created_by === user.id ||
-      (user.email && campaign?.user_email === user.email);
-
-    if (!ownedByUser) {
+    const campaign = (session as { campaigns?: { organization_id?: string | null } }).campaigns;
+    if (!campaign || !(await userCanAdminCampaign(supabase, user, { organization_id: campaign.organization_id ?? null }))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
