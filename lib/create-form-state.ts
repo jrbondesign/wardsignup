@@ -119,9 +119,10 @@ export interface CreateFormState {
   // ── Notifications ────────────────────────────────────────────────────────
   organizerDigestEnabled: boolean;
   organizerInstantNotifyEnabled: boolean;
-  /** Optional assigned leader — gets an email with an .ics attachment on every
-   *  signup when leaderEmail is set. */
+  /** Optional assigned leader. Gets the daily digest when they are not the
+   *  organizer; per signup emails only when leaderSignupEmailEnabled. */
   leaderName: string;
+  leaderSignupEmailEnabled: boolean;
   leaderEmail: string;
 
   // ── Google Calendar sync ─────────────────────────────────────────────────
@@ -206,8 +207,9 @@ export const INITIAL_FORM_STATE: CreateFormState = {
   listOnDirectory: true,
 
   organizerDigestEnabled: true,
-  organizerInstantNotifyEnabled: true,
+  organizerInstantNotifyEnabled: false,
   leaderName: "",
+  leaderSignupEmailEnabled: false,
   leaderEmail: "",
 
   calendarSyncEnabled: false,

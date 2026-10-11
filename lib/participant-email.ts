@@ -143,7 +143,8 @@ export async function sendParticipantSignupConfirmation(params: {
   const from = participantEmailFrom(brand);
   const send = await sendGuardedEmail({
     brand,
-    category: "transactional",
+    urgent: true,
+      category: "transactional",
     from,
     to: params.to.trim(),
     subject: `You’re signed up: ${params.campaign.name}`,
@@ -219,7 +220,8 @@ export async function sendParticipantReminderEmail(params: {
   const from = participantEmailFrom(brand);
   const send = await sendGuardedEmail({
     brand,
-    category: "notification",
+    urgent: true,
+      category: "notification",
     from,
     to: params.to.trim(),
     subject: `Reminder tomorrow: ${params.campaign.name}`,
@@ -351,7 +353,8 @@ export async function sendParticipantBatchSignupConfirmation(params: {
   const from = participantEmailFrom(brand);
   const send = await sendGuardedEmail({
     brand,
-    category: "transactional",
+    urgent: true,
+      category: "transactional",
     from,
     to: params.to.trim(),
     subject: `You’re signed up: ${params.campaign.name} (${params.sessions.length} slots)`,

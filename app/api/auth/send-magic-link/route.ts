@@ -8,7 +8,9 @@ import { safeReturnPath } from "@/lib/auth-return-path";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { consumeActionRate } from "@/lib/rate-limit";
 import { consumeEmailKeyRate } from "@/lib/email-send";
+import { magicLinkDedupeBuckets, normalizeEmail } from "@/lib/email-throttle";
 import { checkBotId } from "botid/server";
+import { brevoConfig, deliverEmail } from "@/lib/email-deliver";
 
 function messageFromResendError(err: unknown): string {
   if (
@@ -56,7 +58,7 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-    const email = typeof body.email === "string" ? body.email.trim() : "";
+    const email = typeof body.email === "string" ? normalizeEmail(body.email) : "";
     const nextParam =
       typeof body.next === "string" ? safeReturnPath(body.next) : null;
 
@@ -85,11 +87,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Double click guard: if a link already went to this address in the last
+    // 5 minutes, say so instead of sending another email.
+    const [thisMinute, ...nextMinutes] = magicLinkDedupeBuckets(new Date());
+    const dedupeKey = `magic-link:${email}`;
+    const firstInWindow = await consumeEmailKeyRate("magic_link_dedupe", dedupeKey, 1, thisMinute);
+    if (!firstInWindow) {
+      return NextResponse.json({ ok: true, alreadySent: true });
+    }
+    await Promise.all(
+      nextMinutes.map((b) => consumeEmailKeyRate("magic_link_dedupe", dedupeKey, 1, b)),
+    );
+
     // Per-recipient cap: IP limits don't stop a rotating sender from mailing
     // one stranger repeatedly. 3 links/hour per address is plenty for a human.
     const perRecipient = await consumeEmailKeyRate(
       "magic_link_recipient",
-      `magic-link:${email.toLowerCase()}`,
+      `magic-link:${email}`,
       3,
     );
     if (!perRecipient) {
@@ -142,7 +156,7 @@ export async function POST(request: NextRequest) {
     }
 
     const resend = getResendForBrand(brand);
-    if (!resend) {
+    if (!resend && !brevoConfig()) {
       console.error("send-magic-link: Resend API key missing for this brand");
       return NextResponse.json(
         { error: "Email is not configured." },
@@ -166,7 +180,8 @@ export async function POST(request: NextRequest) {
          </div>`
       : "";
 
-    const { error: sendErr } = await resend.emails.send({
+    const sendRes = await deliverEmail({
+      brand,
       from,
       to: email,
       subject,
@@ -184,7 +199,8 @@ export async function POST(request: NextRequest) {
           </p>
         </div>
       `,
-    });
+    }, { urgent: true });
+    const sendErr = sendRes.ok ? null : { message: sendRes.error };
 
     if (sendErr) {
       console.error("send-magic-link resend:", sendErr);

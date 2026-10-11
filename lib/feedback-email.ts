@@ -46,7 +46,9 @@ Made with ❤️ in Arizona`;
 
   const send = await sendGuardedEmail({
     brand,
-    category: "notification",
+    deferrable: true,
+      kind: "feedback",
+      category: "notification",
     from: feedbackEmailFrom(brand),
     replyTo: feedbackReplyTo,
     to,
@@ -172,7 +174,9 @@ Q4. What's the #1 thing holding it back from being perfect?
 
   const send = await sendGuardedEmail({
     brand,
-    category: "transactional",
+    deferrable: true,
+      kind: "feedback",
+      category: "transactional",
     from: feedbackEmailFrom(brand),
     replyTo: creatorEmail,
     to: "bondesign@gmail.com",

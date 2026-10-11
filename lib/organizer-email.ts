@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fasterAlertMinHours, isFasterAlertThrottled } from "@/lib/email-throttle";
 import {
   organizerEmailFrom,
   publicSiteOriginAndBrandForCampaign,
@@ -18,7 +19,7 @@ import {
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 /** Shown in UI copy; Vercel cron runs `/api/cron/organizer-faster` every 30 minutes. */
-export const FASTER_ALERT_SCHEDULE_LABEL = "about every 30 minutes";
+export const FASTER_ALERT_SCHEDULE_LABEL = "at most every 3 hours";
 
 export async function resolveOrganizerEmail(
   admin: SupabaseClient,
@@ -532,6 +533,8 @@ export async function sendOrganizerMetricsEmail(
   admin: SupabaseClient,
   campaignId: string,
   kind: "digest" | "manual",
+  /** Send to this address instead of the organizer (used for the event leader). */
+  opts?: { to?: string },
 ): Promise<{
   ok: boolean;
   skipped?: string;
@@ -560,10 +563,12 @@ export async function sendOrganizerMetricsEmail(
     return { ok: false, error: "Resend API key not configured for this brand" };
   }
 
-  const to = await resolveOrganizerEmail(admin, {
-    user_email: (c.user_email as string | null) ?? null,
-    created_by: (c.created_by as string | null) ?? null,
-  });
+  const to =
+    opts?.to?.trim() ||
+    (await resolveOrganizerEmail(admin, {
+      user_email: (c.user_email as string | null) ?? null,
+      created_by: (c.created_by as string | null) ?? null,
+    }));
   if (!to) {
     return { ok: false, skipped: "no_organizer_email" };
   }
@@ -650,6 +655,10 @@ export async function sendOrganizerMetricsEmail(
       to,
       subject: subjectForKind(brand, kind, name),
       html,
+      // Daily digests wait for the UTC reset; a report the organizer asks
+      // for with "Send report now" goes right away.
+      deferrable: kind === "digest",
+      kind: kind === "digest" ? "digest" : "report",
     });
     if (!send.ok) {
       console.error("organizer email send blocked/failed:", send.error || send.skipped);
@@ -695,7 +704,7 @@ export async function sendOrganizerFasterAlertEmail(
   campaignId: string,
 ): Promise<{
   ok: boolean;
-  skipped?: "disabled" | "no_new_signups" | "no_organizer_email";
+  skipped?: "disabled" | "no_new_signups" | "no_organizer_email" | "throttled";
   error?: string;
   resendId?: string;
   sentTo?: string;
@@ -735,6 +744,12 @@ export async function sendOrganizerFasterAlertEmail(
       .update({ organizer_last_instant_notify_at: new Date().toISOString() } as never)
       .eq("id", campaignId);
     return { ok: false, skipped: "no_new_signups" };
+  }
+
+  // At most one faster alert per event per window (ORGANIZER_FASTER_ALERT_MIN_HOURS,
+  // default 3). The watermark is untouched, so the next alert lists everyone.
+  if (isFasterAlertThrottled(since, new Date(), fasterAlertMinHours())) {
+    return { ok: false, skipped: "throttled" };
   }
 
   let newQuery = admin

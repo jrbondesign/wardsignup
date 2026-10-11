@@ -325,7 +325,9 @@ export async function runFeedbackDigestPass(
   // but still under the global ceiling.
   const send = await sendGuardedEmail({
     brand,
-    category: "transactional",
+    deferrable: true,
+      kind: "feedback_summary",
+      category: "transactional",
     from: feedbackEmailFrom(brand),
     to: creatorNotifyTo,
     subject: `${brand.name}: ${rows.length} creator feedback response${rows.length === 1 ? "" : "s"} this week`,

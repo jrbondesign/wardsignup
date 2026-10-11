@@ -16,7 +16,7 @@ export default function NotificationsSection({ state, set }: Props) {
   return (
     <OptionalDisclosureCard
       title="Notifications"
-      description="Get notified when someone signs up."
+      description="One email a day about new signups."
       open={open}
       onToggle={toggle}
       active={isNotificationsActive(state)}
@@ -29,14 +29,14 @@ export default function NotificationsSection({ state, set }: Props) {
     >
       <div className="space-y-3">
         <SettingsToggle
-          checked={state.organizerInstantNotifyEnabled}
-          onChange={(v) => set({ organizerInstantNotifyEnabled: v })}
-          label="Email me instantly when someone signs up"
-        />
-        <SettingsToggle
           checked={state.organizerDigestEnabled}
           onChange={(v) => set({ organizerDigestEnabled: v })}
           label="Send me a daily digest of new signups"
+        />
+        <SettingsToggle
+          checked={state.organizerInstantNotifyEnabled}
+          onChange={(v) => set({ organizerInstantNotifyEnabled: v })}
+          label="Also email me during the day when new signups come in (at most every 3 hours)"
         />
       </div>
     </OptionalDisclosureCard>

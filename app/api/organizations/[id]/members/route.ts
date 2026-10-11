@@ -188,7 +188,8 @@ export async function POST(
     try {
       const send = await sendGuardedEmail({
         brand: hostBrand,
-        category: "notification",
+        urgent: true,
+      category: "notification",
         from: inviteEmailFrom(hostBrand),
         to: rawEmail,
         subject,

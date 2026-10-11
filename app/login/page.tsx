@@ -1,5 +1,6 @@
 "use client";
 
+import EmailTypoHint from "@/components/EmailTypoHint";
 import { useState, useEffect } from "react";
 import { signInWithMagicLink, signInWithGoogle } from "@/lib/auth";
 import {
@@ -17,6 +18,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [alreadySent, setAlreadySent] = useState(false);
   const [error, setError] = useState("");
   const [lastAttemptTime, setLastAttemptTime] = useState<number>(0);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -57,7 +59,7 @@ export default function LoginPage() {
     setLastAttemptTime(now);
 
     try {
-      const { error: signInError } = await signInWithMagicLink(email);
+      const { data: linkData, error: signInError } = await signInWithMagicLink(email);
 
       if (signInError) {
         console.error("Magic link error:", signInError);
@@ -66,6 +68,7 @@ export default function LoginPage() {
         // Don't identify by email — /auth/callback identifies by user id after
         // auth, and posthog-js won't merge two different identified ids.
         posthog?.capture("login_magic_link_sent", { email });
+        setAlreadySent(Boolean(linkData?.alreadySent));
         setSent(true);
       }
     } catch (err: any) {
@@ -127,12 +130,22 @@ export default function LoginPage() {
             Check your email
           </h1>
           <p className="text-sm text-[#5A8399] leading-relaxed mb-6">
-            We sent a magic link to <strong className="text-[#0D2B35] font-semibold">{email}</strong>.<br/>
-            Click the link in your email to sign in.
+            {alreadySent ? (
+              <>
+                We already sent a sign in link to <strong className="text-[#0D2B35] font-semibold">{email}</strong> a few minutes ago.<br/>
+                Check your inbox (and spam folder) for that email. You can ask for a new one in 5 minutes.
+              </>
+            ) : (
+              <>
+                We sent a magic link to <strong className="text-[#0D2B35] font-semibold">{email}</strong>.<br/>
+                Click the link in your email to sign in.
+              </>
+            )}
           </p>
           <button
             onClick={() => {
               setSent(false);
+              setAlreadySent(false);
               setEmail("");
             }}
             className="text-sm text-[#0E96B0] hover:text-[#08647E] font-medium transition-colors"
@@ -245,6 +258,9 @@ export default function LoginPage() {
             className="w-full text-base text-[#0D2B35] px-[18px] py-[14px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all duration-200 focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70 mb-5"
             disabled={loading}
           />
+          <div className="-mt-4 mb-5">
+            <EmailTypoHint email={email} onAccept={setEmail} />
+          </div>
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm">

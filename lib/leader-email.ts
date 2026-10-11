@@ -7,6 +7,7 @@ import { buildOrganizerEmailFooterHtml } from "@/lib/site-footer";
 import { formatSessionSlotLabel } from "@/lib/organizer-email";
 import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
 import { consumeEmailKeyRate, sendGuardedEmail } from "@/lib/email-send";
+import { leaderCoveredByOrganizerAlerts, leaderNotifyMaxPerHour } from "@/lib/email-throttle";
 import { buildEventIcs, icsFilenameForCampaign, type IcsSession } from "@/lib/ics";
 import type { Campaign } from "@/lib/types";
 
@@ -22,7 +23,8 @@ export type LeaderCampaignEmailFields = Pick<
   | "event_end_date"
   | "leader_name"
   | "leader_email"
->;
+> &
+  Partial<Pick<Campaign, "user_email" | "organizer_instant_notify_enabled" | "leader_signup_email_enabled">>;
 
 /**
  * Emails the event's assigned leader that someone signed up, with an .ics
@@ -43,19 +45,29 @@ export async function sendLeaderSignupNotification(params: {
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const leaderEmail = params.campaign.leader_email?.trim();
   if (!leaderEmail) return { ok: false, error: "No leader assigned" };
+  // Off by default: leaders get the daily digest instead (organizer-digest cron).
+  if (!params.campaign.leader_signup_email_enabled) {
+    return { ok: false, error: "per signup leader email off" };
+  }
 
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
   if (!hasResendConfiguredForBrand(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
   }
 
+  // The leader already gets batched organizer alerts for this event, so a
+  // per signup email would repeat the same news.
+  if (leaderCoveredByOrganizerAlerts(params.campaign)) {
+    return { ok: false, error: "covered by organizer alerts" };
+  }
+
   // A signup burst on a popular event otherwise means one leader email per
-  // signup with no ceiling. Cap per campaign per hour; overflow is visible on
-  // the admin page, which the email links to anyway.
+  // signup. Cap per campaign per hour (default 1); later signups that hour are
+  // on the admin page, which the email links to and says so.
   const underCap = await consumeEmailKeyRate(
     "leader_notify",
     `leader:${params.campaign.id}`,
-    10,
+    leaderNotifyMaxPerHour(),
   );
   if (!underCap) {
     return { ok: false, error: "leader notification hourly cap reached" };
@@ -119,6 +131,7 @@ export async function sendLeaderSignupNotification(params: {
     <p style="margin:20px 0 0;font-size:14px;">
       <a href="${escapeHtml(adminLink)}" style="color:#0E96B0;font-weight:600;">View all signups</a>
     </p>
+    <p style="margin:12px 0 0;font-size:13px;color:#5A8399;">To keep inboxes quiet, we send at most one of these per hour. Any other signups this hour are on the signups page.</p>
     <p style="margin:12px 0 0;font-size:12px;color:#5A8399;">You receive this because you're the assigned leader for this event.${ics ? " A calendar file is attached." : ""}</p>
     ${buildOrganizerEmailFooterHtml(brand)}
   </div>`;

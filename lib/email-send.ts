@@ -1,6 +1,9 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { getResendForBrand } from "@/lib/resend-for-brand";
+import { brevoConfig, deliverEmail } from "@/lib/email-deliver";
+import { enqueueEmail } from "@/lib/email-queue";
+import { deferEnabled, deferSendWindowHours, inPostResetWindow, nextResetSendAfter } from "@/lib/email-queue-time";
 import type { PublicBrand } from "@/lib/brand/types";
 
 /**
@@ -25,11 +28,13 @@ import type { PublicBrand } from "@/lib/brand/types";
 const GLOBAL_HOURLY_CEILING = Number(process.env.EMAIL_HOURLY_CEILING) || 100;
 
 export type GuardedSendResult =
-  | { ok: true }
+  | { ok: true; queued?: boolean }
   | {
       ok: false;
       skipped?: "suppressed" | "ceiling" | "no_resend_key";
       error?: string;
+      /** Resend is out of daily budget; queue callers leave the row pending. */
+      overBudget?: boolean;
     };
 
 function unsubSecret(): string | null {
@@ -110,7 +115,7 @@ async function consumeGlobalCeiling(brandId: string): Promise<boolean> {
   }
 }
 
-export async function sendGuardedEmail(params: {
+export type GuardedSendParams = {
   brand: PublicBrand;
   category: "notification" | "transactional";
   from: string;
@@ -120,14 +125,59 @@ export async function sendGuardedEmail(params: {
   text?: string;
   replyTo?: string;
   attachments?: Array<{ filename: string; content: string }>;
-}): Promise<GuardedSendResult> {
+  /**
+   * Sign in links, confirmations, invites and reminders. Urgent mail is never
+   * queued and may use the Brevo fallback when Resend is out of daily budget.
+   */
+  urgent?: boolean;
+  /**
+   * Welcome, digests, reports, feedback asks, announcements, new creator
+   * notices. Queued until just after the UTC reset unless it is already early
+   * in the UTC day.
+   */
+  deferrable?: boolean;
+  /** Short label stored on queued rows, e.g. "welcome" or "digest". */
+  kind?: string;
+  /** Set by the queue drain so a queued email is not queued again. */
+  fromQueue?: boolean;
+};
+
+export async function sendGuardedEmail(params: GuardedSendParams): Promise<GuardedSendResult> {
   const { brand, category, from, to, subject, html, text, replyTo, attachments } =
     params;
   const emailLower = to.trim().toLowerCase();
+  const urgent = Boolean(params.urgent);
 
-  const resend = getResendForBrand(brand);
-  if (!resend) {
+  if (!getResendForBrand(brand) && !brevoConfig()) {
     return { ok: false, skipped: "no_resend_key", error: `Resend API key missing for brand ${brand.id}` };
+  }
+
+  const queueIt = async (): Promise<GuardedSendResult> => {
+    const q = await enqueueEmail({
+      brand_id: brand.id,
+      category,
+      kind: params.kind ?? "other",
+      from_address: from,
+      to_address: emailLower,
+      subject,
+      html,
+      text_body: text ?? null,
+      reply_to: replyTo ?? null,
+      attachments: attachments?.length ? attachments : null,
+      send_after: nextResetSendAfter(new Date()).toISOString(),
+    });
+    return q.ok ? { ok: true, queued: true } : { ok: false, error: q.error };
+  };
+
+  const now = new Date();
+  if (
+    params.deferrable &&
+    !urgent &&
+    !params.fromQueue &&
+    deferEnabled() &&
+    !inPostResetWindow(now, deferSendWindowHours())
+  ) {
+    return queueIt();
   }
 
   const headers: Record<string, string> = {};
@@ -152,20 +202,17 @@ export async function sendGuardedEmail(params: {
     return { ok: false, skipped: "ceiling" };
   }
 
-  const send = await resend.emails.send({
-    from,
-    to: emailLower,
-    subject,
-    html,
-    ...(text ? { text } : {}),
-    ...(replyTo ? { replyTo } : {}),
-    ...(attachments?.length ? { attachments } : {}),
-    ...(Object.keys(headers).length ? { headers } : {}),
-  });
-  if (send.error) {
-    return { ok: false, error: send.error.message || "send failed" };
+  const sent = await deliverEmail(
+    { brand, from, to: emailLower, subject, html, text, replyTo, attachments, headers },
+    { urgent },
+  );
+  if (sent.ok) return { ok: true };
+  if (sent.overBudget) {
+    // Non urgent mail when Resend is out of budget waits for the reset.
+    if (!params.fromQueue && deferEnabled()) return queueIt();
+    return { ok: false, error: sent.error, overBudget: true };
   }
-  return { ok: true };
+  return { ok: false, error: sent.error };
 }
 
 /**
@@ -177,11 +224,12 @@ export async function consumeEmailKeyRate(
   action: string,
   key: string,
   maxPerHour: number,
+  bucketStart?: Date,
 ): Promise<boolean> {
   try {
     const admin = createServiceRoleClient();
-    const bucket = new Date();
-    bucket.setMinutes(0, 0, 0);
+    const bucket = bucketStart ? new Date(bucketStart) : new Date();
+    if (!bucketStart) bucket.setMinutes(0, 0, 0);
     const { data, error } = await admin.rpc("try_consume_action_rate", {
       p_action: action,
       p_ip_hash: createHash("sha256").update(key).digest("hex"),
