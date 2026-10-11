@@ -18,6 +18,7 @@ const campaign = {
   event_end_date: null,
   leader_name: "Bishop",
   leader_email: "lead@example.com",
+  leader_signup_email_enabled: true,
 } as never;
 
 const consume = consumeEmailKeyRate as jest.Mock;
@@ -55,5 +56,17 @@ it("does not send once the hourly cap is used", async () => {
   consume.mockResolvedValue(false);
   const r = await sendLeaderSignupNotification({ campaign, sessions: [], memberName: "Pat" });
   expect(r.ok).toBe(false);
+  expect(send).not.toHaveBeenCalled();
+});
+
+it("sends nothing per signup when the leader has not opted in", async () => {
+  consume.mockResolvedValue(true);
+  const r = await sendLeaderSignupNotification({
+    campaign: { ...(campaign as object), leader_signup_email_enabled: false } as never,
+    sessions: [],
+    memberName: "Pat",
+  });
+  expect(r.ok).toBe(false);
+  expect(consume).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
 });

@@ -533,6 +533,8 @@ export async function sendOrganizerMetricsEmail(
   admin: SupabaseClient,
   campaignId: string,
   kind: "digest" | "manual",
+  /** Send to this address instead of the organizer (used for the event leader). */
+  opts?: { to?: string },
 ): Promise<{
   ok: boolean;
   skipped?: string;
@@ -561,10 +563,12 @@ export async function sendOrganizerMetricsEmail(
     return { ok: false, error: "Resend API key not configured for this brand" };
   }
 
-  const to = await resolveOrganizerEmail(admin, {
-    user_email: (c.user_email as string | null) ?? null,
-    created_by: (c.created_by as string | null) ?? null,
-  });
+  const to =
+    opts?.to?.trim() ||
+    (await resolveOrganizerEmail(admin, {
+      user_email: (c.user_email as string | null) ?? null,
+      created_by: (c.created_by as string | null) ?? null,
+    }));
   if (!to) {
     return { ok: false, skipped: "no_organizer_email" };
   }

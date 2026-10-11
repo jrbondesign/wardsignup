@@ -34,6 +34,7 @@ export interface Database {
           created_at: string;
           organizer_digest_enabled: boolean;
           organizer_instant_notify_enabled: boolean;
+          leader_signup_email_enabled: boolean;
           organizer_last_digest_sent_at: string | null;
           organizer_last_instant_notify_at: string | null;
           brand_id: string;
@@ -70,6 +71,7 @@ export interface Database {
           created_at?: string;
           organizer_digest_enabled?: boolean;
           organizer_instant_notify_enabled?: boolean;
+          leader_signup_email_enabled?: boolean;
           organizer_last_digest_sent_at?: string | null;
           organizer_last_instant_notify_at?: string | null;
           brand_id?: string;
@@ -101,6 +103,7 @@ export interface Database {
           created_at?: string;
           organizer_digest_enabled?: boolean;
           organizer_instant_notify_enabled?: boolean;
+          leader_signup_email_enabled?: boolean;
           organizer_last_digest_sent_at?: string | null;
           organizer_last_instant_notify_at?: string | null;
           brand_id?: string;

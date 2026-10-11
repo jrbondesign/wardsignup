@@ -129,6 +129,7 @@ export async function POST(
       // Fresh copy: don't carry over digest/notify send timestamps.
       organizer_digest_enabled: source.organizer_digest_enabled,
       organizer_instant_notify_enabled: source.organizer_instant_notify_enabled,
+      leader_signup_email_enabled: source.leader_signup_email_enabled ?? false,
       brand_id: source.brand_id,
       public_host: source.public_host,
       event_timezone: source.event_timezone,

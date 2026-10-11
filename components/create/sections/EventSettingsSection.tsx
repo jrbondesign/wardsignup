@@ -3,7 +3,7 @@
 import { COMMON_EVENT_TIMEZONES } from "@/lib/common-timezones";
 import type { CreateFormState } from "@/lib/create-form-state";
 import { isEventSettingsActive } from "@/lib/optional-event-settings";
-import OptionalDisclosureCard from "@/components/create/sections/OptionalDisclosureCard";
+import OptionalDisclosureCard, { SettingsToggle } from "@/components/create/sections/OptionalDisclosureCard";
 
 const inputCls =
   "w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]";
@@ -36,7 +36,7 @@ export default function EventSettingsSection({ state, set }: Props) {
         <div>
           <span className={labelCls}>Event leader (optional)</span>
           <p className="text-[12px] text-[#5A8399] mb-2">
-            Assign a leader and they&apos;ll get an email with a calendar file each time someone signs up.
+            Assign a leader and they&apos;ll get the daily digest of new signups for this event.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <input
@@ -56,6 +56,15 @@ export default function EventSettingsSection({ state, set }: Props) {
               aria-label="Leader email"
             />
           </div>
+          {state.leaderEmail.trim() ? (
+            <div className="mt-2">
+              <SettingsToggle
+                checked={state.leaderSignupEmailEnabled}
+                onChange={(v) => set({ leaderSignupEmailEnabled: v })}
+                label="Also email the leader each time someone signs up, with a calendar file"
+              />
+            </div>
+          ) : null}
         </div>
 
         <div>

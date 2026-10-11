@@ -24,7 +24,7 @@ export type LeaderCampaignEmailFields = Pick<
   | "leader_name"
   | "leader_email"
 > &
-  Partial<Pick<Campaign, "user_email" | "organizer_instant_notify_enabled">>;
+  Partial<Pick<Campaign, "user_email" | "organizer_instant_notify_enabled" | "leader_signup_email_enabled">>;
 
 /**
  * Emails the event's assigned leader that someone signed up, with an .ics
@@ -45,6 +45,10 @@ export async function sendLeaderSignupNotification(params: {
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const leaderEmail = params.campaign.leader_email?.trim();
   if (!leaderEmail) return { ok: false, error: "No leader assigned" };
+  // Off by default: leaders get the daily digest instead (organizer-digest cron).
+  if (!params.campaign.leader_signup_email_enabled) {
+    return { ok: false, error: "per signup leader email off" };
+  }
 
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
   if (!hasResendConfiguredForBrand(brand)) {
