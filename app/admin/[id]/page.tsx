@@ -12,6 +12,7 @@ import Toast from "@/components/Toast";
 import PostCreateSupportPrompt from "@/components/PostCreateSupportPrompt";
 import { useBrand } from "@/components/BrandProvider";
 import { campaignMatchesHostBrand } from "@/lib/campaign-brand-guard";
+import { userCanAdminCampaign } from "@/lib/campaign-access";
 import { compareBySortOrder } from "@/lib/session-sort-order";
 import OrgLogoButton from "@/components/OrgLogoButton";
 import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
@@ -222,7 +223,8 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       }
 
       const hasAccess = (eventData as any).created_by === user.id ||
-                        (eventData as any).user_email === user.email;
+                        (eventData as any).user_email === user.email ||
+                        (await userCanAdminCampaign(supabase, user, eventData as any));
       if (!hasAccess) { router.push("/dashboard"); return; }
 
       setEvent(eventData);
