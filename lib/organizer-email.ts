@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fasterAlertMinHours, isFasterAlertThrottled } from "@/lib/email-throttle";
 import {
   organizerEmailFrom,
   publicSiteOriginAndBrandForCampaign,
@@ -18,7 +19,7 @@ import {
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 /** Shown in UI copy; Vercel cron runs `/api/cron/organizer-faster` every 30 minutes. */
-export const FASTER_ALERT_SCHEDULE_LABEL = "about every 30 minutes";
+export const FASTER_ALERT_SCHEDULE_LABEL = "at most every 3 hours";
 
 export async function resolveOrganizerEmail(
   admin: SupabaseClient,
@@ -695,7 +696,7 @@ export async function sendOrganizerFasterAlertEmail(
   campaignId: string,
 ): Promise<{
   ok: boolean;
-  skipped?: "disabled" | "no_new_signups" | "no_organizer_email";
+  skipped?: "disabled" | "no_new_signups" | "no_organizer_email" | "throttled";
   error?: string;
   resendId?: string;
   sentTo?: string;
@@ -735,6 +736,12 @@ export async function sendOrganizerFasterAlertEmail(
       .update({ organizer_last_instant_notify_at: new Date().toISOString() } as never)
       .eq("id", campaignId);
     return { ok: false, skipped: "no_new_signups" };
+  }
+
+  // At most one faster alert per event per window (ORGANIZER_FASTER_ALERT_MIN_HOURS,
+  // default 3). The watermark is untouched, so the next alert lists everyone.
+  if (isFasterAlertThrottled(since, new Date(), fasterAlertMinHours())) {
+    return { ok: false, skipped: "throttled" };
   }
 
   let newQuery = admin

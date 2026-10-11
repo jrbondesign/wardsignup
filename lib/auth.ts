@@ -190,6 +190,7 @@ export async function signInWithMagicLink(email: string) {
   const json = (await res.json().catch(() => ({}))) as {
     error?: string;
     ok?: boolean;
+    alreadySent?: boolean;
   };
 
   if (!res.ok) {

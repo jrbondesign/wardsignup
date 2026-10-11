@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
+  const [alreadySent, setAlreadySent] = useState(false);
   const [error, setError] = useState("");
   const [lastAttemptTime, setLastAttemptTime] = useState<number>(0);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -57,7 +58,7 @@ export default function LoginPage() {
     setLastAttemptTime(now);
 
     try {
-      const { error: signInError } = await signInWithMagicLink(email);
+      const { data: linkData, error: signInError } = await signInWithMagicLink(email);
 
       if (signInError) {
         console.error("Magic link error:", signInError);
@@ -66,6 +67,7 @@ export default function LoginPage() {
         // Don't identify by email — /auth/callback identifies by user id after
         // auth, and posthog-js won't merge two different identified ids.
         posthog?.capture("login_magic_link_sent", { email });
+        setAlreadySent(Boolean(linkData?.alreadySent));
         setSent(true);
       }
     } catch (err: any) {
@@ -127,12 +129,22 @@ export default function LoginPage() {
             Check your email
           </h1>
           <p className="text-sm text-[#5A8399] leading-relaxed mb-6">
-            We sent a magic link to <strong className="text-[#0D2B35] font-semibold">{email}</strong>.<br/>
-            Click the link in your email to sign in.
+            {alreadySent ? (
+              <>
+                We already sent a sign in link to <strong className="text-[#0D2B35] font-semibold">{email}</strong> a few minutes ago.<br/>
+                Check your inbox (and spam folder) for that email. You can ask for a new one in 5 minutes.
+              </>
+            ) : (
+              <>
+                We sent a magic link to <strong className="text-[#0D2B35] font-semibold">{email}</strong>.<br/>
+                Click the link in your email to sign in.
+              </>
+            )}
           </p>
           <button
             onClick={() => {
               setSent(false);
+              setAlreadySent(false);
               setEmail("");
             }}
             className="text-sm text-[#0E96B0] hover:text-[#08647E] font-medium transition-colors"

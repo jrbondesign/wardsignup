@@ -177,11 +177,12 @@ export async function consumeEmailKeyRate(
   action: string,
   key: string,
   maxPerHour: number,
+  bucketStart?: Date,
 ): Promise<boolean> {
   try {
     const admin = createServiceRoleClient();
-    const bucket = new Date();
-    bucket.setMinutes(0, 0, 0);
+    const bucket = bucketStart ? new Date(bucketStart) : new Date();
+    if (!bucketStart) bucket.setMinutes(0, 0, 0);
     const { data, error } = await admin.rpc("try_consume_action_rate", {
       p_action: action,
       p_ip_hash: createHash("sha256").update(key).digest("hex"),
