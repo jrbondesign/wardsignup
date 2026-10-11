@@ -1,5 +1,6 @@
 "use client";
 
+import EmailTypoHint from "@/components/EmailTypoHint";
 import { useState, useEffect } from "react";
 import { signInWithMagicLink, signInWithGoogle } from "@/lib/auth";
 import {
@@ -257,6 +258,9 @@ export default function LoginPage() {
             className="w-full text-base text-[#0D2B35] px-[18px] py-[14px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all duration-200 focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70 mb-5"
             disabled={loading}
           />
+          <div className="-mt-4 mb-5">
+            <EmailTypoHint email={email} onAccept={setEmail} />
+          </div>
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm">

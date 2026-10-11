@@ -651,6 +651,10 @@ export async function sendOrganizerMetricsEmail(
       to,
       subject: subjectForKind(brand, kind, name),
       html,
+      // Daily digests wait for the UTC reset; a report the organizer asks
+      // for with "Send report now" goes right away.
+      deferrable: kind === "digest",
+      kind: kind === "digest" ? "digest" : "report",
     });
     if (!send.ok) {
       console.error("organizer email send blocked/failed:", send.error || send.skipped);

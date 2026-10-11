@@ -192,7 +192,8 @@ export async function POST(request: NextRequest) {
 
       const send = await sendGuardedEmail({
         brand: campaignBrand,
-        category: "notification",
+        urgent: true,
+      category: "notification",
         from: inviteEmailFrom(campaignBrand),
         to: inviteeEmailLower,
         subject: `You're invited to teach: ${eventRow.name}`,

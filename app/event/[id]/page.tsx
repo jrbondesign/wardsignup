@@ -1,5 +1,6 @@
 "use client";
 
+import EmailTypoHint from "@/components/EmailTypoHint";
 import { Fragment, use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -850,6 +851,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       placeholder="you@example.com"
                       className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70"
                       disabled={submitting} />
+                    <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />
                     <p className="mt-1.5 text-[11px] text-[#5A8399] leading-snug">
                       {sessions.some((s: any) => s.session_date)
                         ? "Add your email to get a reminder the day before — we never share or sell your info."
@@ -1045,6 +1047,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                               className="w-full text-sm text-[#0D2B35] px-[14px] py-[11px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
                               disabled={itemSubmitting}
                             />
+                            <EmailTypoHint email={itemFormData.email} onAccept={(fixed) => setItemFormData((prev) => ({ ...prev, email: fixed }))} />
                           </div>
                           <div>
                             <label className="block text-[12px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1">
@@ -1495,6 +1498,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="john@example.com"
                   className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70" />
+                <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />
                 <p className="mt-1.5 text-[11px] text-[#5A8399] leading-snug">
                   {sessions.some((s: any) => s.session_date)
                     ? "Add your email to get a reminder the day before — we never share or sell your info."

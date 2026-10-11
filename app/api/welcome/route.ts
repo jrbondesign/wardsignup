@@ -7,6 +7,7 @@ import {
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { escapeHtml } from "@/lib/html-escape";
 import { getResendForBrand } from "@/lib/resend-for-brand";
+import { sendGuardedEmail } from "@/lib/email-send";
 import { withUtm } from "@/lib/utm";
 
 /** Welcome replies: must be an address that receives mail (e.g. Cloudflare Email Routing → your inbox). */
@@ -191,7 +192,12 @@ ${brand.name} · ${siteUrlWithUtm}
 Made with ❤️ in Arizona`;
 
     // Send welcome email (must succeed before we mark welcome_sent)
-    const welcomeSend = await resend.emails.send({
+    // Non urgent: queued until just after the UTC quota reset when sent late in the UTC day.
+    const welcomeSend = await sendGuardedEmail({
+      brand,
+      category: "transactional",
+      deferrable: true,
+      kind: "welcome",
       from: welcomeEmailFrom(brand),
       replyTo: welcomeReplyTo,
       to: canonicalUser.email!,
@@ -238,8 +244,8 @@ Made with ❤️ in Arizona`;
       `,
     });
 
-    if (welcomeSend.error) {
-      console.error("Welcome email Resend error:", welcomeSend.error);
+    if (!welcomeSend.ok) {
+      console.error("Welcome email send error:", welcomeSend.error || welcomeSend.skipped);
       if (adminForWelcome) {
         await adminForWelcome
           .from("welcome_email_sent")
@@ -248,7 +254,7 @@ Made with ❤️ in Arizona`;
           .eq("brand_id", brand.id);
       }
       return NextResponse.json(
-        { error: welcomeSend.error.message || "Could not send welcome email" },
+        { error: welcomeSend.error || "Could not send welcome email" },
         { status: 502 },
       );
     }

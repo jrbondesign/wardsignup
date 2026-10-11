@@ -1,3 +1,4 @@
+import { sendGuardedEmail } from "@/lib/email-send";
 import type { User } from "@supabase/supabase-js";
 import { creatorNotifyEmailFrom, type PublicBrand } from "@/lib/brand";
 import { escapeHtml } from "@/lib/html-escape";
@@ -62,7 +63,11 @@ export async function notifyFounderIfFirstEvent(opts: {
     const resend = getResendForBrand(brand);
     if (!resend) return;
     const name = String(user.user_metadata?.full_name ?? user.user_metadata?.name ?? "(none)");
-    const { error } = await resend.emails.send({
+    const sent = await sendGuardedEmail({
+      brand,
+      category: "transactional",
+      deferrable: true,
+      kind: "new_creator",
       from: creatorNotifyEmailFrom(brand),
       to: FOUNDER_NOTIFY_TO,
       subject: `New ${brand.name} creator`,
@@ -77,7 +82,7 @@ export async function notifyFounderIfFirstEvent(opts: {
           </div>
         `,
     });
-    if (error) console.error("Founder notify Resend error:", error);
+    if (!sent.ok) console.error("Founder notify send error:", sent.error || sent.skipped);
   } catch (e) {
     console.error("Founder notify error:", e);
   }
