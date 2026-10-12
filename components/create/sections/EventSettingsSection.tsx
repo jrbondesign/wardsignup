@@ -36,7 +36,7 @@ export default function EventSettingsSection({ state, set }: Props) {
         <div>
           <span className={labelCls}>Event leader (optional)</span>
           <p className="text-[12px] text-[#5A8399] mb-2">
-            Assign a leader and they&apos;ll get the daily digest of new signups for this event.
+            Assign a leader and they&apos;ll get the daily digest of new signups for this event. This needs your daily digest turned on under Notifications.
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <input
@@ -61,7 +61,7 @@ export default function EventSettingsSection({ state, set }: Props) {
               <SettingsToggle
                 checked={state.leaderSignupEmailEnabled}
                 onChange={(v) => set({ leaderSignupEmailEnabled: v })}
-                label="Also email the leader each time someone signs up, with a calendar file"
+                label="Email the leader when someone signs up, at most once an hour, with a calendar file. This replaces their daily digest."
               />
             </div>
           ) : null}
