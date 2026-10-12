@@ -26,9 +26,21 @@ describe("MadeWithFooter", () => {
   });
   it("renders dash free copy", () => {
     render(<MadeWithFooter brandName="Ward Signup" siteUrl="https://wardsignup.com" />);
+    expect(screen.getByTestId("made-with-footer")).toHaveTextContent(
+      "Made with WardSignup. Create your own signup sheet for free."
+    );
+    expect(screen.getByTestId("made-with-footer").textContent).not.toMatch(DASHES);
     const link = screen.getByRole("link");
-    expect(link).toHaveTextContent("Made with WardSignup. Create your own free.");
+    expect(link).toHaveTextContent("Create your own signup sheet for free");
     expect(link.textContent).not.toMatch(DASHES);
     expect(link.getAttribute("href")).toContain("utm_campaign=made_with");
+  });
+});
+
+describe("event page footer", () => {
+  const src = require("fs").readFileSync(require("path").join(__dirname, "../app/event/[id]/page.tsx"), "utf8");
+  it("replaces the share line with the Made with line", () => {
+    expect(src).not.toContain("Know someone who could use this?");
+    expect((src.match(/<MadeWithFooter/g) || []).length).toBe(1);
   });
 });

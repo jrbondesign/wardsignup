@@ -10,17 +10,19 @@ export function madeWithHref(siteUrl: string): string {
   return withUtm(`${siteUrl.replace(/\/$/, "")}/`, MADE_WITH_UTM);
 }
 
-/** Subtle "Made with" credit at the bottom of public signup sheets. */
+/** "Made with" line in the bottom footer of public signup sheets. */
 export default function MadeWithFooter({ brandName, siteUrl }: { brandName: string; siteUrl: string }) {
   const compactName = brandName.replace(/\s+/g, "");
   return (
-    <footer className="mt-10 mb-2 text-center text-xs leading-relaxed text-[#5A8399]/80" data-testid="made-with-footer">
+    <p className="text-sm text-[#5A8399] leading-relaxed text-center" data-testid="made-with-footer">
+      Made with {compactName}.{" "}
       <a
         href={madeWithHref(siteUrl)}
-        className="inline-block px-2 py-1 text-inherit no-underline hover:text-[#0E96B0] hover:underline"
+        className="font-semibold text-[#0E96B0] hover:text-[#08647E] underline decoration-[#0E96B0]/35 underline-offset-2"
       >
-        Made with {compactName}. Create your own free.
+        Create your own signup sheet for free
       </a>
-    </footer>
+      .
+    </p>
   );
 }
