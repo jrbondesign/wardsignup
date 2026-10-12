@@ -2,6 +2,7 @@ import { sendGuardedEmail } from "@/lib/email-send";
 import type { User } from "@supabase/supabase-js";
 import { creatorNotifyEmailFrom, type PublicBrand } from "@/lib/brand";
 import { escapeHtml } from "@/lib/html-escape";
+import { formatLocationLine } from "@/lib/request-geo";
 import { getResendForBrand } from "@/lib/resend-for-brand";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 
@@ -33,8 +34,11 @@ export async function notifyFounderIfFirstEvent(opts: {
   eventId: string;
   eventName: string;
   brand: PublicBrand;
+  /** Approximate creator location from the request's IP (see lib/request-geo). */
+  location?: string | null;
 }): Promise<void> {
   const { user, orgId, orgName, eventId, eventName, brand } = opts;
+  const locationLine = formatLocationLine(opts.location);
   try {
     const email = user.email?.trim().toLowerCase();
     if (!email || founderNotifySkipEmails().has(email)) return;
@@ -78,6 +82,7 @@ export async function notifyFounderIfFirstEvent(opts: {
             <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;"><strong>Name:</strong> ${escapeHtml(name)}</p>
             <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;"><strong>Organization:</strong> ${escapeHtml(orgName)}</p>
             <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;"><strong>Event:</strong> ${escapeHtml(eventName)}</p>
+            <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;">${escapeHtml(locationLine)}${opts.location ? ' <span style="color: #6b7280;">(approximate, based on IP)</span>' : ""}</p>
             <p style="margin: 0; font-size: 12px; color: #6b7280;">User ID: ${escapeHtml(user.id)} · Event ID: ${escapeHtml(eventId)}</p>
           </div>
         `,

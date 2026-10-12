@@ -8,6 +8,7 @@ import { getCurrentOrganization, listUserOrganizations } from "@/lib/organizatio
 import type { Database } from "@/lib/types";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { notifyFounderIfFirstEvent } from "@/lib/founder-notify";
+import { locationFromVercelHeaders } from "@/lib/request-geo";
 
 type CampaignInsert = Database["public"]["Tables"]["campaigns"]["Insert"];
 
@@ -198,6 +199,7 @@ export async function POST(request: Request) {
         eventId: created.id,
         eventName: created.name ?? "",
         brand,
+        location: locationFromVercelHeaders(request.headers),
       });
     }
 
