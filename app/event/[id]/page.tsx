@@ -11,6 +11,7 @@ import { formatTime } from "@/lib/utils";
 import { compareBySortOrder } from "@/lib/session-sort-order";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
+import MadeWithFooter from "@/components/MadeWithFooter";
 import { usePostHog } from "posthog-js/react";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
 import { usePublicCover } from "@/lib/use-public-cover";
@@ -1550,18 +1551,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
       <footer className="mt-auto flex-shrink-0 border-t border-[#0E96B0]/10 bg-white/90 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-6 py-6 flex flex-col items-center justify-center gap-4 text-center">
-          <p className="text-sm text-[#5A8399] leading-relaxed text-center">
-            Know someone who could use this? Share{" "}
-            <a
-              href={brand.siteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-semibold text-[#0E96B0] hover:text-[#08647E] underline decoration-[#0E96B0]/35 underline-offset-2"
-            >
-              {brand.siteHost}
-            </a>{" "}
-            with a friend.
-          </p>
+          <MadeWithFooter brandName={brand.name} siteUrl={brand.siteUrl} />
           <Link
             href="/"
             aria-label={`${brand.name} home`}

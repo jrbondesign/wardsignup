@@ -4,24 +4,32 @@ import Link from "next/link";
 import { getBrandFromHost } from "@/lib/brand";
 import MarketingNav from "@/components/MarketingNav";
 import MarketingFooter from "@/components/MarketingFooter";
+import { faqMeta } from "@/lib/seo/faq-meta";
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
 
+  const { title, description } = faqMeta(brand);
+
   return {
-    title: `FAQ · ${brand.shortName}`,
-    description: "Frequently asked questions about Ward Signup — free online signup sheets for Latter-day Saint wards and branches. Learn about time slots, spot limits, member access, and more.",
+    title: { absolute: title },
+    description,
     alternates: {
       canonical: "/faq",
     },
     openGraph: {
-      title: `FAQ · ${brand.shortName}`,
-      description: "Frequently asked questions about Ward Signup — free online signup sheets for LDS wards.",
+      title,
+      description,
       url: `${brand.siteUrl}/faq`,
       siteName: brand.shortName,
       type: "website",
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
     },
   };
 }
