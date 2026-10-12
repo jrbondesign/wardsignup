@@ -11,6 +11,7 @@ import { formatTime } from "@/lib/utils";
 import { compareBySortOrder } from "@/lib/session-sort-order";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
+import MadeWithFooter from "@/components/MadeWithFooter";
 import { usePostHog } from "posthog-js/react";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
 import { usePublicCover } from "@/lib/use-public-cover";
@@ -1419,6 +1420,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             })}
           </div>
         )}
+        <MadeWithFooter brandName={brand.name} siteUrl={brand.siteUrl} />
       </main>
 
       {/* Floating action bar — hidden for single-session (uses inline form instead) */}
