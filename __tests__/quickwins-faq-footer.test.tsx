@@ -27,11 +27,11 @@ describe("MadeWithFooter", () => {
   it("renders dash free copy", () => {
     render(<MadeWithFooter brandName="Ward Signup" siteUrl="https://wardsignup.com" />);
     expect(screen.getByTestId("made-with-footer")).toHaveTextContent(
-      "Made with WardSignup. Create your own signup sheet for free."
+      "Made with WardSignup. Create your own signup sheet for FREE."
     );
     expect(screen.getByTestId("made-with-footer").textContent).not.toMatch(DASHES);
     const link = screen.getByRole("link");
-    expect(link).toHaveTextContent("Create your own signup sheet for free");
+    expect(link).toHaveTextContent("Create your own signup sheet for FREE");
     expect(link.textContent).not.toMatch(DASHES);
     expect(link.getAttribute("href")).toContain("utm_campaign=made_with");
   });

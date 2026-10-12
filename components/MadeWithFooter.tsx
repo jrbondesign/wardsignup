@@ -20,7 +20,7 @@ export default function MadeWithFooter({ brandName, siteUrl }: { brandName: stri
         href={madeWithHref(siteUrl)}
         className="font-semibold text-[#0E96B0] hover:text-[#08647E] underline decoration-[#0E96B0]/35 underline-offset-2"
       >
-        Create your own signup sheet for free
+        Create your own signup sheet for FREE
       </a>
       .
     </p>
