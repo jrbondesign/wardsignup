@@ -53,7 +53,7 @@ export function buildOrganizerEmailFooterHtml(
       </td></tr>
       ${tipLine}
       <tr><td style="${tdStyle}padding-top:12px;">
-        Made with ♥ from Arizona ·
+        Made with <span style="color:#ef4444;">&#9829;</span> from Arizona ·
         <a href="${site}" style="color:#0E96B0;text-decoration:none;">${brand.name}</a>
       </td></tr>
     </table>
@@ -94,7 +94,7 @@ export function buildParticipantEmailFooterHtml(
         <a href="${site}" style="color:#0E96B0;font-weight:600;text-decoration:none;word-break:break-all;">Create a free signup at ${brand.name}</a>.
       </td></tr>
       <tr><td style="${tdStyle}padding-top:12px;">
-        Made with ♥ from Arizona &nbsp;·&nbsp;
+        Made with <span style="color:#ef4444;">&#9829;</span> from Arizona &nbsp;·&nbsp;
         <a href="${site}" style="color:#0E96B0;text-decoration:none;">${brand.name}</a>
       </td></tr>
     </table>
