@@ -15,7 +15,8 @@ export default function MadeWithFooter({ brandName, siteUrl }: { brandName: stri
   const compactName = brandName.replace(/\s+/g, "");
   return (
     <p className="text-sm text-[#5A8399] leading-relaxed text-center" data-testid="made-with-footer">
-      Made with {compactName}.{" "}
+      Made with {compactName}.
+      <br />
       <a
         href={madeWithHref(siteUrl)}
         className="font-semibold text-[#0E96B0] hover:text-[#08647E] underline decoration-[#0E96B0]/35 underline-offset-2"
