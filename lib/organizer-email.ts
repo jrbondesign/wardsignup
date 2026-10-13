@@ -17,7 +17,7 @@ import {
 } from "@/lib/event-timezone";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
+/** Shown in UI copy; a GitHub Actions pinger hits `/api/cron/organizer-faster` hourly (route claims one run per hour). */
 /** Shown in UI copy; Vercel cron runs `/api/cron/organizer-faster` every 30 minutes. */
 export const FASTER_ALERT_SCHEDULE_LABEL = "at most every 3 hours";
 

@@ -56,7 +56,12 @@ export default function MarketingFooter() {
       </div>
       <div className="max-w-[1080px] mx-auto mt-4 pt-4 border-t border-white/8 text-center text-[13px] text-white/28 space-y-1.5">
         <div>© {year} {brand.name}. All rights reserved.</div>
-        <div className="text-white/35">Made with ♥ from Arizona</div>
+        <div className="text-white/35">Made with{" "}
+          <span className="text-red-500" aria-hidden>
+            ♥
+          </span>{" "}
+          from Arizona
+        </div>
         {isWardBrand && (
           <div className="text-white/30 text-xs pt-2">
             Independent of The Church of Jesus Christ of Latter-day Saints
