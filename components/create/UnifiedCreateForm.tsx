@@ -1,6 +1,6 @@
 "use client";
 
-import { useReducer, useState, useEffect } from "react";
+import { useReducer, useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { createClientComponentClient } from "@/lib/auth";
 import EventTypePicker from "@/components/create/EventTypePicker";
@@ -27,6 +27,17 @@ import { getEventTemplate, type TemplateKey } from "@/lib/event-template-data";
 import { aiResultToFormPatch } from "@/lib/ai-result-to-form";
 import type { AiEventResult } from "@/lib/ai-event-extraction";
 import type { EventType } from "@/lib/types";
+
+// Must match the server caps in lib/limits.ts (MAX_SESSIONS_PER_REQUEST and
+// MAX_SESSIONS_PER_CAMPAIGN defaults). Larger schedules are sent in batches.
+const SESSION_BATCH_SIZE = 100;
+const MAX_SESSIONS_PER_EVENT = 500;
+
+type PendingSessions = {
+  eventId: string;
+  token: string;
+  remaining: Record<string, unknown>[];
+};
 
 function todayIso(): string {
   const d = new Date();
@@ -150,6 +161,61 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  // When slot creation fails after the event row exists, keep the unsent
+  // slots here so the organizer can retry without retyping anything.
+  const pendingRef = useRef<PendingSessions | null>(null);
+  const [canRetrySessions, setCanRetrySessions] = useState(false);
+
+  // Posts sessions in batches. Returns true when all were saved; on failure the
+  // unsent remainder stays in pendingRef for a retry.
+  const postSessionsInBatches = async (
+    eventId: string,
+    token: string,
+    sessions: Record<string, unknown>[],
+  ): Promise<boolean> => {
+    let remaining = sessions;
+    while (remaining.length > 0) {
+      const batch = remaining.slice(0, SESSION_BATCH_SIZE);
+      let ok = false;
+      for (let attempt = 0; attempt < 2 && !ok; attempt++) {
+        try {
+          const res = await fetch("/api/sessions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ campaign_id: eventId, sessions: batch }),
+          });
+          ok = res.ok;
+          if (!ok && res.status >= 400 && res.status < 500) break; // not transient
+        } catch {
+          ok = false;
+        }
+      }
+      if (!ok) {
+        pendingRef.current = { eventId, token, remaining };
+        return false;
+      }
+      remaining = remaining.slice(batch.length);
+    }
+    pendingRef.current = null;
+    return true;
+  };
+
+  const retryPendingSessions = async () => {
+    const pending = pendingRef.current;
+    if (!pending) return;
+    setSubmitting(true);
+    setError("");
+    const ok = await postSessionsInBatches(pending.eventId, pending.token, pending.remaining);
+    if (ok) {
+      setCanRetrySessions(false);
+      router.push(`/admin/${pending.eventId}?created=1`);
+      return;
+    }
+    setError(
+      `Your event was saved, but ${pendingRef.current?.remaining.length ?? 0} signup slots still could not be added. Your slots are kept here. Please try again in a moment.`
+    );
+    setSubmitting(false);
+  };
 
   // Auto-detect timezone on mount (matches existing flow).
   useEffect(() => {
@@ -193,6 +259,11 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
   // ── Submit (skeleton — rsvp only for now) ────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    // The event already exists; finish its slots instead of creating a duplicate.
+    if (canRetrySessions && pendingRef.current) {
+      await retryPendingSessions();
+      return;
+    }
     setError("");
 
     if (!state.name.trim()) {
@@ -237,6 +308,12 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
       plannedSpotsSessions = generateSpotsSessions(state);
       if (plannedSpotsSessions.length === 0) {
         setError("No sessions would be created. Please check the date range, weekdays, and time window.");
+        return;
+      }
+      if (plannedSpotsSessions.length > MAX_SESSIONS_PER_EVENT) {
+        setError(
+          `This schedule makes ${plannedSpotsSessions.length} slots, and an event can have up to ${MAX_SESSIONS_PER_EVENT}. Try a shorter date range or longer slots.`
+        );
         return;
       }
     }
@@ -341,13 +418,13 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
           ...s,
           location: state.location.trim() || s.location,
         }));
-        const sessionsRes = await fetch("/api/sessions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-          body: JSON.stringify({ campaign_id: event.id, sessions }),
-        });
-        if (!sessionsRes.ok) {
-          router.push(`/admin/${event.id}?warn=session-failed&created=1`);
+        const saved = await postSessionsInBatches(event.id, token, sessions);
+        if (!saved) {
+          setCanRetrySessions(true);
+          setError(
+            `Your event was saved, but ${pendingRef.current?.remaining.length ?? sessions.length} signup slots could not be added yet. Your slots are kept here, so tap Retry to finish.`
+          );
+          setSubmitting(false);
           return;
         }
       } else {
@@ -547,6 +624,16 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
       {error && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[13px] text-red-700">
           {error}
+          {canRetrySessions && (
+            <button
+              type="button"
+              onClick={retryPendingSessions}
+              disabled={submitting}
+              className="ml-2 font-semibold underline disabled:opacity-60"
+            >
+              {submitting ? "Retrying…" : "Retry"}
+            </button>
+          )}
         </div>
       )}
 
