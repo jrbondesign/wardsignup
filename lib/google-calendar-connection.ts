@@ -9,6 +9,19 @@
 
 export const CONNECTION_DISCONNECTED_ERROR = "Connection was disconnected";
 
+/** campaign_calendar_sync.last_error while the Google grant is dead (cleared on reconnect). */
+export const CONNECTION_BROKEN_ERROR = "Google Calendar connection needs to be reconnected";
+
+/** Broken = status column says so, or legacy invalid_grant marker in last_error. Client safe. */
+export function isConnectionBroken(
+  conn: { status?: string | null; revoked_at?: string | null; last_error?: string | null } | null | undefined,
+): boolean {
+  if (!conn) return false;
+  if (conn.status === "broken") return true;
+  const err = (conn.last_error ?? "").toLowerCase();
+  return err.includes("invalid_grant") || err.includes("invalid grant") || err.includes("reauthorization needed");
+}
+
 export type ConnectionRow = {
   id: string;
   google_email: string;

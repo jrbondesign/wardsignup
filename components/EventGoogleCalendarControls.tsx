@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClientComponentClient } from "@/lib/auth";
 import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
-import { isConnectionExpired, pickDisplayedConnection } from "@/lib/google-calendar-connection";
+import { CONNECTION_BROKEN_ERROR, isConnectionExpired, pickDisplayedConnection } from "@/lib/google-calendar-connection";
 
 export type EventGoogleCalendarFields = {
   enabled: boolean;
@@ -312,8 +312,8 @@ export default function EventGoogleCalendarControls({
             )}
             {lastError && (
               <p className="text-[12px] text-red-600 mt-1">
-                {lastError.includes("invalid_grant")
-                  ? "Your Google Calendar connection expired. Reconnect it in organization settings."
+                {lastError.includes("invalid_grant") || lastError === CONNECTION_BROKEN_ERROR
+                  ? "Your Google Calendar connection expired. Use Reconnect Google above to fix it."
                   : lastError}
               </p>
             )}

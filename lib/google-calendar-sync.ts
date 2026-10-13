@@ -12,6 +12,13 @@ import { createHash } from 'crypto';
 import { getPostHogClient } from './posthog-server';
 import { resolveEffectiveEventTimezone, sessionStartUtc } from './event-timezone';
 import { googleDateTimesForSession, userFacingCalendarSyncError } from './google-calendar-sync-format';
+import {
+  CONNECTION_BROKEN_ERROR,
+  GoogleAuthError,
+  isConnectionBroken,
+  isGoogleAuthFailure,
+  markConnectionBroken,
+} from './google-calendar-health';
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -84,7 +91,16 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
 
     const connection = syncConfig.connection as any;
     if (!connection || connection.revoked_at) {
-      const errorMsg = 'Connection revoked';
+      // Legacy invalid_grant rows (revoked before health tracking existed) that are
+      // not yet flagged broken: flag now so the creator and founder hear about it.
+      if (connection && connection.status === 'active' && isConnectionBroken(connection)) {
+        await markConnectionBroken(supabase, {
+          connectionId: connection.id,
+          campaignId,
+          reason: connection.last_error || 'invalid_grant',
+        });
+      }
+      const errorMsg = connection && isConnectionBroken(connection) ? CONNECTION_BROKEN_ERROR : 'Connection revoked';
       await supabase
         .from('campaign_calendar_sync')
         .update({ last_error: errorMsg, last_synced_at: new Date().toISOString() })
@@ -111,17 +127,16 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
     } catch (err: any) {
       const errorMsg = err.message || String(err);
       
-      // Mark as revoked if invalid_grant
-      if (errorMsg.includes('invalid_grant')) {
-        await supabase
-          .from('google_calendar_connections')
-          .update({ revoked_at: new Date().toISOString(), last_error: 'Invalid grant - reauthorization needed' })
-          .eq('id', connection.id);
+      const authFailure = isGoogleAuthFailure(err);
+
+      // Dead grant (invalid_grant / revoked / expired): mark broken once and notify.
+      if (authFailure) {
+        await markConnectionBroken(supabase, { connectionId: connection.id, campaignId, reason: errorMsg });
       }
 
       await supabase
         .from('campaign_calendar_sync')
-        .update({ last_error: errorMsg, last_synced_at: new Date().toISOString() })
+        .update({ last_error: authFailure ? CONNECTION_BROKEN_ERROR : errorMsg, last_synced_at: new Date().toISOString() })
         .eq('campaign_id', campaignId);
       
       const posthog = getPostHogClient();
@@ -131,7 +146,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
         properties: {
           campaign_id: campaignId,
           error: errorMsg,
-          is_invalid_grant: errorMsg.includes('invalid_grant'),
+          is_invalid_grant: authFailure,
         },
       });
       
@@ -224,6 +239,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
               .eq('session_id', session.id);
             eventsDeleted++;
           } catch (err: any) {
+            if (isGoogleAuthFailure(err)) throw err;
             console.error(`Failed to delete event for session ${session.id}:`, err);
           }
         }
@@ -260,6 +276,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
             });
           eventsCreated++;
         } catch (err: any) {
+          if (isGoogleAuthFailure(err)) throw err;
           console.error(`Failed to create event for session ${session.id}:`, err);
         }
       } else if (existingLink.content_hash !== contentHash) {
@@ -277,6 +294,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
             .eq('session_id', session.id);
           eventsUpdated++;
         } catch (err: any) {
+          if (isGoogleAuthFailure(err)) throw err;
           console.error(`Failed to update event for session ${session.id}:`, err);
         }
       }
@@ -299,6 +317,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
             .eq('session_id', link.session_id);
           eventsDeleted++;
         } catch (err: any) {
+          if (isGoogleAuthFailure(err)) throw err;
           console.error(`Failed to delete orphaned event for session ${link.session_id}:`, err);
         }
       }
@@ -323,6 +342,31 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
       eventsDeleted,
     };
   } catch (err: any) {
+    // 401 from the Calendar API right after a fresh token refresh: grant is dead.
+    if (isGoogleAuthFailure(err)) {
+      try {
+        const { data: cfg } = await supabase
+          .from('campaign_calendar_sync')
+          .select('connection_id')
+          .eq('campaign_id', campaignId)
+          .maybeSingle();
+        if (cfg?.connection_id) {
+          await markConnectionBroken(supabase, {
+            connectionId: cfg.connection_id,
+            campaignId,
+            reason: err.message || String(err),
+          });
+        }
+        await supabase
+          .from('campaign_calendar_sync')
+          .update({ last_error: CONNECTION_BROKEN_ERROR, last_synced_at: new Date().toISOString() })
+          .eq('campaign_id', campaignId);
+      } catch {
+        // best effort
+      }
+      return { success: false, error: CONNECTION_BROKEN_ERROR };
+    }
+
     const errorMsg = userFacingCalendarSyncError(err.message || String(err));
     
     // Try to record error (best effort)
@@ -455,6 +499,9 @@ async function createGoogleEvent(
 
   if (!response.ok) {
     const error = await response.text();
+    if (response.status === 401) {
+      throw new GoogleAuthError(`Failed to create event (401): ${error}`);
+    }
     throw new Error(`Failed to create event: ${error}`);
   }
 
@@ -484,6 +531,9 @@ async function updateGoogleEvent(
 
   if (!response.ok) {
     const error = await response.text();
+    if (response.status === 401) {
+      throw new GoogleAuthError(`Failed to update event (401): ${error}`);
+    }
     throw new Error(`Failed to update event: ${error}`);
   }
 
@@ -510,6 +560,9 @@ async function deleteGoogleEvent(
 
   if (!response.ok && response.status !== 404) {
     const error = await response.text();
+    if (response.status === 401) {
+      throw new GoogleAuthError(`Failed to delete event (401): ${error}`);
+    }
     throw new Error(`Failed to delete event: ${error}`);
   }
 }
