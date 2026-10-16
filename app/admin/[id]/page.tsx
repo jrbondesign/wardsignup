@@ -211,6 +211,10 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
     const loadData = async () => {
       const supabase = createClientComponentClient();
       const { data: { user }, error: authError } = await supabase.auth.getUser();
+      console.log("[admin page] getUser result:", { 
+        user: user ? { id: user.id, email: user.email } : null, 
+        error: authError 
+      });
       if (authError || !user) { router.push("/login"); return; }
 
       const { data: eventData, error: eventError } = await supabase
