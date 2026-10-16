@@ -9,21 +9,28 @@ export interface AttributionData {
   first_touch_ref?: string;
 }
 
+export interface HeardAboutData {
+  choice: string;
+  other_text?: string | null;
+}
+
 /**
  * Ensure the signed-in user has an organizer profile for this brand (same login can have Ward + Ministry).
  * Inserts a row for (user_id, brand_id) on first use of that site.
  * 
  * @param attribution - Optional first-touch attribution to set (only written if columns are null)
+ * @param heardAbout - Optional "How did you hear about us?" answer (only written if columns are null)
  */
 export async function ensureOrganizerBrandMatchesHost(
   supabase: SupabaseClient,
   userId: string,
   brand: PublicBrand,
   attribution?: AttributionData | null,
+  heardAbout?: HeardAboutData | null,
 ): Promise<{ ok: true; brandId: BrandId } | { ok: false; message: string }> {
   const { data: existing, error: selErr } = await supabase
     .from("organizer_profiles")
-    .select("brand_id, first_touch_utm_source")
+    .select("brand_id, first_touch_utm_source, heard_about_choice")
     .eq("user_id", userId)
     .eq("brand_id", brand.id)
     .maybeSingle();
@@ -34,7 +41,7 @@ export async function ensureOrganizerBrandMatchesHost(
   }
 
   if (!existing) {
-    // New profile: write attribution if provided
+    // New profile: write attribution and heard_about if provided
     const insertData: Record<string, unknown> = {
       user_id: userId,
       brand_id: brand.id,
@@ -46,6 +53,12 @@ export async function ensureOrganizerBrandMatchesHost(
       if (attribution.first_touch_utm_campaign) insertData.first_touch_utm_campaign = attribution.first_touch_utm_campaign;
       if (attribution.first_touch_ref) insertData.first_touch_ref = attribution.first_touch_ref;
       insertData.first_touch_captured_at = new Date().toISOString();
+    }
+    
+    if (heardAbout) {
+      insertData.heard_about_choice = heardAbout.choice;
+      if (heardAbout.other_text) insertData.heard_about_other_text = heardAbout.other_text;
+      insertData.heard_about_answered_at = new Date().toISOString();
     }
     
     const { error: insErr } = await supabase.from("organizer_profiles").insert(insertData as never);
@@ -72,6 +85,22 @@ export async function ensureOrganizerBrandMatchesHost(
         .eq("brand_id", brand.id)
         .is("first_touch_utm_source", null);
     }
+  }
+  
+  // Profile exists: only write heard_about if columns are currently null
+  if (heardAbout && existing.heard_about_choice === null) {
+    const heardUpdateData: Record<string, unknown> = {
+      heard_about_choice: heardAbout.choice,
+      heard_about_answered_at: new Date().toISOString(),
+    };
+    if (heardAbout.other_text) heardUpdateData.heard_about_other_text = heardAbout.other_text;
+    
+    await supabase
+      .from("organizer_profiles")
+      .update(heardUpdateData as never)
+      .eq("user_id", userId)
+      .eq("brand_id", brand.id)
+      .is("heard_about_choice", null);
   }
 
   return { ok: true, brandId: existing.brand_id as BrandId };
