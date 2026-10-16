@@ -12,17 +12,40 @@ export async function userCanAdminCampaign(
   user: Pick<User, "id">,
   campaign: Pick<Campaign, "organization_id">,
 ): Promise<boolean> {
-  if (!campaign.organization_id) return false;
+  if (!campaign.organization_id) {
+    console.log("[userCanAdminCampaign] No organization_id on campaign");
+    return false;
+  }
+  
   const { data, error } = await supabase
     .from("organization_members")
-    .select("id")
+    .select("id, role")
     .eq("organization_id", campaign.organization_id)
     .eq("user_id", user.id)
     .eq("status", "accepted")
     .limit(1)
     .maybeSingle();
-  if (error) return false;
-  return !!data;
+  
+  if (error) {
+    console.error("[userCanAdminCampaign] Query error:", error);
+    return false;
+  }
+  
+  if (!data) {
+    console.log("[userCanAdminCampaign] No accepted membership found", {
+      organization_id: campaign.organization_id,
+      user_id: user.id
+    });
+    return false;
+  }
+  
+  console.log("[userCanAdminCampaign] Access granted", {
+    organization_id: campaign.organization_id,
+    user_id: user.id,
+    role: (data as { role?: string }).role
+  });
+  
+  return true;
 }
 
 /** True if the user has an accepted membership row on this organization. */
