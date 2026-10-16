@@ -2,7 +2,7 @@ import { withUtm } from "@/lib/utm";
 
 export const MADE_WITH_UTM = {
   utm_source: "signup_sheet",
-  utm_medium: "footer",
+  utm_medium: "referral",
   utm_campaign: "made_with",
 } as const;
 

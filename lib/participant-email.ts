@@ -9,6 +9,22 @@ import { formatSessionSlotLabel } from "@/lib/organizer-email";
 import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
 import { sendGuardedEmail } from "@/lib/email-send";
 import type { Campaign } from "@/lib/types";
+import { withUtm } from "@/lib/utm";
+
+function runYourOwnCtaHtml(siteOrigin: string): string {
+  const createPageUrl = withUtm(`${siteOrigin}/create`, {
+    utm_source: "signup_confirmation",
+    utm_medium: "email",
+    utm_campaign: "run_your_own",
+  });
+  return `
+    <div style="margin:20px 0 0;padding:16px 0 0;border-top:1px solid rgba(14,150,176,0.12);">
+      <p style="margin:0;font-size:13px;color:#5A8399;">
+        <a href="${escapeHtml(createPageUrl)}" style="color:#0E96B0;font-weight:600;text-decoration:none;">Run your own ward signup, free</a>
+      </p>
+    </div>
+  `;
+}
 
 type SessionFields = {
   day_of_week: number;
@@ -24,7 +40,11 @@ export type ParticipantCampaignEmailFields = Pick<
 
 function eventLink(siteOrigin: string, campaignId: string): string {
   const base = siteOrigin.replace(/\/$/, "");
-  return `${base}/event/${campaignId}`;
+  return withUtm(`${base}/event/${campaignId}`, {
+    utm_source: "participant_email",
+    utm_medium: "email",
+    utm_campaign: "confirmation",
+  });
 }
 
 function participantFooter(brand: PublicBrand): string {
@@ -137,6 +157,7 @@ export async function sendParticipantSignupConfirmation(params: {
     <p style="margin:20px 0 0;font-size:14px;">
       <a href="${escapeHtml(link)}" style="color:#0E96B0;font-weight:600;">View event</a>${cancelLink}
     </p>
+    ${runYourOwnCtaHtml(siteOrigin)}
     ${participantFooter(brand)}
   </div>`;
 
@@ -175,7 +196,14 @@ export async function sendParticipantReminderEmail(params: {
   });
   const eventTitle = escapeHtml(params.campaign.name);
   const name = escapeHtml(params.memberName.trim());
-  const link = eventLink(siteOrigin, params.campaign.id);
+  const link = withUtm(
+    `${siteOrigin.replace(/\/$/, "")}/event/${params.campaign.id}`,
+    {
+      utm_source: "participant_email",
+      utm_medium: "email",
+      utm_campaign: "reminder",
+    }
+  );
   const cancelLink = params.cancelUrl
     ? `&nbsp;·&nbsp;<a href="${escapeHtml(params.cancelUrl)}" style="color:#5A8399;">Cancel my signup</a>`
     : "";
@@ -271,7 +299,14 @@ export async function sendParticipantBatchSignupConfirmation(params: {
 
   const eventTitle = escapeHtml(params.campaign.name);
   const name = escapeHtml(params.memberName.trim());
-  const link = eventLink(siteOrigin, params.campaign.id);
+  const link = withUtm(
+    `${siteOrigin.replace(/\/$/, "")}/event/${params.campaign.id}`,
+    {
+      utm_source: "participant_email",
+      utm_medium: "email",
+      utm_campaign: "batch_confirmation",
+    }
+  );
   const cancelLink = params.cancelUrl
     ? `&nbsp;·&nbsp;<a href="${escapeHtml(params.cancelUrl)}" style="color:#5A8399;">Manage my signups</a>`
     : "";
@@ -347,6 +382,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
     <p style="margin:20px 0 0;font-size:14px;">
       <a href="${escapeHtml(link)}" style="color:#0E96B0;font-weight:600;">View event</a>${cancelLink}
     </p>
+    ${runYourOwnCtaHtml(siteOrigin)}
     ${participantFooter(brand)}
   </div>`;
 

@@ -169,7 +169,8 @@ export async function POST(request: NextRequest) {
       // Add UTM tracking to invite email links
       const eventUrlWithUtm = withUtm(eventUrl, {
         utm_source: 'invite_email',
-        utm_medium: 'email'
+        utm_medium: 'email',
+        utm_campaign: 'invite'
       });
       
       const evName = escapeHtml(eventRow.name);

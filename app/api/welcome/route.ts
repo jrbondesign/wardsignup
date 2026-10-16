@@ -27,6 +27,9 @@ export async function POST(request: NextRequest) {
     const host =
       request.headers.get("x-forwarded-host") ?? request.headers.get("host");
     const brand = getBrandFromHost(host);
+    
+    // Parse body early to access attribution if needed
+    const body = await request.json().catch(() => ({}));
 
     // Extract JWT token from Authorization header
     const authHeader = request.headers.get("authorization");
@@ -139,18 +142,53 @@ export async function POST(request: NextRequest) {
     if (adminForWelcome) {
       const { data: existingProfile } = await adminForWelcome
         .from("organizer_profiles")
-        .select("brand_id")
+        .select("brand_id, first_touch_utm_source")
         .eq("user_id", user.id)
         .eq("brand_id", brand.id)
         .maybeSingle();
-      const prof = existingProfile as { brand_id: string } | null;
+      const prof = existingProfile as { brand_id: string; first_touch_utm_source: string | null } | null;
       if (!prof) {
-        const { error: profErr } = await adminForWelcome.from("organizer_profiles").insert({
+        // Get attribution from body if provided
+        const attribution = body?.attribution;
+        
+        const insertData: Record<string, unknown> = {
           user_id: user.id,
           brand_id: brand.id,
-        } as never);
+        };
+        
+        if (attribution && typeof attribution === 'object') {
+          if (attribution.first_touch_utm_source) insertData.first_touch_utm_source = attribution.first_touch_utm_source;
+          if (attribution.first_touch_utm_medium) insertData.first_touch_utm_medium = attribution.first_touch_utm_medium;
+          if (attribution.first_touch_utm_campaign) insertData.first_touch_utm_campaign = attribution.first_touch_utm_campaign;
+          if (attribution.first_touch_ref) insertData.first_touch_ref = attribution.first_touch_ref;
+          if (Object.keys(insertData).length > 2) {
+            insertData.first_touch_captured_at = new Date().toISOString();
+          }
+        }
+        
+        const { error: profErr } = await adminForWelcome.from("organizer_profiles").insert(insertData as never);
         if (profErr) {
           console.error("organizer_profiles insert (welcome):", profErr);
+        }
+      } else if (prof.first_touch_utm_source === null) {
+        // Profile exists but has no attribution - update it
+        const attribution = body?.attribution;
+        
+        if (attribution && typeof attribution === 'object') {
+          const updateData: Record<string, unknown> = {};
+          if (attribution.first_touch_utm_source) updateData.first_touch_utm_source = attribution.first_touch_utm_source;
+          if (attribution.first_touch_utm_medium) updateData.first_touch_utm_medium = attribution.first_touch_utm_medium;
+          if (attribution.first_touch_utm_campaign) updateData.first_touch_utm_campaign = attribution.first_touch_utm_campaign;
+          if (attribution.first_touch_ref) updateData.first_touch_ref = attribution.first_touch_ref;
+          if (Object.keys(updateData).length > 0) {
+            updateData.first_touch_captured_at = new Date().toISOString();
+            await adminForWelcome
+              .from("organizer_profiles")
+              .update(updateData as never)
+              .eq("user_id", user.id)
+              .eq("brand_id", brand.id)
+              .is("first_touch_utm_source", null);
+          }
         }
       }
     }

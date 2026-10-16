@@ -10,6 +10,7 @@ import { consumeEmailKeyRate, sendGuardedEmail } from "@/lib/email-send";
 import { leaderCoveredByOrganizerAlerts, leaderNotifyMaxPerHour } from "@/lib/email-throttle";
 import { buildEventIcs, icsFilenameForCampaign, type IcsSession } from "@/lib/ics";
 import type { Campaign } from "@/lib/types";
+import { withUtm } from "@/lib/utm";
 
 type SessionFields = IcsSession & { day_of_week: number };
 
@@ -77,7 +78,14 @@ export async function sendLeaderSignupNotification(params: {
   const memberName = escapeHtml(params.memberName.trim());
   const leaderName = params.campaign.leader_name?.trim();
   const greeting = leaderName ? `Hi ${escapeHtml(leaderName)},` : "Hello,";
-  const adminLink = `${siteOrigin.replace(/\/$/, "")}/admin/${params.campaign.id}`;
+  const adminLink = withUtm(
+    `${siteOrigin.replace(/\/$/, "")}/admin/${params.campaign.id}`,
+    {
+      utm_source: "leader_email",
+      utm_medium: "email",
+      utm_campaign: "leader_signup",
+    }
+  );
 
   const slotLines = params.sessions
     .map(
