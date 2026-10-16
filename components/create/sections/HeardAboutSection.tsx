@@ -29,7 +29,8 @@ export default function HeardAboutSection({
   return (
     <ComponentCard
       title="How did you hear about WardSignup?"
-      subtitle="Optional. Helps us improve."
+      description="Optional. Helps us improve."
+      optional
     >
       <div className="space-y-2">
         {CHOICES.map((choice) => (
