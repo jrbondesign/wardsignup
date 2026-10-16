@@ -224,10 +224,27 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
         return;
       }
 
-      const hasAccess = (eventData as any).created_by === user.id ||
-                        (eventData as any).user_email === user.email ||
-                        (await userCanAdminCampaign(supabase, user, eventData as any));
-      if (!hasAccess) { router.push("/dashboard"); return; }
+      console.log("[admin page] Checking access for user", user.id, "on campaign", (eventData as any).id, {
+        organization_id: (eventData as any).organization_id,
+        created_by: (eventData as any).created_by,
+        user_email: (eventData as any).user_email
+      });
+      
+      const createdByCheck = (eventData as any).created_by === user.id;
+      const userEmailCheck = (eventData as any).user_email === user.email;
+      console.log("[admin page] Basic checks:", { createdByCheck, userEmailCheck });
+      
+      const canAdminCheck = await userCanAdminCampaign(supabase, user, eventData as any);
+      console.log("[admin page] userCanAdminCampaign result:", canAdminCheck);
+      
+      const hasAccess = createdByCheck || userEmailCheck || canAdminCheck;
+      console.log("[admin page] Final hasAccess:", hasAccess);
+      
+      if (!hasAccess) { 
+        console.error("[admin page] ACCESS DENIED - redirecting to /dashboard");
+        router.push("/dashboard"); 
+        return; 
+      }
 
       setEvent(eventData);
       setCoverUrl((eventData as any).cover_image_url ?? null);
