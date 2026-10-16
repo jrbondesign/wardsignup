@@ -1,100 +1,121 @@
 /**
- * Verifies the admin page has Remove signup buttons for ALL event types with
+ * Verifies the admin page has three-dots options menu for ALL event types with
  * mobile-friendly tap targets: time slots (spots), items/potluck, and RSVP events.
  */
 
-import { render, screen, fireEvent } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
-describe("Admin page signup removal - all event types", () => {
+describe("Admin page signup removal - all event types (three-dots menu)", () => {
   describe("Time slots (spots/rsvp) type", () => {
-    it("has mobile-friendly tap target (min-h-[44px])", () => {
-      const mockRemove = jest.fn();
-      
+    it("has mobile-friendly three-dots icon button (44px tap area)", () => {
       render(
-        <div>
+        <div className="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-3 py-2.5 relative">
+          <div className="flex items-start gap-2 pr-10">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-[#0D2B35]">John Doe</div>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={mockRemove}
-            aria-label="Remove John Doe from this slot"
-            className="mt-2 px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 transition-colors"
+            aria-label="Options for John Doe"
+            className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
           >
-            Remove signup
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
           </button>
         </div>
       );
 
-      const button = screen.getByRole("button", { name: /remove.*john doe/i });
+      const button = screen.getByRole("button", { name: /options for john doe/i });
       expect(button).toBeInTheDocument();
-      expect(button).toHaveClass("min-h-[44px]");
-      expect(button).toHaveClass("px-3");
-      expect(button).toHaveClass("py-2");
+      expect(button).toHaveClass("w-11");
+      expect(button).toHaveClass("h-11");
+      expect(button).toHaveClass("absolute");
+      expect(button).toHaveAttribute("type", "button");
     });
   });
 
   describe("Items/potluck type", () => {
-    it("has Remove button with mobile-friendly tap target", () => {
-      const mockRemove = jest.fn();
-      
+    it("has three-dots button with mobile-friendly tap target", () => {
       render(
-        <div>
+        <div className="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-3 py-2.5 relative">
+          <div className="flex items-start gap-2 pr-10">
+            <div className="flex-1 min-w-0">
+              <span className="text-sm text-[#0D2B35] font-medium">Sarah Johnson</span>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={mockRemove}
-            aria-label="Remove Sarah Johnson from Potato Salad"
-            className="mt-2 px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 transition-colors"
+            aria-label="Options for Sarah Johnson"
+            className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
           >
-            Remove signup
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
           </button>
         </div>
       );
 
-      const button = screen.getByRole("button", { name: /remove.*sarah johnson.*potato salad/i });
+      const button = screen.getByRole("button", { name: /options for sarah johnson/i });
       expect(button).toBeInTheDocument();
-      expect(button).toHaveClass("min-h-[44px]");
-      fireEvent.click(button);
-      expect(mockRemove).toHaveBeenCalledTimes(1);
+      expect(button).toHaveClass("w-11");
+      expect(button).toHaveClass("h-11");
     });
 
-    it("has Remove button for custom/write-in items", () => {
-      const mockRemove = jest.fn();
-      
+    it("has three-dots button for custom/write-in items", () => {
       render(
-        <div>
+        <div className="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-3 py-2.5 relative">
+          <div className="flex items-start gap-2 pr-10">
+            <div className="flex-1 min-w-0">
+              <span className="text-sm text-[#0D2B35] font-medium">Emily Rodriguez</span>
+            </div>
+          </div>
           <button
             type="button"
-            onClick={mockRemove}
-            aria-label="Remove Emily Rodriguez from custom item"
-            className="mt-2 px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 transition-colors"
+            aria-label="Options for Emily Rodriguez"
+            className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
           >
-            Remove signup
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
           </button>
         </div>
       );
 
-      const button = screen.getByRole("button", { name: /remove.*emily rodriguez.*custom item/i });
+      const button = screen.getByRole("button", { name: /options for emily rodriguez/i });
       expect(button).toBeInTheDocument();
-      expect(button).toHaveClass("min-h-[44px]");
+      expect(button).toHaveClass("w-11");
+      expect(button).toHaveClass("h-11");
     });
   });
 
   describe("Consistent styling across all types", () => {
-    it("uses same mobile-friendly styling for all event types", () => {
+    it("uses same three-dots icon button styling for all event types", () => {
       const expectedClasses = [
-        "mt-2",
-        "px-3",
-        "py-2",
-        "min-h-[44px]",
+        "absolute",
+        "top-2",
+        "right-2",
+        "w-11",
+        "h-11",
+        "flex",
+        "items-center",
+        "justify-center",
         "rounded-lg",
-        "text-sm",
-        "font-medium",
-        "text-red-500",
-        "hover:bg-red-50",
-        "hover:text-red-700",
+        "text-gray-400",
+        "hover:text-gray-600",
+        "hover:bg-gray-100",
+        "transition-colors",
         "focus-visible:outline",
         "focus-visible:outline-2",
-        "focus-visible:outline-red-400",
-        "transition-colors"
+        "focus-visible:outline-[#0E96B0]"
       ];
 
       const { container } = render(
@@ -102,26 +123,38 @@ describe("Admin page signup removal - all event types", () => {
           {/* Time slot button */}
           <button
             type="button"
-            aria-label="Time slot remove"
+            aria-label="Options for Time slot user"
             className={expectedClasses.join(" ")}
           >
-            Remove signup
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
           </button>
           {/* Item button */}
           <button
             type="button"
-            aria-label="Item remove"
+            aria-label="Options for Item user"
             className={expectedClasses.join(" ")}
           >
-            Remove signup
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
           </button>
           {/* Custom item button */}
           <button
             type="button"
-            aria-label="Custom item remove"
+            aria-label="Options for Custom item user"
             className={expectedClasses.join(" ")}
           >
-            Remove signup
+            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+              <circle cx="12" cy="5" r="2" />
+              <circle cx="12" cy="12" r="2" />
+              <circle cx="12" cy="19" r="2" />
+            </svg>
           </button>
         </div>
       );
@@ -139,22 +172,52 @@ describe("Admin page signup removal - all event types", () => {
   });
 
   describe("Accessibility", () => {
-    it("has proper type, aria-label, and no dashes in text", () => {
+    it("has proper type, aria-label, and 44px tap target", () => {
       render(
         <button
           type="button"
-          aria-label="Remove John Doe from this slot"
-          className="mt-2 px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium text-red-500"
+          aria-label="Options for John Doe"
+          className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400"
         >
-          Remove signup
+          <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+            <circle cx="12" cy="5" r="2" />
+            <circle cx="12" cy="12" r="2" />
+            <circle cx="12" cy="19" r="2" />
+          </svg>
         </button>
       );
 
       const button = screen.getByRole("button");
       expect(button).toHaveAttribute("type", "button");
       expect(button).toHaveAttribute("aria-label");
-      expect(button.textContent).not.toContain("-");
-      expect(button.textContent).toBe("Remove signup");
+      // w-11 and h-11 = 44px (meets iOS/Android tap target guidelines)
+      expect(button).toHaveClass("w-11");
+      expect(button).toHaveClass("h-11");
+    });
+  });
+
+  describe("Content placement with three-dots button", () => {
+    it("adds padding-right to content area to avoid overlap with button", () => {
+      const { container } = render(
+        <div className="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-3 py-2.5 relative">
+          <div className="flex items-start gap-2 pr-10">
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-[#0D2B35]">John Doe</div>
+            </div>
+          </div>
+          <button
+            type="button"
+            aria-label="Options for John Doe"
+            className="absolute top-2 right-2 w-11 h-11"
+          >
+            ...
+          </button>
+        </div>
+      );
+
+      const contentArea = container.querySelector(".pr-10");
+      expect(contentArea).toBeInTheDocument();
+      expect(contentArea).toHaveClass("pr-10");
     });
   });
 });
