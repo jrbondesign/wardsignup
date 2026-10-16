@@ -583,6 +583,117 @@ export async function GET(request: NextRequest) {
     total: thisCalendarWeekUsers.length,
   };
 
+  // Calculate New Wards metric (wards = organizations with first published event)
+  // A ward's first published event is the earliest campaign with at least one session.
+  const { data: orgsWithCampaigns } = await admin
+    .from("organizations")
+    .select("id, first_touch_utm_source, first_touch_utm_medium, first_touch_utm_campaign, first_touch_ref, created_by");
+  
+  const { data: campaignsWithSessions } = await admin
+    .from("campaigns")
+    .select("id, organization_id, created_at")
+    .not("organization_id", "is", null);
+
+  const { data: sessionsData } = await admin
+    .from("sessions")
+    .select("campaign_id");
+
+  const campaignsWithSessionsSet = new Set(
+    (sessionsData ?? []).map((s: { campaign_id: string }) => s.campaign_id)
+  );
+
+  type OrgWithAttribution = {
+    id: string;
+    first_touch_utm_source: string | null;
+    first_touch_utm_medium: string | null;
+    first_touch_utm_campaign: string | null;
+    first_touch_ref: string | null;
+    created_by: string;
+  };
+
+  const orgFirstEventMap = new Map<string, { date: string; orgData: OrgWithAttribution }>();
+  
+  for (const campaign of (campaignsWithSessions ?? []) as { id: string; organization_id: string; created_at: string }[]) {
+    if (!campaignsWithSessionsSet.has(campaign.id)) continue;
+    const orgId = campaign.organization_id;
+    if (!orgId) continue;
+
+    const existing = orgFirstEventMap.get(orgId);
+    if (!existing || campaign.created_at < existing.date) {
+      const orgData = (orgsWithCampaigns ?? []).find((o: OrgWithAttribution) => o.id === orgId);
+      if (!orgData) continue;
+
+      const skipEmails = founderNotifySkipEmails();
+      const ownerUser = allAuthUsers.find((u) => u.id === orgData.created_by);
+      const ownerEmail = ownerUser?.email?.toLowerCase();
+      if (ownerEmail && skipEmails.has(ownerEmail)) continue;
+
+      orgFirstEventMap.set(orgId, { 
+        date: campaign.created_at,
+        orgData: orgData as OrgWithAttribution
+      });
+    }
+  }
+
+  function toMonthKey(dateStr: string): string {
+    return dateStr.slice(0, 7); // YYYY-MM
+  }
+
+  const nowDate = new Date();
+  const currentMonth = toMonthKey(nowDate.toISOString());
+  const lastMonth = toMonthKey(new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1).toISOString());
+
+  const monthlyWardsMap = new Map<string, { count: number; bySource: Map<string, number> }>();
+
+  for (const { date, orgData } of orgFirstEventMap.values()) {
+    const month = toMonthKey(date);
+    
+    if (!monthlyWardsMap.has(month)) {
+      monthlyWardsMap.set(month, { count: 0, bySource: new Map() });
+    }
+    
+    const monthData = monthlyWardsMap.get(month)!;
+    monthData.count += 1;
+
+    const source = orgData.first_touch_utm_source ||
+      orgData.first_touch_ref ||
+      (orgData.first_touch_utm_medium ? `${orgData.first_touch_utm_medium}` : null) ||
+      "Unknown";
+    
+    monthData.bySource.set(source, (monthData.bySource.get(source) || 0) + 1);
+  }
+
+  const months: string[] = [];
+  const startDate = new Date(nowDate.getFullYear(), nowDate.getMonth() - 11, 1);
+  for (let d = new Date(startDate); d <= nowDate; d.setMonth(d.getMonth() + 1)) {
+    months.push(toMonthKey(d.toISOString()));
+  }
+
+  const monthlyTrend = months.map((month) => {
+    const data = monthlyWardsMap.get(month);
+    const bySource: Record<string, number> = {};
+    if (data) {
+      for (const [src, cnt] of data.bySource.entries()) {
+        bySource[src] = cnt;
+      }
+    }
+    return {
+      month,
+      count: data?.count || 0,
+      bySource,
+    };
+  });
+
+  const thisMonthData = monthlyWardsMap.get(currentMonth);
+  const lastMonthData = monthlyWardsMap.get(lastMonth);
+  
+  const thisMonthBySource: Record<string, number> = {};
+  if (thisMonthData) {
+    for (const [src, cnt] of thisMonthData.bySource.entries()) {
+      thisMonthBySource[src] = cnt;
+    }
+  }
+
   return NextResponse.json({
     totalEvents: totalEvents ?? 0,
     totalSessions: totalSessions ?? 0,
@@ -610,6 +721,12 @@ export async function GET(request: NextRequest) {
       newCreatorsLastCompletedWeek,
       wowLastCompletedWeekPct: wowNewCreatorsLastCompletedWeekPct,
       fourWeekAvgNewCreators,
+    },
+    newWards: {
+      thisMonth: thisMonthData?.count || 0,
+      lastMonth: lastMonthData?.count || 0,
+      monthlyTrend,
+      bySource: thisMonthBySource,
     },
     totalUsers,
     newUsersThisWeek,
