@@ -1,0 +1,54 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getAuthFromRequest } from "@/lib/auth";
+import { userCanAdminCampaign } from "@/lib/campaign-access";
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const auth = await getAuthFromRequest(request);
+  if (!auth.ok) {
+    return NextResponse.json({ error: auth.message }, { status: auth.status });
+  }
+  const { supabase, user } = auth;
+  const { id } = await params;
+
+  if (!id) {
+    return NextResponse.json({ error: "Item signup ID is required." }, { status: 400 });
+  }
+
+  const { data: itemSignup, error: lookupError } = await supabase
+    .from("item_signups")
+    .select("id, campaign_id")
+    .eq("id", id)
+    .maybeSingle();
+  if (lookupError) {
+    console.error("admin/item-signups lookup:", lookupError);
+    return NextResponse.json({ error: "Failed to remove signup." }, { status: 500 });
+  }
+  if (!itemSignup) {
+    return NextResponse.json({ error: "Signup not found." }, { status: 404 });
+  }
+
+  const { data: campaign, error: campaignError } = await supabase
+    .from("campaigns")
+    .select("organization_id")
+    .eq("id", (itemSignup as { campaign_id: string }).campaign_id)
+    .maybeSingle();
+  if (campaignError) {
+    console.error("admin/item-signups campaign:", campaignError);
+    return NextResponse.json({ error: "Failed to remove signup." }, { status: 500 });
+  }
+  if (!campaign || !(await userCanAdminCampaign(supabase, user, campaign))) {
+    return NextResponse.json({ error: "Not authorized to remove this signup." }, { status: 403 });
+  }
+
+  const { error } = await supabase.from("item_signups").delete().eq("id", id);
+
+  if (error) {
+    console.error("admin/item-signups delete:", error);
+    return NextResponse.json({ error: "Failed to remove signup." }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true });
+}

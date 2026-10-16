@@ -185,6 +185,30 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
     }
   };
 
+  const handleRemoveItemSignup = async (signupId: string, memberName: string, itemLabel: string) => {
+    if (!window.confirm(`Remove ${memberName} from ${itemLabel}? This cannot be undone.`)) return;
+    try {
+      const supabase = createClientComponentClient();
+      const { data: { session } } = await supabase.auth.getSession();
+      const res = await fetch(`/api/admin/item-signups/${signupId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${session?.access_token}` },
+      });
+      if (!res.ok) throw new Error("Failed to remove signup");
+      // Remove from local state without a full reload
+      setItems((prev) =>
+        prev.map((item) => ({
+          ...item,
+          item_signups: item.item_signups.filter((su) => su.id !== signupId),
+        }))
+      );
+      // Also remove from custom signups if it was there
+      setCustomSignups((prev) => prev.filter((su) => su.id !== signupId));
+    } catch (err: any) {
+      alert(err.message || "Failed to remove signup. Please try again.");
+    }
+  };
+
   const handleDelete = async () => {
     if (!event) return;
     setDeleting(true);
@@ -1077,24 +1101,34 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                       ) : (
                         <div className="px-5 py-3 space-y-1.5">
                           {item.item_signups.map((sig) => (
-                            <div key={sig.id} className="flex items-center gap-2">
-                              <div className="w-5 h-5 rounded-full bg-[#E6F7FB] flex items-center justify-center flex-shrink-0">
-                                <svg viewBox="0 0 24 24" fill="none" stroke="#0E96B0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
-                                  <polyline points="20 6 9 17 4 12"/>
-                                </svg>
+                            <div key={sig.id} className="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-3 py-2.5">
+                              <div className="flex items-start gap-2">
+                                <div className="w-5 h-5 rounded-full bg-[#E6F7FB] flex items-center justify-center flex-shrink-0 mt-0.5">
+                                  <svg viewBox="0 0 24 24" fill="none" stroke="#0E96B0" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                                    <polyline points="20 6 9 17 4 12"/>
+                                  </svg>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <span className="text-sm text-[#0D2B35] font-medium">{sig.member_name}</span>
+                                  {((sig as { quantity?: number }).quantity ?? 1) > 1 && (
+                                    <span className="text-xs font-semibold text-[#08647E] bg-[#E6F7FB] border border-[rgba(14,150,176,0.22)] rounded-full px-2 py-0.5 ml-2">
+                                      ×{(sig as { quantity?: number }).quantity}
+                                    </span>
+                                  )}
+                                  {sig.member_email && <span className="text-xs text-[#5A8399] ml-2">{sig.member_email}</span>}
+                                  {sig.signup_note && (
+                                    <p className="text-xs text-[#5A8399] mt-0.5 leading-snug">{sig.signup_note}</p>
+                                  )}
+                                </div>
                               </div>
-                              <div className="min-w-0">
-                                <span className="text-sm text-[#0D2B35] font-medium">{sig.member_name}</span>
-                                {((sig as { quantity?: number }).quantity ?? 1) > 1 && (
-                                  <span className="text-xs font-semibold text-[#08647E] bg-[#E6F7FB] border border-[rgba(14,150,176,0.22)] rounded-full px-2 py-0.5 ml-2">
-                                    ×{(sig as { quantity?: number }).quantity}
-                                  </span>
-                                )}
-                                {sig.member_email && <span className="text-xs text-[#5A8399] ml-2">{sig.member_email}</span>}
-                                {sig.signup_note && (
-                                  <p className="text-xs text-[#5A8399] mt-0.5 leading-snug">{sig.signup_note}</p>
-                                )}
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveItemSignup(sig.id, sig.member_name, item.label)}
+                                aria-label={`Remove ${sig.member_name} from ${item.label}`}
+                                className="mt-2 px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 transition-colors"
+                              >
+                                Remove signup
+                              </button>
                             </div>
                           ))}
                         </div>
@@ -1112,18 +1146,28 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                   </div>
                   <div className="px-5 py-3 space-y-1.5">
                     {customSignups.map((sig) => (
-                      <div key={sig.id} className="flex items-start gap-2">
-                        <div className="w-5 h-5 rounded-full bg-[#FFF4E5] flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
-                            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
-                          </svg>
+                      <div key={sig.id} className="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-3 py-2.5">
+                        <div className="flex items-start gap-2">
+                          <div className="w-5 h-5 rounded-full bg-[#FFF4E5] flex items-center justify-center flex-shrink-0 mt-0.5">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="#d97706" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
+                              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                            </svg>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-sm text-[#0D2B35] font-medium">{sig.custom_label}</span>
+                            <span className="text-xs text-[#5A8399]"> · {sig.member_name}</span>
+                            {sig.member_email && <span className="text-xs text-[#5A8399] ml-1">({sig.member_email})</span>}
+                            {sig.signup_note && <p className="text-xs text-[#5A8399] mt-0.5 leading-snug">{sig.signup_note}</p>}
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <span className="text-sm text-[#0D2B35] font-medium">{sig.custom_label}</span>
-                          <span className="text-xs text-[#5A8399]"> · {sig.member_name}</span>
-                          {sig.member_email && <span className="text-xs text-[#5A8399] ml-1">({sig.member_email})</span>}
-                          {sig.signup_note && <p className="text-xs text-[#5A8399] mt-0.5 leading-snug">{sig.signup_note}</p>}
-                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItemSignup(sig.id, sig.member_name, sig.custom_label || "custom item")}
+                          aria-label={`Remove ${sig.member_name} from ${sig.custom_label || "custom item"}`}
+                          className="mt-2 px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 transition-colors"
+                        >
+                          Remove signup
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -1256,8 +1300,10 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                           </div>
                                         </div>
                                         <button
+                                          type="button"
                                           onClick={() => handleRemoveSignup(signup.id, signup.member_name)}
-                                          className="mt-2 text-[11px] font-medium text-red-500 hover:text-red-700 hover:underline transition-colors"
+                                          aria-label={`Remove ${signup.member_name} from this slot`}
+                                          className="mt-2 px-3 py-2 min-h-[44px] rounded-lg text-sm font-medium text-red-500 hover:bg-red-50 hover:text-red-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 transition-colors"
                                         >
                                           Remove signup
                                         </button>
