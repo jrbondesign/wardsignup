@@ -65,6 +65,16 @@ function formatSessionDate(iso: string, withYear = false): string {
   });
 }
 
+/** Format a slot label with article and proper time range: "the 5:00 to 7:00 PM slot" or "the 5:00 PM slot" */
+function formatSlotLabel(session: SessionWithSignups): string {
+  const startTime = formatTime(session.time);
+  if (session.end_time) {
+    const endTime = formatTime(session.end_time);
+    return `the ${startTime} to ${endTime} slot`;
+  }
+  return `the ${startTime} slot`;
+}
+
 /** Format last sync time as relative time (e.g. "2m ago", "1h ago") */
 function formatSyncTime(isoString: string): string {
   const now = Date.now();
@@ -1244,6 +1254,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                     setOpenMenuSignupId(null);
                                     menuButtonRefs.current.get(sig.id)?.focus();
                                   }}
+                                  buttonElement={menuButtonRefs.current.get(sig.id) || null}
                                 />
                               )}
                             </div>
@@ -1299,6 +1310,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                             setOpenMenuSignupId(null);
                             menuButtonRefs.current.get(sig.id)?.focus();
                           }}
+                          buttonElement={menuButtonRefs.current.get(sig.id) || null}
                         />
                       )}
                     </div>
@@ -1451,24 +1463,21 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                             contextLabel={
                                               session.section 
                                                 || session.label 
-                                                || (session.session_date 
-                                                  ? `${formatSessionDate(session.session_date, true)} ${formatTime(session.time)}` 
-                                                  : formatTime(session.time))
+                                                || formatSlotLabel(session)
                                             }
                                             onRemove={() => showConfirmRemove(
                                               signup.id, 
                                               signup.member_name, 
                                               session.section 
                                                 || session.label 
-                                                || (session.session_date 
-                                                  ? `${formatSessionDate(session.session_date, true)} ${formatTime(session.time)}` 
-                                                  : formatTime(session.time)),
+                                                || formatSlotLabel(session),
                                               false
                                             )}
                                             onClose={() => {
                                               setOpenMenuSignupId(null);
                                               menuButtonRefs.current.get(signup.id)?.focus();
                                             }}
+                                            buttonElement={menuButtonRefs.current.get(signup.id) || null}
                                           />
                                         )}
                                       </div>

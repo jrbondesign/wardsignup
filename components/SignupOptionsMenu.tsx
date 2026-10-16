@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 interface SignupOptionsMenuProps {
   memberName: string;
   contextLabel: string; // "Session Name" or "Item Name"
   onRemove: () => void;
   onClose: () => void;
+  buttonElement: HTMLElement | null;
 }
 
 export default function SignupOptionsMenu({
@@ -14,30 +16,40 @@ export default function SignupOptionsMenu({
   contextLabel,
   onRemove,
   onClose,
+  buttonElement,
 }: SignupOptionsMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const removeButtonRef = useRef<HTMLButtonElement>(null);
   const [isMobile, setIsMobile] = useState(false);
-  const [shouldFlipUp, setShouldFlipUp] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; flipUp: boolean } | null>(null);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   useEffect(() => {
     // Detect mobile on mount
-    setIsMobile(window.innerWidth < 768);
+    const checkMobile = () => window.innerWidth < 768;
+    setIsMobile(checkMobile());
 
-    // On desktop, check if we should flip the popover upward
-    if (window.innerWidth >= 768 && menuRef.current) {
-      const rect = menuRef.current.getBoundingClientRect();
+    // On desktop, calculate position from button
+    if (!checkMobile() && buttonElement) {
+      const buttonRect = buttonElement.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
-      const spaceBelow = viewportHeight - rect.bottom;
-      
-      // If there's less than 100px space below or the menu is cut off, flip upward
-      if (spaceBelow < 100 || rect.bottom > viewportHeight) {
-        setShouldFlipUp(true);
-      }
+      const menuHeight = 60; // Approximate menu height
+      const spaceBelow = viewportHeight - buttonRect.bottom;
+      const flipUp = spaceBelow < menuHeight + 20;
+
+      setMenuPosition({
+        left: buttonRect.right - 224, // 224px = w-56
+        top: flipUp ? buttonRect.top - menuHeight - 4 : buttonRect.bottom + 4,
+        flipUp,
+      });
     }
 
     const handleResize = () => {
-      setIsMobile(window.innerWidth < 768);
+      setIsMobile(checkMobile());
     };
 
     const handleEscape = (e: KeyboardEvent) => {
@@ -64,11 +76,13 @@ export default function SignupOptionsMenu({
       document.removeEventListener("keydown", handleEscape);
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [onClose]);
+  }, [onClose, buttonElement]);
+
+  if (!mounted) return null;
 
   if (isMobile) {
     // Bottom sheet on mobile
-    return (
+    return createPortal(
       <>
         <div className="fixed inset-0 bg-black/30 z-[100] animate-fade-in" onClick={onClose} />
         <div
@@ -78,7 +92,7 @@ export default function SignupOptionsMenu({
           aria-label={`Options for ${memberName}`}
         >
           <div className="px-4 py-3 border-b border-gray-200">
-            <h3 className="text-base font-semibold text-[#0D2B35]">Options for {memberName}</h3>
+            <h3 className="text-base font-bold text-[#0D2B35]">Options for {memberName}</h3>
           </div>
           <div className="p-2">
             <button
@@ -104,17 +118,24 @@ export default function SignupOptionsMenu({
             </button>
           </div>
         </div>
-      </>
+      </>,
+      document.body
     );
   }
 
-  // Desktop popover
-  return (
+  // Desktop popover in portal with fixed positioning
+  if (!menuPosition) return null;
+
+  return createPortal(
     <>
       <div className="fixed inset-0 z-[100]" onClick={onClose} />
       <div
         ref={menuRef}
-        className={`absolute right-0 ${shouldFlipUp ? 'bottom-full mb-1' : 'top-full mt-1'} w-56 bg-white border border-gray-200 rounded-lg shadow-[0_8px_28px_rgba(8,100,126,0.18)] z-[101] animate-fade-in`}
+        className="fixed w-56 bg-white border border-gray-200 rounded-lg shadow-[0_8px_28px_rgba(8,100,126,0.18)] z-[101] animate-fade-in"
+        style={{
+          top: `${menuPosition.top}px`,
+          left: `${menuPosition.left}px`,
+        }}
         role="menu"
         aria-label={`Options for ${memberName}`}
       >
@@ -133,6 +154,7 @@ export default function SignupOptionsMenu({
           </button>
         </div>
       </div>
-    </>
+    </>,
+    document.body
   );
 }
