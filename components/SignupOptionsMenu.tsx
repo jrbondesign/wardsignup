@@ -29,27 +29,59 @@ export default function SignupOptionsMenu({
   }, []);
 
   useEffect(() => {
-    // Detect mobile on mount
     const checkMobile = () => window.innerWidth < 768;
-    setIsMobile(checkMobile());
+    
+    const calculatePosition = () => {
+      if (checkMobile() || !buttonElement) return null;
 
-    // On desktop, calculate position from button
-    if (!checkMobile() && buttonElement) {
       const buttonRect = buttonElement.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+      const menuWidth = 280; // Min width to fit "Remove from the 5:00 to 7:00 PM slot"
       const menuHeight = 60; // Approximate menu height
-      const spaceBelow = viewportHeight - buttonRect.bottom;
-      const flipUp = spaceBelow < menuHeight + 20;
+      const gap = 4;
 
-      setMenuPosition({
-        left: buttonRect.right - 224, // 224px = w-56
-        top: flipUp ? buttonRect.top - menuHeight - 4 : buttonRect.bottom + 4,
-        flipUp,
-      });
-    }
+      const spaceBelow = viewportHeight - buttonRect.bottom;
+      const flipUp = spaceBelow < menuHeight + gap + 10;
+
+      // Right-align menu to button with gap
+      let left = buttonRect.right - menuWidth;
+      let top = flipUp ? buttonRect.top - menuHeight - gap : buttonRect.bottom + gap;
+
+      // Clamp to viewport bounds
+      const minLeft = 8; // 8px padding from edge
+      const maxLeft = viewportWidth - menuWidth - 8;
+      left = Math.max(minLeft, Math.min(left, maxLeft));
+
+      // Clamp top
+      const minTop = 8;
+      const maxTop = viewportHeight - menuHeight - 8;
+      top = Math.max(minTop, Math.min(top, maxTop));
+
+      return { left, top, flipUp };
+    };
+
+    const updatePosition = () => {
+      const mobile = checkMobile();
+      setIsMobile(mobile);
+      
+      if (!mobile && buttonElement) {
+        const pos = calculatePosition();
+        if (pos) {
+          setMenuPosition(pos);
+        }
+      }
+    };
+
+    // Initial position
+    updatePosition();
 
     const handleResize = () => {
-      setIsMobile(checkMobile());
+      updatePosition();
+    };
+
+    const handleScroll = () => {
+      updatePosition();
     };
 
     const handleEscape = (e: KeyboardEvent) => {
@@ -65,6 +97,7 @@ export default function SignupOptionsMenu({
     };
 
     window.addEventListener("resize", handleResize);
+    window.addEventListener("scroll", handleScroll, true);
     document.addEventListener("keydown", handleEscape);
     document.addEventListener("mousedown", handleClickOutside);
 
@@ -73,6 +106,7 @@ export default function SignupOptionsMenu({
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      window.removeEventListener("scroll", handleScroll, true);
       document.removeEventListener("keydown", handleEscape);
       document.removeEventListener("mousedown", handleClickOutside);
     };
@@ -131,10 +165,11 @@ export default function SignupOptionsMenu({
       <div className="fixed inset-0 z-[100]" onClick={onClose} />
       <div
         ref={menuRef}
-        className="fixed w-56 bg-white border border-gray-200 rounded-lg shadow-[0_8px_28px_rgba(8,100,126,0.18)] z-[101] animate-fade-in"
+        className="fixed bg-white border border-gray-200 rounded-lg shadow-[0_8px_28px_rgba(8,100,126,0.18)] z-[101] animate-fade-in"
         style={{
           top: `${menuPosition.top}px`,
           left: `${menuPosition.left}px`,
+          minWidth: '280px',
         }}
         role="menu"
         aria-label={`Options for ${memberName}`}
@@ -147,7 +182,7 @@ export default function SignupOptionsMenu({
               onClose();
               onRemove();
             }}
-            className="w-full min-h-[36px] px-3 py-2 text-left text-red-600 hover:bg-red-50 rounded-md transition-colors text-sm font-medium"
+            className="w-full min-h-[36px] px-3 py-2 text-left text-red-600 hover:bg-red-50 rounded-md transition-colors text-sm font-medium whitespace-nowrap"
             role="menuitem"
           >
             Remove from {contextLabel}
