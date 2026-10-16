@@ -24,15 +24,13 @@ export default function ShareEventModal({
   const [copied, setCopied] = useState(false);
   const [showToast, setShowToast] = useState(false);
 
-  // Add UTM tracking to share links
-  const shareableLinkWithUtm = withUtm(shareableLink, {
-    utm_source: 'event_share',
-    utm_medium: 'share',
-    utm_campaign: eventId
+  // Add ref tracking to share links (lightweight attribution)
+  const shareableLinkWithRef = withUtm(shareableLink, {
+    ref: 'share'
   });
 
   const copyToClipboard = () => {
-    navigator.clipboard.writeText(shareableLinkWithUtm);
+    navigator.clipboard.writeText(shareableLinkWithRef);
     posthog?.capture("event_shared", { event_id: eventId, method: "copy_link" });
     setCopied(true);
     setShowToast(true);
@@ -43,7 +41,7 @@ export default function ShareEventModal({
     posthog?.capture("event_shared", { event_id: eventId, method: "email" });
     const subject = encodeURIComponent(`Sign up for ${eventName}`);
     const body = encodeURIComponent(
-      `Hi,\n\nI'd like to invite you to sign up as a teacher for ${eventName}.\n\nClick here to view available sessions and sign up:\n${shareableLinkWithUtm}\n\nThank you!`
+      `Hi,\n\nI'd like to invite you to sign up as a teacher for ${eventName}.\n\nClick here to view available sessions and sign up:\n${shareableLinkWithRef}\n\nThank you!`
     );
     window.open(`mailto:?subject=${subject}&body=${body}`, "_blank");
   };
@@ -51,7 +49,7 @@ export default function ShareEventModal({
   const shareViaWhatsApp = () => {
     posthog?.capture("event_shared", { event_id: eventId, method: "whatsapp" });
     const text = encodeURIComponent(
-      `Sign up for ${eventName}: ${shareableLinkWithUtm}`
+      `Sign up for ${eventName}: ${shareableLinkWithRef}`
     );
     window.open(`https://wa.me/?text=${text}`, "_blank");
   };
@@ -59,7 +57,7 @@ export default function ShareEventModal({
   const shareViaSMS = () => {
     posthog?.capture("event_shared", { event_id: eventId, method: "sms" });
     const text = encodeURIComponent(
-      `Sign up for ${eventName}: ${shareableLinkWithUtm}`
+      `Sign up for ${eventName}: ${shareableLinkWithRef}`
     );
     window.open(`sms:?&body=${text}`, "_blank");
   };
@@ -103,7 +101,7 @@ export default function ShareEventModal({
             <div className="flex gap-2">
               <input
                 type="text"
-                value={shareableLinkWithUtm}
+                value={shareableLinkWithRef}
                 readOnly
                 className="flex-1 px-4 py-2 border border-gray-300 rounded-lg bg-gray-50"
               />
