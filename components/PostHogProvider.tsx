@@ -2,6 +2,8 @@
 
 import posthog from "posthog-js";
 import { PostHogProvider as PHProvider } from "posthog-js/react";
+import { useEffect } from "react";
+import { initAttributionTracking } from "@/lib/attribution";
 
 if (typeof window !== "undefined") {
   posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
@@ -14,17 +16,16 @@ if (typeof window !== "undefined") {
     property_denylist: [],
     capture_performance: true,
   });
-  
-  // Register ref parameter if present in URL (for share link attribution)
-  if (typeof window !== "undefined") {
-    const urlParams = new URLSearchParams(window.location.search);
-    const ref = urlParams.get("ref");
-    if (ref) {
-      posthog.register({ ref });
-    }
-  }
 }
 
 export function PostHogProvider({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    // Initialize attribution tracking on mount
+    // This captures first-touch attribution and sets PostHog person properties
+    if (typeof window !== "undefined") {
+      initAttributionTracking(posthog);
+    }
+  }, []);
+
   return <PHProvider client={posthog}>{children}</PHProvider>;
 }
