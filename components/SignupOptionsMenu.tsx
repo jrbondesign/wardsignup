@@ -16,11 +16,25 @@ export default function SignupOptionsMenu({
   onClose,
 }: SignupOptionsMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const removeButtonRef = useRef<HTMLButtonElement>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const [shouldFlipUp, setShouldFlipUp] = useState(false);
 
   useEffect(() => {
     // Detect mobile on mount
     setIsMobile(window.innerWidth < 768);
+
+    // On desktop, check if we should flip the popover upward
+    if (window.innerWidth >= 768 && menuRef.current) {
+      const rect = menuRef.current.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const spaceBelow = viewportHeight - rect.bottom;
+      
+      // If there's less than 100px space below or the menu is cut off, flip upward
+      if (spaceBelow < 100 || rect.bottom > viewportHeight) {
+        setShouldFlipUp(true);
+      }
+    }
 
     const handleResize = () => {
       setIsMobile(window.innerWidth < 768);
@@ -42,6 +56,9 @@ export default function SignupOptionsMenu({
     document.addEventListener("keydown", handleEscape);
     document.addEventListener("mousedown", handleClickOutside);
 
+    // Focus the Remove button when menu opens
+    setTimeout(() => removeButtonRef.current?.focus(), 0);
+
     return () => {
       window.removeEventListener("resize", handleResize);
       document.removeEventListener("keydown", handleEscape);
@@ -56,7 +73,7 @@ export default function SignupOptionsMenu({
         <div className="fixed inset-0 bg-black/30 z-[100] animate-fade-in" onClick={onClose} />
         <div
           ref={menuRef}
-          className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-8px_28px_rgba(8,100,126,0.18)] z-[101] animate-slide-up"
+          className="fixed bottom-0 left-0 right-0 bg-white rounded-t-2xl shadow-[0_-8px_28px_rgba(8,100,126,0.18)] z-[101] animate-slide-up pb-[max(1rem,env(safe-area-inset-bottom))]"
           role="menu"
           aria-label={`Options for ${memberName}`}
         >
@@ -65,6 +82,7 @@ export default function SignupOptionsMenu({
           </div>
           <div className="p-2">
             <button
+              ref={removeButtonRef}
               type="button"
               onClick={() => {
                 onClose();
@@ -76,7 +94,7 @@ export default function SignupOptionsMenu({
               Remove from {contextLabel}
             </button>
           </div>
-          <div className="p-4">
+          <div className="px-4 pb-4">
             <button
               type="button"
               onClick={onClose}
@@ -96,12 +114,13 @@ export default function SignupOptionsMenu({
       <div className="fixed inset-0 z-[100]" onClick={onClose} />
       <div
         ref={menuRef}
-        className="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-[0_8px_28px_rgba(8,100,126,0.18)] z-[101] animate-fade-in"
+        className={`absolute right-0 ${shouldFlipUp ? 'bottom-full mb-1' : 'top-full mt-1'} w-56 bg-white border border-gray-200 rounded-lg shadow-[0_8px_28px_rgba(8,100,126,0.18)] z-[101] animate-fade-in`}
         role="menu"
         aria-label={`Options for ${memberName}`}
       >
         <div className="p-1">
           <button
+            ref={removeButtonRef}
             type="button"
             onClick={() => {
               onClose();

@@ -194,7 +194,8 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       setToastMessage(`Removed ${memberName}`);
       setShowToast(true);
     } catch (err: any) {
-      alert(err.message || "Failed to remove signup. Please try again.");
+      setToastMessage(`Could not remove ${memberName}. Try again.`);
+      setShowToast(true);
     }
   };
 
@@ -219,7 +220,8 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       setToastMessage(`Removed ${memberName}`);
       setShowToast(true);
     } catch (err: any) {
-      alert(err.message || "Failed to remove signup. Please try again.");
+      setToastMessage(`Could not remove ${memberName}. Try again.`);
+      setShowToast(true);
     }
   };
 
@@ -232,17 +234,52 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
     const { signupId, memberName, isItemSignup } = confirmDialog;
     setConfirmDialog(null);
     
+    // Get all signup IDs in order before removing
+    const allSignupIds: string[] = [];
+    const slotHeadingIds: string[] = [];
+    
+    if (isItemSignup) {
+      // For items: collect signup IDs from all items and custom signups
+      items.forEach((item) => {
+        item.item_signups.forEach((sig) => allSignupIds.push(sig.id));
+      });
+      customSignups.forEach((sig) => allSignupIds.push(sig.id));
+    } else {
+      // For spots/rsvp: collect signup IDs from all sessions in grouped order
+      Object.entries(groupedSessions).forEach(([day, daySessions]) => {
+        const orderedSessions = orderSessionsBySection(daySessions);
+        orderedSessions.forEach((session) => {
+          slotHeadingIds.push(`slot-heading-${session.id}`);
+          session.signups.forEach((sig) => allSignupIds.push(sig.id));
+        });
+      });
+    }
+    
+    const currentIndex = allSignupIds.indexOf(signupId);
+    const nextSignupId = currentIndex >= 0 && currentIndex < allSignupIds.length - 1 
+      ? allSignupIds[currentIndex + 1] 
+      : null;
+    
     if (isItemSignup) {
       handleRemoveItemSignup(signupId, memberName, "");
     } else {
       handleRemoveSignup(signupId, memberName);
     }
     
-    // Return focus to the menu button
-    const button = menuButtonRefs.current.get(signupId);
-    if (button) {
-      setTimeout(() => button.focus(), 100);
-    }
+    // Move focus after removal
+    setTimeout(() => {
+      if (nextSignupId) {
+        // Move to next row's dots button
+        menuButtonRefs.current.get(nextSignupId)?.focus();
+      } else if (!isItemSignup && slotHeadingIds.length > 0) {
+        // Move to slot heading if this was the last signup in the slot
+        const lastHeading = document.getElementById(slotHeadingIds[slotHeadingIds.length - 1]);
+        if (lastHeading) {
+          lastHeading.setAttribute('tabindex', '-1');
+          lastHeading.focus();
+        }
+      }
+    }, 100);
   };
 
   const handleCancelRemove = () => {
@@ -1190,7 +1227,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                 type="button"
                                 onClick={() => setOpenMenuSignupId(sig.id)}
                                 aria-label={`Options for ${sig.member_name}`}
-                                className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
+                                className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
                               >
                                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                                   <circle cx="12" cy="5" r="2" />
@@ -1245,7 +1282,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                         type="button"
                         onClick={() => setOpenMenuSignupId(sig.id)}
                         aria-label={`Options for ${sig.member_name}`}
-                        className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
+                        className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
                       >
                         <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                           <circle cx="12" cy="5" r="2" />
@@ -1321,7 +1358,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                             <div className="border border-[#0E96B0]/12 rounded-xl p-4">
                               <div className="flex items-start justify-between gap-2 mb-3">
                                 <div className="min-w-0">
-                                  <div className="text-sm font-semibold text-[#0D2B35]">
+                                  <div id={`slot-heading-${session.id}`} className="text-sm font-semibold text-[#0D2B35]">
                                     {session.label || (
                                       <>
                                         {formatTime(session.time)}
@@ -1400,7 +1437,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                           type="button"
                                           onClick={() => setOpenMenuSignupId(signup.id)}
                                           aria-label={`Options for ${signup.member_name}`}
-                                          className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
+                                          className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
                                         >
                                           <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                                             <circle cx="12" cy="5" r="2" />
@@ -1411,8 +1448,23 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                         {openMenuSignupId === signup.id && (
                                           <SignupOptionsMenu
                                             memberName={signup.member_name}
-                                            contextLabel={session.section || `${formatTime(session.time)} slot`}
-                                            onRemove={() => showConfirmRemove(signup.id, signup.member_name, session.section || formatTime(session.time), false)}
+                                            contextLabel={
+                                              session.section 
+                                                || session.label 
+                                                || (session.session_date 
+                                                  ? `${formatSessionDate(session.session_date, true)} ${formatTime(session.time)}` 
+                                                  : formatTime(session.time))
+                                            }
+                                            onRemove={() => showConfirmRemove(
+                                              signup.id, 
+                                              signup.member_name, 
+                                              session.section 
+                                                || session.label 
+                                                || (session.session_date 
+                                                  ? `${formatSessionDate(session.session_date, true)} ${formatTime(session.time)}` 
+                                                  : formatTime(session.time)),
+                                              false
+                                            )}
                                             onClose={() => {
                                               setOpenMenuSignupId(null);
                                               menuButtonRefs.current.get(signup.id)?.focus();
