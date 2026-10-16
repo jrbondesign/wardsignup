@@ -16,12 +16,14 @@ export async function POST(request: NextRequest) {
 
     const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
     const brand = getBrandFromHost(host);
-    const brandGate = await ensureOrganizerBrandMatchesHost(supabase, user.id, brand);
+    
+    const body = await request.json().catch(() => ({}));
+    const attribution = body?.attribution;
+    const brandGate = await ensureOrganizerBrandMatchesHost(supabase, user.id, brand, attribution);
     if (!brandGate.ok) {
       return NextResponse.json({ error: brandGate.message }, { status: 403 });
     }
 
-    const body = await request.json().catch(() => ({}));
     const rawName = typeof body?.name === "string" ? body.name.trim() : "";
     if (!rawName) {
       return NextResponse.json({ error: "Organization name is required" }, { status: 400 });
@@ -41,7 +43,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const org = await createOrganization(supabase, user, brand.id, rawName);
+    const org = await createOrganization(supabase, user, brand.id, rawName, attribution);
     return NextResponse.json({ organization: org }, { status: 201 });
   } catch (error) {
     console.error("POST /api/organizations error:", error);

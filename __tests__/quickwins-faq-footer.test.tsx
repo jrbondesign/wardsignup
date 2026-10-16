@@ -21,7 +21,7 @@ describe("FAQ meta", () => {
 describe("MadeWithFooter", () => {
   it("links home with UTM tags", () => {
     expect(madeWithHref("https://wardsignup.com")).toBe(
-      "https://wardsignup.com/?utm_source=signup_sheet&utm_medium=footer&utm_campaign=made_with"
+      "https://wardsignup.com/?utm_source=signup_sheet&utm_medium=referral&utm_campaign=made_with"
     );
   });
   it("renders dash free copy", () => {

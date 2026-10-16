@@ -256,7 +256,7 @@ export default function SignupSuccessPage() {
                 onClick={handleRunYourOwnClick}
                 className="text-[13px] text-[#0E96B0] hover:text-[#08647E] font-semibold transition-colors"
               >
-                Run your own ward signup, free →
+                Run your own ward signup, free
               </Link>
             </div>
           </>

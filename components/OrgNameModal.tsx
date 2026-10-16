@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { getStoredAttribution } from "@/lib/attribution";
 
 interface OrgNameModalProps {
   /** When provided, modal renames an existing org via PATCH; otherwise creates via POST. */
@@ -50,13 +51,17 @@ export default function OrgNameModal({
       }
       const url = orgId ? `/api/organizations/${orgId}` : `/api/organizations`;
       const method = orgId ? "PATCH" : "POST";
+      
+      // Get attribution for new orgs only
+      const attribution = orgId ? undefined : getStoredAttribution();
+      
       const res = await fetch(url, {
         method,
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ name: trimmed }),
+        body: JSON.stringify({ name: trimmed, attribution }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {

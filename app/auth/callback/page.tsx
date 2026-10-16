@@ -15,6 +15,7 @@ import {
 } from "@/lib/auth-return-path";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { usePostHog } from "posthog-js/react";
+import { getStoredAttribution } from "@/lib/attribution";
 
 /** Remove ?code=, hash fragments (#access_token), etc. from the address bar after auth. */
 function stripSensitiveUrlParams() {
@@ -72,11 +73,16 @@ function AuthCallbackContent() {
     }
     welcomeFiredForSubRef.current = guardId;
 
+    // Send attribution from localStorage with welcome email
+    const attribution = getStoredAttribution();
+
     void fetch("/api/welcome", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({ attribution }),
     }).catch((err) => {
       console.error("Welcome email error:", err);
     });

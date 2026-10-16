@@ -14,6 +14,7 @@ import NotificationsSection from "@/components/create/sections/NotificationsSect
 import GoogleCalendarSection from "@/components/create/sections/GoogleCalendarSection";
 import EventSettingsSection from "@/components/create/sections/EventSettingsSection";
 import ComponentCard from "@/components/create/sections/ComponentCard";
+import { getStoredAttribution } from "@/lib/attribution";
 import {
   INITIAL_FORM_STATE,
   SPOTS_SCHEDULE_FIELDS,
@@ -328,6 +329,9 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
         return;
       }
 
+      // Get attribution from localStorage
+      const attribution = getStoredAttribution();
+
       // POST /api/events
       const res = await fetch("/api/events", {
         method: "POST",
@@ -340,6 +344,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
           allow_guests: state.allowGuests,
           show_capacity_publicly: state.showCapacityPublicly,
           list_on_directory: state.listOnDirectory,
+          attribution,
         }),
       });
       if (!res.ok) {

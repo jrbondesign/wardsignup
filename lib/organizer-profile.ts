@@ -2,18 +2,28 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { BrandId } from "@/lib/brand";
 import type { PublicBrand } from "@/lib/brand";
 
+export interface AttributionData {
+  first_touch_utm_source?: string;
+  first_touch_utm_medium?: string;
+  first_touch_utm_campaign?: string;
+  first_touch_ref?: string;
+}
+
 /**
  * Ensure the signed-in user has an organizer profile for this brand (same login can have Ward + Ministry).
  * Inserts a row for (user_id, brand_id) on first use of that site.
+ * 
+ * @param attribution - Optional first-touch attribution to set (only written if columns are null)
  */
 export async function ensureOrganizerBrandMatchesHost(
   supabase: SupabaseClient,
   userId: string,
   brand: PublicBrand,
+  attribution?: AttributionData | null,
 ): Promise<{ ok: true; brandId: BrandId } | { ok: false; message: string }> {
   const { data: existing, error: selErr } = await supabase
     .from("organizer_profiles")
-    .select("brand_id")
+    .select("brand_id, first_touch_utm_source")
     .eq("user_id", userId)
     .eq("brand_id", brand.id)
     .maybeSingle();
@@ -24,15 +34,44 @@ export async function ensureOrganizerBrandMatchesHost(
   }
 
   if (!existing) {
-    const { error: insErr } = await supabase.from("organizer_profiles").insert({
+    // New profile: write attribution if provided
+    const insertData: Record<string, unknown> = {
       user_id: userId,
       brand_id: brand.id,
-    } as never);
+    };
+    
+    if (attribution) {
+      if (attribution.first_touch_utm_source) insertData.first_touch_utm_source = attribution.first_touch_utm_source;
+      if (attribution.first_touch_utm_medium) insertData.first_touch_utm_medium = attribution.first_touch_utm_medium;
+      if (attribution.first_touch_utm_campaign) insertData.first_touch_utm_campaign = attribution.first_touch_utm_campaign;
+      if (attribution.first_touch_ref) insertData.first_touch_ref = attribution.first_touch_ref;
+      insertData.first_touch_captured_at = new Date().toISOString();
+    }
+    
+    const { error: insErr } = await supabase.from("organizer_profiles").insert(insertData as never);
     if (insErr) {
       console.error("organizer_profiles insert:", insErr);
       return { ok: false, message: "Could not complete account setup" };
     }
     return { ok: true, brandId: brand.id };
+  }
+
+  // Profile exists: only write attribution if columns are currently null
+  if (attribution && existing.first_touch_utm_source === null) {
+    const updateData: Record<string, unknown> = {};
+    if (attribution.first_touch_utm_source) updateData.first_touch_utm_source = attribution.first_touch_utm_source;
+    if (attribution.first_touch_utm_medium) updateData.first_touch_utm_medium = attribution.first_touch_utm_medium;
+    if (attribution.first_touch_utm_campaign) updateData.first_touch_utm_campaign = attribution.first_touch_utm_campaign;
+    if (attribution.first_touch_ref) updateData.first_touch_ref = attribution.first_touch_ref;
+    if (Object.keys(updateData).length > 0) {
+      updateData.first_touch_captured_at = new Date().toISOString();
+      await supabase
+        .from("organizer_profiles")
+        .update(updateData as never)
+        .eq("user_id", userId)
+        .eq("brand_id", brand.id)
+        .is("first_touch_utm_source", null);
+    }
   }
 
   return { ok: true, brandId: existing.brand_id as BrandId };
