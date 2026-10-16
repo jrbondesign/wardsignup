@@ -43,6 +43,11 @@ if (isProd) {
 }
 
 const nextConfig = {
+  env: {
+    // Test-only: expose Vercel environment for bot check bypass logic
+    NEXT_PUBLIC_VERCEL_ENV: process.env.VERCEL_ENV,
+    NEXT_PUBLIC_DISABLE_BOTID_FOR_TESTS: process.env.DISABLE_BOTID_FOR_TESTS,
+  },
   images: {
     remotePatterns: [
       {

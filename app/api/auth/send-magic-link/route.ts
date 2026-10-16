@@ -71,12 +71,19 @@ export async function POST(request: NextRequest) {
 
     // Invisible bot check (Vercel BotID). Bots requesting links create unconfirmed
     // auth accounts and burn email quota; humans never see a challenge.
-    const verification = await checkBotId();
-    if (verification.isBot) {
-      return NextResponse.json(
-        { error: "We couldn't verify this request. Please refresh and try again." },
-        { status: 403 },
-      );
+    // Test-only: skip bot check in preview environments when DISABLE_BOTID_FOR_TESTS=1
+    const skipBotCheck =
+      process.env.VERCEL_ENV === "preview" &&
+      process.env.DISABLE_BOTID_FOR_TESTS === "1";
+    
+    if (!skipBotCheck) {
+      const verification = await checkBotId();
+      if (verification.isBot) {
+        return NextResponse.json(
+          { error: "We couldn't verify this request. Please refresh and try again." },
+          { status: 403 },
+        );
+      }
     }
 
     const rate = await consumeActionRate("magic_link", request, 10);
