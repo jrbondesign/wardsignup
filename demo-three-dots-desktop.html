@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Three-Dots Menu Demo - Desktop</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body {
+      width: 1280px;
+      margin: 0 auto;
+      background: #F4FAFB;
+      font-family: system-ui, -apple-system, sans-serif;
+    }
+    @keyframes fade-in {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+    .animate-fade-in {
+      animation: fade-in 0.2s ease-out;
+    }
+  </style>
+</head>
+<body class="p-10">
+  <div class="max-w-3xl mx-auto">
+    <!-- Slot with 6 signups and three-dots buttons -->
+    <div class="bg-white rounded-2xl shadow-lg p-6">
+      <div class="mb-6 pb-6 border-b border-gray-200">
+        <div class="flex items-center justify-between mb-2">
+          <h2 class="font-serif text-2xl text-gray-900">Chili Cook-Off</h2>
+          <span class="text-sm font-semibold px-3 py-1.5 rounded-full bg-orange-50 text-orange-700">
+            6/15 filled
+          </span>
+        </div>
+        <div class="text-sm text-gray-500">Wednesday, Oct 23 · 7:00 PM</div>
+      </div>
+
+      <div class="mt-4 pt-4 border-t border-gray-100">
+        <div class="text-xs font-semibold text-gray-700 mb-3 uppercase tracking-wide">Signed Up</div>
+        <div class="space-y-2">
+          
+          <!-- Signup 1 -->
+          <div class="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-4 py-3 relative">
+            <div class="flex items-start gap-3 pr-12">
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-[#0D2B35]">Sarah Johnson</div>
+                <div class="text-xs text-[#5A8399] mt-1">sarah.j@email.com</div>
+              </div>
+            </div>
+            <button type="button" aria-label="Options for Sarah Johnson" class="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Signup 2 -->
+          <div class="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-4 py-3 relative">
+            <div class="flex items-start gap-3 pr-12">
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-[#0D2B35]">Michael Chen</div>
+                <div class="text-xs text-[#5A8399] mt-1">michael.c@email.com</div>
+              </div>
+            </div>
+            <button type="button" class="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Signup 3 -->
+          <div class="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-4 py-3 relative">
+            <div class="flex items-start gap-3 pr-12">
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-[#0D2B35]">Emily Rodriguez</div>
+                <div class="text-xs text-[#5A8399] mt-1">emily.r@email.com</div>
+              </div>
+            </div>
+            <button type="button" class="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Signup 4 -->
+          <div class="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-4 py-3 relative">
+            <div class="flex items-start gap-3 pr-12">
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-[#0D2B35]">David Kim</div>
+                <div class="text-xs text-[#5A8399] mt-1">david.k@email.com</div>
+              </div>
+            </div>
+            <button type="button" class="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Signup 5 -->
+          <div class="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-4 py-3 relative">
+            <div class="flex items-start gap-3 pr-12">
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-[#0D2B35]">Jessica Martinez</div>
+                <div class="text-xs text-[#5A8399] mt-1">jessica.m@email.com</div>
+              </div>
+            </div>
+            <button type="button" class="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+          </div>
+
+          <!-- Signup 6 - with popover OPEN -->
+          <div class="bg-[#F4FAFB] border border-[#0E96B0]/8 rounded-lg px-4 py-3 relative">
+            <div class="flex items-start gap-3 pr-12">
+              <div class="flex-1 min-w-0">
+                <div class="text-sm font-medium text-[#0D2B35]">Ryan Thompson</div>
+                <div class="text-xs text-[#5A8399] mt-1">ryan.t@email.com</div>
+              </div>
+            </div>
+            <button type="button" aria-label="Options for Ryan Thompson" class="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-600 bg-gray-100">
+              <svg viewBox="0 0 24 24" fill="currentColor" class="w-5 h-5">
+                <circle cx="12" cy="5" r="2" />
+                <circle cx="12" cy="12" r="2" />
+                <circle cx="12" cy="19" r="2" />
+              </svg>
+            </button>
+            
+            <!-- Desktop Popover Menu -->
+            <div class="absolute right-0 top-full mt-1 w-56 bg-white border border-gray-200 rounded-lg shadow-[0_8px_28px_rgba(8,100,126,0.18)] z-[101] animate-fade-in">
+              <div class="p-1">
+                <button type="button" class="w-full min-h-[36px] px-3 py-2 text-left text-red-600 hover:bg-red-50 rounded-md transition-colors text-sm font-medium">
+                  Remove from Chili Cook-Off
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+
+</body>
+</html>
