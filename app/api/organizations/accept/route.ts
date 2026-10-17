@@ -40,12 +40,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const admin = createServiceRoleClient();
     const tokenHash = hashToken(token);
 
     // Use the transactional RPC function for secure acceptance
-    // RPC reads user_id and email from auth.uid() and auth.users for security
-    const { data: result, error: acceptErr } = await admin.rpc(
+    // Must use the user's own session client (not service-role) so auth.uid() works
+    const { data: result, error: acceptErr } = await auth.supabase.rpc(
       "accept_organization_invite",
       { p_token_hash: tokenHash } as never,
     );
@@ -91,6 +90,7 @@ export async function POST(request: NextRequest) {
     // Determine where to send the user after acceptance:
     // 1. If exactly one active campaign, go to its admin page
     // 2. Otherwise, go to dashboard filtered by this org
+    const admin = createServiceRoleClient();
     const { data: campaigns } = await admin
       .from("campaigns")
       .select("id")

@@ -89,23 +89,37 @@ export async function POST(request: NextRequest) {
 
     const admin = createServiceRoleClient();
 
-    // Validate invite and get email
-    const { data: invite, error: lookupErr } = await admin.rpc(
-      "validate_and_get_invite",
-      { p_token_hash: tokenHash } as never,
-    );
+    // Look up the invite with service-role to get the real email (never return to client)
+    // Check both hashed and legacy plaintext tokens
+    const { data: inviteByHash } = await admin
+      .from("organization_members")
+      .select("invited_email, organization_id, organizations(name)")
+      .eq("accept_token_hash", tokenHash)
+      .eq("status", "pending")
+      .maybeSingle();
 
-    if (lookupErr || !invite || (Array.isArray(invite) && (invite as unknown[]).length === 0)) {
-      console.error("invite-magic-link: lookup error:", lookupErr);
+    let inviteRow = inviteByHash;
+    
+    // If not found by hash, try legacy plaintext (hash the token first for comparison)
+    if (!inviteRow) {
+      const { data: inviteByPlaintext } = await admin
+        .from("organization_members")
+        .select("invited_email, organization_id, organizations(name)")
+        .eq("accept_token", token)
+        .eq("status", "pending")
+        .maybeSingle();
+      inviteRow = inviteByPlaintext;
+    }
+
+    if (!inviteRow) {
       return NextResponse.json(
         { error: "Invitation not found or expired" },
         { status: 404 },
       );
     }
 
-    const inviteData = Array.isArray(invite) ? (invite as unknown[])[0] : invite;
-    const email = normalizeEmail((inviteData as { invited_email: string }).invited_email);
-    const organizationName = (inviteData as { organization_name: string }).organization_name;
+    const email = normalizeEmail((inviteRow as { invited_email: string }).invited_email);
+    const organizationName = ((inviteRow as { organizations?: { name: string } | null }).organizations?.name) ?? "this organization";
 
     if (!email) {
       return NextResponse.json({ error: "Invalid invitation" }, { status: 400 });

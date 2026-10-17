@@ -16,6 +16,12 @@ function hashToken(token: string): string {
   return createHash("sha256").update(token).digest("hex");
 }
 
+function isValidTokenFormat(token: string): boolean {
+  // Tokens should be hex strings (32 bytes = 64 hex chars for new tokens)
+  // But legacy tokens may vary, so just check for reasonable length and chars
+  return /^[a-zA-Z0-9_-]{16,128}$/.test(token);
+}
+
 /**
  * POST /api/organizations/invite-info
  * 
@@ -31,8 +37,8 @@ export async function POST(request: NextRequest) {
     }
 
     const token = typeof body.token === "string" ? body.token.trim() : "";
-    if (!token) {
-      return NextResponse.json({ error: "Missing invite token" }, { status: 400 });
+    if (!token || !isValidTokenFormat(token)) {
+      return NextResponse.json({ error: "Invalid invite token format" }, { status: 400 });
     }
 
     if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -53,12 +59,27 @@ export async function POST(request: NextRequest) {
 
     if (lookupErr || !invite || (Array.isArray(invite) && (invite as unknown[]).length === 0)) {
       // Check if it's an already-accepted or revoked invite for better error messages
-      // Check both token fields for backward compatibility
-      const { data: usedInvite } = await admin
+      // Use separate queries to prevent filter injection
+      let usedInvite = null;
+      
+      // Try by hash first
+      const { data: byHash } = await admin
         .from("organization_members")
         .select("status, token_expires_at")
-        .or(`accept_token_hash.eq.${tokenHash},accept_token.eq.${token}`)
+        .eq("accept_token_hash", tokenHash)
         .maybeSingle();
+      
+      if (byHash) {
+        usedInvite = byHash;
+      } else {
+        // Try by plaintext for legacy tokens
+        const { data: byPlaintext } = await admin
+          .from("organization_members")
+          .select("status, token_expires_at")
+          .eq("accept_token", token)
+          .maybeSingle();
+        usedInvite = byPlaintext;
+      }
 
       if (usedInvite) {
         if ((usedInvite as { status: string }).status === "revoked") {

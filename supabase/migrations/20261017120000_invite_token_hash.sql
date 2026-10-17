@@ -18,10 +18,7 @@ CREATE OR REPLACE FUNCTION public.validate_and_get_invite(
     p_token_hash TEXT
 )
 RETURNS TABLE (
-    member_id UUID,
-    organization_id UUID,
     masked_invited_email TEXT,
-    transfer_on_accept BOOLEAN,
     organization_name TEXT,
     inviter_display_name TEXT
 )
@@ -37,28 +34,37 @@ DECLARE
 BEGIN
     RETURN QUERY
     SELECT
-        om.id,
-        om.organization_id,
-        -- Mask the invited email: j***@e***.com
-        SUBSTRING(om.invited_email FROM 1 FOR 1) || '***@' || 
-        SUBSTRING(SPLIT_PART(om.invited_email, '@', 2) FROM 1 FOR 1) || '***.' ||
-        SUBSTRING(SPLIT_PART(om.invited_email, '@', 2) FROM POSITION('.' IN SPLIT_PART(om.invited_email, '@', 2)) + 1),
-        om.transfer_on_accept,
+        -- Mask the invited email: j***@e***.com or j***@domain (for no-dot domains)
+        CASE 
+            WHEN POSITION('.' IN SPLIT_PART(om.invited_email, '@', 2)) > 0 THEN
+                SUBSTRING(om.invited_email FROM 1 FOR 1) || '***@' || 
+                SUBSTRING(SPLIT_PART(om.invited_email, '@', 2) FROM 1 FOR 1) || '***.' ||
+                SUBSTRING(SPLIT_PART(om.invited_email, '@', 2) FROM POSITION('.' IN SPLIT_PART(om.invited_email, '@', 2)) + 1)
+            ELSE
+                SUBSTRING(om.invited_email FROM 1 FOR 1) || '***@' ||
+                SUBSTRING(SPLIT_PART(om.invited_email, '@', 2) FROM 1 FOR 1) || '***'
+        END,
         o.name,
         -- Inviter display: use name if available, otherwise masked email
         CASE 
             WHEN COALESCE(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name', '') <> '' 
             THEN COALESCE(u.raw_user_meta_data->>'full_name', u.raw_user_meta_data->>'name', '')
-            WHEN u.email IS NOT NULL
+            WHEN u.email IS NOT NULL AND POSITION('.' IN SPLIT_PART(u.email, '@', 2)) > 0
             THEN SUBSTRING(u.email FROM 1 FOR 1) || '***@' || 
                  SUBSTRING(SPLIT_PART(u.email, '@', 2) FROM 1 FOR 1) || '***.' ||
                  SUBSTRING(SPLIT_PART(u.email, '@', 2) FROM POSITION('.' IN SPLIT_PART(u.email, '@', 2)) + 1)
+            WHEN u.email IS NOT NULL
+            THEN SUBSTRING(u.email FROM 1 FOR 1) || '***@' ||
+                 SUBSTRING(SPLIT_PART(u.email, '@', 2) FROM 1 FOR 1) || '***'
             ELSE ''
         END
     FROM public.organization_members om
     JOIN public.organizations o ON o.id = om.organization_id
     LEFT JOIN auth.users u ON u.id = om.invited_by
-    WHERE (om.accept_token_hash = p_token_hash OR om.accept_token = p_token_hash)
+    WHERE (
+        om.accept_token_hash = p_token_hash 
+        OR (om.accept_token IS NOT NULL AND encode(extensions.digest(om.accept_token, 'sha256'), 'hex') = p_token_hash)
+    )
       AND om.status = 'pending'
       AND (om.token_expires_at IS NULL OR om.token_expires_at > NOW());
 END;
@@ -123,7 +129,10 @@ BEGIN
     INTO v_invite
     FROM public.organization_members om
     JOIN public.organizations o ON o.id = om.organization_id
-    WHERE (om.accept_token_hash = p_token_hash OR om.accept_token = p_token_hash)
+    WHERE (
+        om.accept_token_hash = p_token_hash 
+        OR (om.accept_token IS NOT NULL AND encode(extensions.digest(om.accept_token, 'sha256'), 'hex') = p_token_hash)
+    )
       AND om.status = 'pending'
       AND (om.token_expires_at IS NULL OR om.token_expires_at > NOW())
     FOR UPDATE;
