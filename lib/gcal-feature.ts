@@ -37,8 +37,8 @@ export function isGcalSyncEnabledForOrg(orgId: string): boolean {
 
 /**
  * Client-side check: is Google Calendar sync UI visible?
- * When orgId is provided, also checks the client org allowlist.
- * When orgId is omitted, only checks the global client flag.
+ * Requires both the global flag and an org in the allowlist.
+ * Returns false when no orgId is provided (fail closed).
  */
 export function isGcalSyncUIEnabled(orgId?: string): boolean {
   // Client flag must be exactly "1"
@@ -46,9 +46,9 @@ export function isGcalSyncUIEnabled(orgId?: string): boolean {
     return false;
   }
 
-  // If no org provided, just check the flag
+  // Fail closed: require an org id to check the allowlist
   if (!orgId) {
-    return true;
+    return false;
   }
 
   // Check client allowlist: comma-separated org UUIDs; empty/unset = nobody

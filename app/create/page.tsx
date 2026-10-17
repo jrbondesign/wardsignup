@@ -128,7 +128,18 @@ function CreateInner() {
               const { data: { session } } = await supabase.auth.getSession();
               return session?.access_token ?? null;
             }}
-            onComplete={() => setOrgState({ kind: "ready" })}
+            onComplete={async () => {
+              const supabase = createClientComponentClient();
+              const { data: { user: authUser } } = await supabase.auth.getUser();
+              if (authUser) {
+                const org = await getCurrentOrganization(supabase, authUser, brand.id);
+                if (org) {
+                  setOrgName(org.name);
+                  setOrgId(org.id);
+                }
+              }
+              setOrgState({ kind: "ready" });
+            }}
             onDismiss={() => router.push("/dashboard")}
           />
         )}

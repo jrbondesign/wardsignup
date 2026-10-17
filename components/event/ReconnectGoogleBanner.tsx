@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClientComponentClient } from "@/lib/auth";
 import { CONNECTION_BROKEN_ERROR, isConnectionBroken } from "@/lib/google-calendar-connection";
+import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
 
 type Props = {
   campaignId: string;
@@ -57,7 +58,8 @@ export default function ReconnectGoogleBanner({ campaignId, organizationId, last
     };
   }, [campaignId]);
 
-  if (!broken || !organizationId) return null;
+  // Feature gate: require allowlisted org
+  if (!broken || !organizationId || !isGcalSyncUIEnabled(organizationId)) return null;
 
   const reconnect = async () => {
     setBusy(true);
