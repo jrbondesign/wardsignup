@@ -63,15 +63,38 @@ export async function middleware(request: NextRequest) {
   }
 
   if (isProtectedPath(path) && !user) {
+    // Validate next param: must be relative, single leading /, no //, no scheme/backslash
+    const fullPath = `${path}${request.nextUrl.search}`;
+    let validNext = fullPath;
+    
+    if (!fullPath.startsWith("/") || fullPath.startsWith("//") || fullPath.includes("\\") || /^[a-z][a-z0-9+.-]*:/i.test(fullPath)) {
+      validNext = path; // Strip invalid query
+    }
+    
     const loginUrl = request.nextUrl.clone();
     loginUrl.pathname = "/login";
-    loginUrl.searchParams.set("next", `${path}${request.nextUrl.search}`);
+    loginUrl.searchParams.set("next", validNext);
     const redirect = NextResponse.redirect(loginUrl);
     copyCookies(response, redirect);
     return redirect;
   }
 
   if (path === "/login" && user) {
+    // Preserve next param for validated paths (e.g., invite acceptance flow)
+    const nextParam = request.nextUrl.searchParams.get("next");
+    const validNext = nextParam?.startsWith("/orgs/accept") ? nextParam : null;
+    
+    if (validNext) {
+      // User is signed in and has a valid next destination
+      const dest = request.nextUrl.clone();
+      dest.pathname = validNext.split("?")[0];
+      dest.search = validNext.includes("?") ? validNext.split("?")[1] : "";
+      const redirect = NextResponse.redirect(dest);
+      copyCookies(response, redirect);
+      return redirect;
+    }
+    
+    // Default: redirect to dashboard
     const dash = request.nextUrl.clone();
     dash.pathname = "/dashboard";
     dash.search = "";
