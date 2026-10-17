@@ -5,14 +5,28 @@
 
 import { createHmac, randomBytes, createCipheriv, createDecipheriv } from 'crypto';
 
-const GOOGLE_OAUTH_CLIENT_ID = process.env.GOOGLE_OAUTH_CLIENT_ID || '';
-const GOOGLE_OAUTH_CLIENT_SECRET = process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
-const GOOGLE_TOKEN_ENC_KEY = process.env.GOOGLE_TOKEN_ENC_KEY || ''; // 32 bytes base64
-const GOOGLE_OAUTH_CALLBACK_URL = process.env.NEXT_PUBLIC_SITE_URL 
-  ? `${process.env.NEXT_PUBLIC_SITE_URL}/api/integrations/google/callback`
-  : 'https://wardsignup.com/api/integrations/google/callback';
+function getGoogleOAuthClientId(): string {
+  return process.env.GOOGLE_OAUTH_CLIENT_ID || '';
+}
 
-const STATE_SECRET = process.env.GOOGLE_OAUTH_STATE_SECRET || process.env.CRON_SECRET || 'dev-secret-change-in-prod';
+function getGoogleOAuthClientSecret(): string {
+  return process.env.GOOGLE_OAUTH_CLIENT_SECRET || '';
+}
+
+function getGoogleTokenEncKey(): string {
+  return process.env.GOOGLE_TOKEN_ENC_KEY || '';
+}
+
+function getGoogleOAuthCallbackUrl(): string {
+  return process.env.NEXT_PUBLIC_SITE_URL 
+    ? `${process.env.NEXT_PUBLIC_SITE_URL}/api/integrations/google/callback`
+    : 'https://wardsignup.com/api/integrations/google/callback';
+}
+
+function getStateSecret(): string {
+  return process.env.GOOGLE_OAUTH_STATE_SECRET || process.env.CRON_SECRET || 'dev-secret-change-in-prod';
+}
+
 const STATE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes
 
 export interface OAuthState {
@@ -37,7 +51,7 @@ export interface TokenResponse {
 export function signState(state: OAuthState): string {
   const payload = JSON.stringify(state);
   const payloadB64 = Buffer.from(payload).toString('base64url');
-  const hmac = createHmac('sha256', STATE_SECRET);
+  const hmac = createHmac('sha256', getStateSecret());
   hmac.update(payloadB64);
   const signature = hmac.digest('base64url');
   return `${payloadB64}.${signature}`;
@@ -54,7 +68,7 @@ export function verifyState(signed: string): OAuthState | null {
     const [payloadB64, signature] = parts;
     
     // Verify signature
-    const hmac = createHmac('sha256', STATE_SECRET);
+    const hmac = createHmac('sha256', getStateSecret());
     hmac.update(payloadB64);
     const expectedSignature = hmac.digest('base64url');
     
@@ -80,6 +94,7 @@ export function verifyState(signed: string): OAuthState | null {
  * Encrypt refresh token with AES-256-GCM.
  */
 export function encryptToken(plaintext: string): string {
+  const GOOGLE_TOKEN_ENC_KEY = getGoogleTokenEncKey();
   if (!GOOGLE_TOKEN_ENC_KEY) {
     throw new Error('GOOGLE_TOKEN_ENC_KEY not set');
   }
@@ -105,6 +120,7 @@ export function encryptToken(plaintext: string): string {
  * Decrypt refresh token with AES-256-GCM.
  */
 export function decryptToken(encrypted: string): string {
+  const GOOGLE_TOKEN_ENC_KEY = getGoogleTokenEncKey();
   if (!GOOGLE_TOKEN_ENC_KEY) {
     throw new Error('GOOGLE_TOKEN_ENC_KEY not set');
   }
@@ -136,6 +152,7 @@ export function decryptToken(encrypted: string): string {
  * Build Google OAuth authorization URL.
  */
 export function buildAuthUrl(state: OAuthState): string {
+  const GOOGLE_OAUTH_CLIENT_ID = getGoogleOAuthClientId();
   if (!GOOGLE_OAUTH_CLIENT_ID) {
     throw new Error('GOOGLE_OAUTH_CLIENT_ID not set');
   }
@@ -144,7 +161,7 @@ export function buildAuthUrl(state: OAuthState): string {
   
   const params = new URLSearchParams({
     client_id: GOOGLE_OAUTH_CLIENT_ID,
-    redirect_uri: GOOGLE_OAUTH_CALLBACK_URL,
+    redirect_uri: getGoogleOAuthCallbackUrl(),
     response_type: 'code',
     // Calendar scopes only. Mixing Sign-In scopes (userinfo.email / openid) into this
     // incremental calendar consent URL has caused Google to return a bare 500 page.
@@ -162,6 +179,8 @@ export function buildAuthUrl(state: OAuthState): string {
  * Exchange authorization code for tokens.
  */
 export async function exchangeCode(code: string): Promise<TokenResponse> {
+  const GOOGLE_OAUTH_CLIENT_ID = getGoogleOAuthClientId();
+  const GOOGLE_OAUTH_CLIENT_SECRET = getGoogleOAuthClientSecret();
   if (!GOOGLE_OAUTH_CLIENT_ID || !GOOGLE_OAUTH_CLIENT_SECRET) {
     throw new Error('Google OAuth credentials not configured');
   }
@@ -175,7 +194,7 @@ export async function exchangeCode(code: string): Promise<TokenResponse> {
       code,
       client_id: GOOGLE_OAUTH_CLIENT_ID,
       client_secret: GOOGLE_OAUTH_CLIENT_SECRET,
-      redirect_uri: GOOGLE_OAUTH_CALLBACK_URL,
+      redirect_uri: getGoogleOAuthCallbackUrl(),
       grant_type: 'authorization_code',
     }),
   });
@@ -192,6 +211,8 @@ export async function exchangeCode(code: string): Promise<TokenResponse> {
  * Refresh access token from encrypted refresh token.
  */
 export async function refreshAccessToken(refreshTokenEnc: string): Promise<TokenResponse> {
+  const GOOGLE_OAUTH_CLIENT_ID = getGoogleOAuthClientId();
+  const GOOGLE_OAUTH_CLIENT_SECRET = getGoogleOAuthClientSecret();
   if (!GOOGLE_OAUTH_CLIENT_ID || !GOOGLE_OAUTH_CLIENT_SECRET) {
     throw new Error('Google OAuth credentials not configured');
   }

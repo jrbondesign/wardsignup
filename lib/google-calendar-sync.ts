@@ -20,10 +20,12 @@ import {
   markConnectionBroken,
 } from './google-calendar-health';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+function getSupabaseClient() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 export interface SyncResult {
   success: boolean;
@@ -73,6 +75,7 @@ interface SessionWithSignups {
  * Safe to call from any context — never throws, returns error in result.
  */
 export async function syncCampaignCalendar(campaignId: string): Promise<SyncResult> {
+  const supabase = getSupabaseClient();
   try {
     // 1. Load sync config
     const { data: syncConfig, error: syncError } = await supabase
