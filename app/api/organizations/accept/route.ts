@@ -91,11 +91,29 @@ export async function POST(request: NextRequest) {
       },
     });
 
+    // Determine where to send the user after acceptance:
+    // 1. If exactly one active campaign, go to its admin page
+    // 2. Otherwise, go to dashboard filtered by this org
+    const { data: campaigns } = await admin
+      .from("campaigns")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(2);
+
+    let destination = "/dashboard";
+    if (campaigns && campaigns.length === 1) {
+      destination = `/admin/${campaigns[0].id}`;
+    } else {
+      destination = `/dashboard?org=${organizationId}`;
+    }
+
     return NextResponse.json(
       {
         organization_id: organizationId,
         organization_name: organizationName,
         ownership_transferred: ownershipTransferred,
+        destination,
       },
       { status: 200 },
     );

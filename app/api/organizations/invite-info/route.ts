@@ -53,10 +53,11 @@ export async function POST(request: NextRequest) {
 
     if (lookupErr || !invite || (Array.isArray(invite) && (invite as unknown[]).length === 0)) {
       // Check if it's an already-accepted or revoked invite for better error messages
+      // Check both token fields for backward compatibility
       const { data: usedInvite } = await admin
         .from("organization_members")
         .select("status, token_expires_at")
-        .eq("accept_token_hash", tokenHash)
+        .or(`accept_token_hash.eq.${tokenHash},accept_token.eq.${token}`)
         .maybeSingle();
 
       if (usedInvite) {
@@ -80,6 +81,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       organizationName: (inviteData as { organization_name: string }).organization_name,
       invitedEmail: (inviteData as { invited_email: string }).invited_email,
+      invitedByName: (inviteData as { invited_by_name?: string }).invited_by_name || "",
+      invitedByEmail: (inviteData as { invited_by_email?: string }).invited_by_email || "",
     });
   } catch (e) {
     console.error("POST /api/organizations/invite-info:", e);

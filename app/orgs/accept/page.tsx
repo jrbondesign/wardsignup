@@ -23,6 +23,8 @@ type InviteInfo = {
   organizationName: string;
   invitedEmail: string;
   maskedEmail: string;
+  invitedByName?: string;
+  invitedByEmail?: string;
 };
 
 type ErrorType =
@@ -114,6 +116,8 @@ function AcceptInner() {
           organizationName: data.organizationName,
           invitedEmail: data.invitedEmail,
           maskedEmail: maskEmail(data.invitedEmail),
+          invitedByName: data.invitedByName,
+          invitedByEmail: data.invitedByEmail,
         });
         setStatus("needs_magic_link");
         return;
@@ -148,6 +152,8 @@ function AcceptInner() {
           organizationName: infoData.organizationName,
           invitedEmail: infoData.invitedEmail,
           maskedEmail: maskEmail(infoData.invitedEmail),
+          invitedByName: infoData.invitedByName,
+          invitedByEmail: infoData.invitedByEmail,
         });
         setStatus("wrong_account");
         posthog?.capture("invite_error", { type: "email_mismatch" });
@@ -179,18 +185,10 @@ function AcceptInner() {
         organization_id: acceptData.organization_id,
         ownership_transferred: acceptData.ownership_transferred,
       });
-      setOrganizationId(acceptData.organization_id);
-      setInviteInfo({
-        organizationName: acceptData.organization_name ?? infoData.organizationName,
-        invitedEmail: infoData.invitedEmail,
-        maskedEmail: maskEmail(infoData.invitedEmail),
-      });
-      setStatus("accepted");
       
-      // Remove token from URL after successful acceptance
-      if (typeof window !== "undefined") {
-        router.replace("/orgs/accept?accepted=true");
-      }
+      // Navigate to the destination determined by the server
+      const destination = acceptData.destination ?? "/dashboard";
+      router.push(destination);
     };
 
     run();
@@ -240,6 +238,12 @@ function AcceptInner() {
   }
 
   if (status === "needs_magic_link" && inviteInfo) {
+    const inviterDisplay = inviteInfo.invitedByName
+      ? inviteInfo.invitedByName
+      : inviteInfo.invitedByEmail
+        ? maskEmail(inviteInfo.invitedByEmail)
+        : "";
+
     return (
       <>
         <Navigation />
@@ -253,6 +257,12 @@ function AcceptInner() {
                 <strong className="text-[#0D2B35] font-semibold">Ward:</strong>{" "}
                 {inviteInfo.organizationName}
               </p>
+              {inviterDisplay && (
+                <p className="text-sm text-[#2E5566] mb-1">
+                  <strong className="text-[#0D2B35] font-semibold">Invited by:</strong>{" "}
+                  {inviterDisplay}
+                </p>
+              )}
               <p className="text-sm text-[#2E5566]">
                 <strong className="text-[#0D2B35] font-semibold">Invited:</strong>{" "}
                 {inviteInfo.maskedEmail}
@@ -328,28 +338,7 @@ function AcceptInner() {
     );
   }
 
-  if (status === "accepted" && inviteInfo && organizationId) {
-    return (
-      <>
-        <Navigation />
-        <main className="min-h-screen bg-[#F4FAFB] py-8 px-4 flex flex-col items-center justify-center">
-          <div className="max-w-md w-full bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-8 text-center">
-            <h1 className="font-serif text-[22px] text-[#0D2B35] mb-2">You're now a co admin</h1>
-            <p className="text-sm text-[#5A8399] mb-5">
-              You can now manage events for <strong className="text-[#0D2B35] font-semibold">{inviteInfo.organizationName}</strong>.
-            </p>
-            <Link
-              href={`/admin/${organizationId}`}
-              className="inline-flex items-center justify-center gap-2 text-sm font-semibold px-6 py-2.5 rounded-full bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:shadow-[0_6px_20px_rgba(14,150,176,0.45)] transition-all"
-              onClick={() => posthog?.capture("manage_viewed", { organization_id: organizationId })}
-            >
-              Go to Manage
-            </Link>
-          </div>
-        </main>
-      </>
-    );
-  }
+  // This state is no longer reached - we navigate directly after acceptance
 
   return (
     <>
