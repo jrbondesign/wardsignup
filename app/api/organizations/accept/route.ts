@@ -50,7 +50,13 @@ export async function POST(request: NextRequest) {
     );
 
     if (acceptErr) {
-      console.error("Accept invite error:", acceptErr);
+      // Log full error details for server diagnostics (not sent to client)
+      console.error("Accept invite RPC error:", {
+        code: acceptErr.code,
+        message: acceptErr.message,
+        details: acceptErr.details,
+        hint: acceptErr.hint,
+      });
       
       // Handle specific error codes
       if (acceptErr.code === "P0002") {
@@ -61,6 +67,10 @@ export async function POST(request: NextRequest) {
           { error: "Sign in with the invited email address to accept this invitation." },
           { status: 403 },
         );
+      }
+      if (acceptErr.code === "42702") {
+        // Ambiguous column reference - should not happen after migration
+        console.error("CRITICAL: Ambiguous column error in accept_organization_invite - migration not applied?");
       }
 
       return NextResponse.json({ error: "Failed to accept invitation" }, { status: 500 });
