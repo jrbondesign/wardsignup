@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { consumeActionRate } from "@/lib/rate-limit";
+import { createHash } from "crypto";
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 /** POST /api/organizations/accept { token } — claim a co-admin invitation. */
 export async function POST(request: NextRequest) {
@@ -11,6 +17,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: auth.message }, { status: auth.status });
     }
     const { user } = auth;
+
+    // Rate limit: per IP
+    const rate = await consumeActionRate("accept_invite", request, 10);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429 },
+      );
+    }
 
     const body = await request.json().catch(() => ({}));
     const token = typeof body?.token === "string" ? body.token : "";
@@ -24,92 +39,64 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       );
     }
+
     const admin = createServiceRoleClient();
+    const tokenHash = hashToken(token);
 
-    const { data: row, error: lookupErr } = await admin
-      .from("organization_members")
-      .select("id, organization_id, invited_email, status, token_expires_at, transfer_on_accept")
-      .eq("accept_token", token)
-      .maybeSingle();
-    if (lookupErr) {
-      console.error("Accept invite: lookup error:", lookupErr);
-      return NextResponse.json({ error: "Failed to look up invitation" }, { status: 500 });
-    }
-    if (!row) {
-      return NextResponse.json({ error: "Invitation not found" }, { status: 404 });
-    }
+    // Use the transactional RPC function for secure acceptance
+    const { data: result, error: acceptErr } = await admin.rpc(
+      "accept_organization_invite",
+      {
+        p_token_hash: tokenHash,
+        p_user_id: user.id,
+        p_user_email: user.email ?? "",
+      },
+    );
 
-    const member = row as {
-      id: string;
-      organization_id: string;
-      invited_email: string;
-      status: string;
-      token_expires_at: string | null;
-      transfer_on_accept: boolean;
-    };
-    if (member.status !== "pending") {
-      return NextResponse.json({ error: "This invitation has already been used" }, { status: 410 });
-    }
-    if (member.token_expires_at && new Date(member.token_expires_at).getTime() < Date.now()) {
-      return NextResponse.json({ error: "This invitation has expired" }, { status: 410 });
-    }
-    if ((user.email ?? "").toLowerCase() !== member.invited_email.toLowerCase()) {
-      return NextResponse.json(
-        { error: "Sign in with the invited email address to accept this invitation." },
-        { status: 403 },
-      );
-    }
+    if (acceptErr) {
+      console.error("Accept invite error:", acceptErr);
+      
+      // Handle specific error codes
+      if (acceptErr.code === "P0002") {
+        return NextResponse.json({ error: "Invitation not found or expired" }, { status: 404 });
+      }
+      if (acceptErr.code === "42501") {
+        return NextResponse.json(
+          { error: "Sign in with the invited email address to accept this invitation." },
+          { status: 403 },
+        );
+      }
 
-    const { error: updateErr } = await admin
-      .from("organization_members")
-      .update({
-        user_id: user.id,
-        status: "accepted",
-        accepted_at: new Date().toISOString(),
-        accept_token: null,
-        token_expires_at: null,
-      } as never)
-      .eq("id", member.id);
-    if (updateErr) {
-      console.error("Accept invite: update error:", updateErr);
       return NextResponse.json({ error: "Failed to accept invitation" }, { status: 500 });
     }
 
-    // Handoff invite: promote the new member to owner and demote the previous owner
-    // to admin in one atomic RPC. If this fails, the invitee is still a regular admin
-    // — we surface the error but don't roll back the acceptance.
-    let ownershipTransferred = false;
-    if (member.transfer_on_accept) {
-      const { error: transferErr } = await admin.rpc("transfer_organization_ownership", {
-        p_org_id: member.organization_id,
-        p_new_owner_user_id: user.id,
-      } as never);
-      if (transferErr) {
-        console.error("Accept invite: ownership transfer error:", transferErr);
-        return NextResponse.json(
-          {
-            organization_id: member.organization_id,
-            error:
-              "Invitation accepted, but ownership could not be transferred automatically. Ask the previous owner to retry from organization settings.",
-          },
-          { status: 500 },
-        );
-      }
-      ownershipTransferred = true;
+    if (!result || (Array.isArray(result) && result.length === 0)) {
+      return NextResponse.json({ error: "Failed to accept invitation" }, { status: 500 });
     }
+
+    const resultData = Array.isArray(result) ? result[0] : result;
+    const organizationId = resultData.organization_id;
+    const organizationName = resultData.organization_name;
+    const ownershipTransferred = resultData.ownership_transferred;
+    const alreadyMember = resultData.already_member;
 
     const posthog = getPostHogClient();
     posthog.capture({
       distinctId: user.id,
       event: "org_member_accepted",
       properties: {
-        organization_id: member.organization_id,
+        organization_id: organizationId,
         ownership_transferred: ownershipTransferred,
+        already_member: alreadyMember,
       },
     });
 
     return NextResponse.json(
-      { organization_id: member.organization_id, ownership_transferred: ownershipTransferred },
+      {
+        organization_id: organizationId,
+        organization_name: organizationName,
+        ownership_transferred: ownershipTransferred,
+      },
       { status: 200 },
     );
   } catch (error) {

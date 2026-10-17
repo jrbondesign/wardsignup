@@ -227,7 +227,11 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       const hasAccess = (eventData as any).created_by === user.id ||
                         (eventData as any).user_email === user.email ||
                         (await userCanAdminCampaign(supabase, user, eventData as any));
-      if (!hasAccess) { router.push("/dashboard"); return; }
+      if (!hasAccess) {
+        setError("You don't have access to manage this event. If you were invited to co admin this ward, make sure you've accepted your invitation.");
+        setLoading(false);
+        return;
+      }
 
       setEvent(eventData);
       setCoverUrl((eventData as any).cover_image_url ?? null);
