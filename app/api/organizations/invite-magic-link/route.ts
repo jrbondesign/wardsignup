@@ -92,10 +92,10 @@ export async function POST(request: NextRequest) {
     // Validate invite and get email
     const { data: invite, error: lookupErr } = await admin.rpc(
       "validate_and_get_invite",
-      { p_token_hash: tokenHash },
+      { p_token_hash: tokenHash } as never,
     );
 
-    if (lookupErr || !invite || (Array.isArray(invite) && invite.length === 0)) {
+    if (lookupErr || !invite || (Array.isArray(invite) && (invite as unknown[]).length === 0)) {
       console.error("invite-magic-link: lookup error:", lookupErr);
       return NextResponse.json(
         { error: "Invitation not found or expired" },
@@ -103,9 +103,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const inviteData = Array.isArray(invite) ? invite[0] : invite;
-    const email = normalizeEmail(inviteData.invited_email);
-    const organizationName = inviteData.organization_name;
+    const inviteData = Array.isArray(invite) ? (invite as unknown[])[0] : invite;
+    const email = normalizeEmail((inviteData as { invited_email: string }).invited_email);
+    const organizationName = (inviteData as { organization_name: string }).organization_name;
 
     if (!email) {
       return NextResponse.json({ error: "Invalid invitation" }, { status: 400 });

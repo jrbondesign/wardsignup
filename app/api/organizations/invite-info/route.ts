@@ -48,10 +48,10 @@ export async function POST(request: NextRequest) {
     // Get invite info using the RPC function
     const { data: invite, error: lookupErr } = await admin.rpc(
       "validate_and_get_invite",
-      { p_token_hash: tokenHash },
+      { p_token_hash: tokenHash } as never,
     );
 
-    if (lookupErr || !invite || (Array.isArray(invite) && invite.length === 0)) {
+    if (lookupErr || !invite || (Array.isArray(invite) && (invite as unknown[]).length === 0)) {
       // Check if it's an already-accepted or revoked invite for better error messages
       const { data: usedInvite } = await admin
         .from("organization_members")
@@ -60,13 +60,14 @@ export async function POST(request: NextRequest) {
         .maybeSingle();
 
       if (usedInvite) {
-        if (usedInvite.status === "revoked") {
+        if ((usedInvite as { status: string }).status === "revoked") {
           return NextResponse.json({ error: "This invitation has been revoked" }, { status: 410 });
         }
-        if (usedInvite.status === "accepted") {
+        if ((usedInvite as { status: string }).status === "accepted") {
           return NextResponse.json({ error: "This invitation has already been used" }, { status: 410 });
         }
-        if (usedInvite.token_expires_at && new Date(usedInvite.token_expires_at) < new Date()) {
+        const expiresAt = (usedInvite as { token_expires_at?: string }).token_expires_at;
+        if (expiresAt && new Date(expiresAt) < new Date()) {
           return NextResponse.json({ error: "This invitation has expired" }, { status: 410 });
         }
       }
@@ -74,11 +75,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invitation not found or expired" }, { status: 404 });
     }
 
-    const inviteData = Array.isArray(invite) ? invite[0] : invite;
+    const inviteData = Array.isArray(invite) ? (invite as unknown[])[0] : invite;
 
     return NextResponse.json({
-      organizationName: inviteData.organization_name,
-      invitedEmail: inviteData.invited_email,
+      organizationName: (inviteData as { organization_name: string }).organization_name,
+      invitedEmail: (inviteData as { invited_email: string }).invited_email,
     });
   } catch (e) {
     console.error("POST /api/organizations/invite-info:", e);

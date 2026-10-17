@@ -384,23 +384,14 @@ function AcceptInner() {
 
 export default function AcceptInvitePage() {
   return (
-    <>
-      <head>
-        <meta name="referrer" content="no-referrer" />
-      </head>
-      <Suspense
-        fallback={
-          <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-[#F4FAFB]">
-            <LoadingSpinner size="lg" />
-          </main>
-        }
-      >
-        <AcceptInner />
-      </Suspense>
-    </>
+    <Suspense
+      fallback={
+        <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-[#F4FAFB]">
+          <LoadingSpinner size="lg" />
+        </main>
+      }
+    >
+      <AcceptInner />
+    </Suspense>
   );
 }
-
-export const metadata = {
-  referrer: "no-referrer",
-};

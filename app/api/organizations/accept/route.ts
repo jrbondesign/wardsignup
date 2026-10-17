@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
         p_token_hash: tokenHash,
         p_user_id: user.id,
         p_user_email: user.email ?? "",
-      },
+      } as never,
     );
 
     if (acceptErr) {
@@ -70,15 +70,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to accept invitation" }, { status: 500 });
     }
 
-    if (!result || (Array.isArray(result) && result.length === 0)) {
+    if (!result || (Array.isArray(result) && (result as unknown[]).length === 0)) {
       return NextResponse.json({ error: "Failed to accept invitation" }, { status: 500 });
     }
 
-    const resultData = Array.isArray(result) ? result[0] : result;
-    const organizationId = resultData.organization_id;
-    const organizationName = resultData.organization_name;
-    const ownershipTransferred = resultData.ownership_transferred;
-    const alreadyMember = resultData.already_member;
+    const resultData = Array.isArray(result) ? (result as unknown[])[0] : result;
+    const organizationId = (resultData as { organization_id: string }).organization_id;
+    const organizationName = (resultData as { organization_name: string }).organization_name;
+    const ownershipTransferred = (resultData as { ownership_transferred: boolean }).ownership_transferred;
+    const alreadyMember = (resultData as { already_member: boolean }).already_member;
 
     const posthog = getPostHogClient();
     posthog.capture({
