@@ -102,9 +102,9 @@ export async function POST(request: NextRequest) {
       .limit(2);
 
     let destination = "/dashboard";
-    if (campaigns && campaigns.length === 1) {
-      destination = `/admin/${campaigns[0].id}`;
-    } else {
+    if (campaigns && Array.isArray(campaigns) && campaigns.length === 1) {
+      destination = `/admin/${(campaigns[0] as { id: string }).id}`;
+    } else if (campaigns && Array.isArray(campaigns) && campaigns.length > 0) {
       destination = `/dashboard?org=${organizationId}`;
     }
 
