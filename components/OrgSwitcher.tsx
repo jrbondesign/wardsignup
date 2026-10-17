@@ -189,7 +189,7 @@ export default function OrgSwitcher({ onSwitch }: Props) {
                     <div className="min-w-0">
                       <div className="text-[13px] font-medium text-[#0D2B35] truncate">{label}</div>
                       <div className="text-[11px] text-[#5A8399]">
-                        {o.role === "owner" ? "Owner" : "Co-admin"}
+                        {o.role === "owner" ? "Owner" : "Co admin"}
                       </div>
                     </div>
                     {isCurrent && (

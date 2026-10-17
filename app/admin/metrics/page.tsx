@@ -225,7 +225,7 @@ export default function MetricsPage() {
                   New creators (leading)
                 </div>
                 <p className="text-[15px] text-[#5A8399] mb-6 max-w-2xl">
-                  A <strong className="text-[#2E5566] font-semibold">creator</strong> is an organization owner who has created at least one event that members can sign up for, counted in the week of their first event. This matches the &ldquo;New creator&rdquo; founder email. Owners with no event yet, invited co-admins, and people who signed in without an org are shown separately.
+                  A <strong className="text-[#2E5566] font-semibold">creator</strong> is an organization owner who has created at least one event that members can sign up for, counted in the week of their first event. This matches the &ldquo;New creator&rdquo; founder email. Owners with no event yet, invited co admins, and people who signed in without an org are shown separately.
                   Compare calendar weeks for weekly reviews; rolling 7 days can differ from the current week boundary.
                 </p>
                 <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6 lg:gap-8">
@@ -240,10 +240,10 @@ export default function MetricsPage() {
                     {data.nonCreatorAccounts && (
                       <div className="text-[12px] text-[#5A8399] mt-2">
                         Not counted this week: {data.nonCreatorAccounts.ownersNoEvent.thisWeek.toLocaleString()} owners with no event ·{" "}
-                        {data.nonCreatorAccounts.coAdmins.thisWeek.toLocaleString()} co-admins joined ·{" "}
+                        {data.nonCreatorAccounts.coAdmins.thisWeek.toLocaleString()} co admins joined ·{" "}
                         {data.nonCreatorAccounts.noOrgYet.thisWeek.toLocaleString()} signed in, no org yet
                         <span className="block text-[11px] text-[#7A9BAE]">
-                          All time: {data.nonCreatorAccounts.ownersNoEvent.total.toLocaleString()} owners with no event · {data.nonCreatorAccounts.coAdmins.total.toLocaleString()} co-admins · {data.nonCreatorAccounts.noOrgYet.total.toLocaleString()} no org
+                          All time: {data.nonCreatorAccounts.ownersNoEvent.total.toLocaleString()} owners with no event · {data.nonCreatorAccounts.coAdmins.total.toLocaleString()} co admins · {data.nonCreatorAccounts.noOrgYet.total.toLocaleString()} no org
                         </span>
                       </div>
                     )}

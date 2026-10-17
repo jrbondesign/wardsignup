@@ -128,7 +128,7 @@ function OrgSelectInner() {
                           )}
                         </div>
                         <div className="text-[12px] text-[#5A8399]">
-                          {o.role === "owner" ? "Owner" : "Co-admin"}
+                          {o.role === "owner" ? "Owner" : "Co admin"}
                         </div>
                       </div>
                       <div className="text-[13px] font-semibold text-[#0E96B0] shrink-0">
