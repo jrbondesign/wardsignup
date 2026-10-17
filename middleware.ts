@@ -21,6 +21,10 @@ function shouldSkipCanonicalRedirect(host: string): boolean {
 }
 
 export async function middleware(request: NextRequest) {
+  // Preview only review demo: no session refresh, no auth, no redirects.
+  if (request.nextUrl.pathname.startsWith("/demo/")) {
+    return NextResponse.next();
+  }
   const currentHost = normalizeHost(request.nextUrl.host);
 
   // Preferred host: www → apex for each brand (301). Keeps multi-brand apexes

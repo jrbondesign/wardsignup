@@ -489,7 +489,7 @@ export default function DashboardPage() {
                 const fillPct = totalCapacity > 0 ? Math.round((totalSignups / totalCapacity) * 100) : 0;
                 const labels = isItems
                   ? { total: "Items", signedUp: "Claimed", remaining: "Unclaimed" }
-                  : { total: "Total spots", signedUp: "Signed Up", remaining: "Remaining" };
+                  : { total: "Total spots", signedUp: "Signed up", remaining: "Remaining" };
 
                 return (
                   <div
@@ -504,7 +504,10 @@ export default function DashboardPage() {
                             e.stopPropagation();
                             setOpenDropdown(openDropdown === event.id ? null : event.id);
                           }}
-                          className="p-2 hover:bg-[#0E96B0]/8 rounded-lg transition-colors"
+                          aria-label={`More actions for ${event.name}`}
+                          aria-haspopup="menu"
+                          aria-expanded={openDropdown === event.id}
+                          className="p-2 hover:bg-[#0E96B0]/8 rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
                         >
                           <svg className="w-4 h-4 text-[#5A8399]" fill="currentColor" viewBox="0 0 20 20">
                             <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
@@ -518,7 +521,7 @@ export default function DashboardPage() {
                               className="block px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors no-underline"
                               onClick={() => setOpenDropdown(null)}
                             >
-                              Edit
+                              Edit details
                             </Link>
                             <button
                               type="button"
@@ -596,7 +599,7 @@ export default function DashboardPage() {
                         /* Unlimited capacity — 2-col layout, no "Remaining" */
                         <div className="grid grid-cols-2 gap-2 mb-4">
                           <div className="bg-[#edfaf4] rounded-xl p-2.5 text-center">
-                            <div className="text-[10px] font-semibold tracking-[0.5px] uppercase text-[#1D9E75] mb-0.5">Signed Up</div>
+                            <div className="text-[10px] font-semibold tracking-[0.5px] uppercase text-[#1D9E75] mb-0.5">Signed up</div>
                             <div className="text-xl font-semibold text-[#0F6E56]">{totalSignups}</div>
                           </div>
                           <div className="bg-[#E6F7FB] rounded-xl p-2.5 text-center">
@@ -639,6 +642,13 @@ export default function DashboardPage() {
                         className="flex-1 text-sm font-semibold text-center px-4 py-2.5 rounded-xl bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_3px_10px_rgba(14,150,176,0.30)] hover:-translate-y-0.5 hover:shadow-[0_5px_16px_rgba(14,150,176,0.40)] transition-all no-underline"
                       >
                         Manage
+                      </Link>
+                      <Link
+                        href={`/edit/${event.id}`}
+                        aria-label={`Edit details for ${event.name}`}
+                        className="flex-1 text-sm font-semibold text-center px-3 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#08647E] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all no-underline"
+                      >
+                        Edit
                       </Link>
                       <Link
                         href={`/event/${event.id}`}

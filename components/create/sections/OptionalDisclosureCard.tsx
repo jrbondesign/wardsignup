@@ -42,9 +42,6 @@ export default function OptionalDisclosureCard({
         <span className="min-w-0 flex-1">
           <span className="flex items-center gap-2 flex-wrap">
             <span className="text-[14px] font-semibold text-[#0D2B35]">{title}</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wide text-[#5A8399] bg-white border border-[rgba(14,150,176,0.25)] rounded-full px-2 py-0.5">
-              Optional
-            </span>
             <ActivePill active={active} />
           </span>
           {description && (

@@ -22,7 +22,6 @@ import { coverFileError, prepareCoverUpload } from "@/lib/cover-upload";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import CoverImageFrame, { COVER_OVERLAY_BUTTON } from "@/components/CoverImageFrame";
 import { COVER_SIZE_HINT } from "@/lib/cover-position";
-import EventOptionalSettings from "@/components/event/EventOptionalSettings";
 import ReconnectGoogleBanner from "@/components/event/ReconnectGoogleBanner";
 import { INITIAL_FORM_STATE, type CreateFormState } from "@/lib/create-form-state";
 
@@ -588,8 +587,12 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
 
   const totalCapacity = sessions.reduce((sum, s) => sum + s.capacity, 0);
   const totalSignups = sessions.reduce((sum, s) => sum + (s.signups?.length || 0), 0);
-  // Capacity is measured in signups (households), not total people including guests
+  // Capacity is measured in signups (households); guests are shown separately.
   const totalPeople = totalSignups;
+  const totalGuests = sessions.reduce(
+    (sum, s) => sum + (s.signups ?? []).reduce((g, su) => g + (((su as any).guest_names as string[] | undefined)?.length ?? 0), 0),
+    0,
+  );
   const fillPct = totalCapacity > 0 ? Math.round((totalSignups / totalCapacity) * 100) : 0;
 
   return (
@@ -933,10 +936,10 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                         <div className="text-3xl font-semibold text-[#054F64]">{totalCapacity}</div>
                       </div>
                       <div className="bg-[#edfaf4] rounded-xl p-4 flex flex-col items-center">
-                        <div className="h-8 flex items-center justify-center text-[10px] font-semibold tracking-[0.3px] uppercase text-[#1D9E75] whitespace-nowrap">Total People</div>
+                        <div className="h-8 flex items-center justify-center text-[10px] font-semibold tracking-[0.3px] uppercase text-[#1D9E75] whitespace-nowrap">Signed up</div>
                         <div className="text-3xl font-semibold text-[#0F6E56]">{totalPeople}</div>
-                        {totalPeople !== totalSignups && (
-                          <div className="text-[10px] text-[#5A8399] mt-0.5">{totalSignups} {totalSignups === 1 ? "registration" : "registrations"}</div>
+                        {totalGuests > 0 && (
+                          <div className="text-[10px] text-[#5A8399] mt-0.5">plus {totalGuests} {totalGuests === 1 ? "guest" : "guests"} ({totalSignups + totalGuests} people)</div>
                         )}
                       </div>
                       <div className="rounded-xl p-4 flex flex-col items-center" style={{ background: (totalCapacity - totalPeople) === 0 ? "#fef2f2" : "#fdf6ec" }}>
@@ -980,47 +983,32 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
               );
             })()}
 
-            {/* Optional settings — same disclosure controls as edit */}
-            <div className="mb-4">
-              <EventOptionalSettings
-                state={{
-                  ...INITIAL_FORM_STATE,
-                  eventType,
-                  showSignupsPublicly,
-                  listOnDirectory,
-                  organizerDigestEnabled: digestEnabled,
-                  organizerInstantNotifyEnabled: instantEnabled,
-                  calendarSyncEnabled,
-                  calendarId,
-                  calendarName,
-                  inviteLeader,
-                  eventTimezone,
-                  leaderName,
-                  leaderEmail,
-                  leaderSignupEmailEnabled,
-                  allowGuests,
-                  showCapacityPublicly,
-                  expanded: {
-                    ...INITIAL_FORM_STATE.expanded,
-                    visibility: visibilityOpen,
-                    notifications: notificationsOpen,
-                    settings: settingsOpen,
-                    googleCalendar: calendarOpen,
-                    registration: registrationOpen,
-                  },
-                }}
-                set={applyOptionalSettingsPatch}
-                organizationId={(event as { organization_id?: string | null }).organization_id}
-                eventId={eventId}
-                includeRegistration={eventType !== "items"}
-                lastSyncedAt={calendarLastSyncedAt}
-                lastError={calendarLastError}
-                onSyncResult={({ lastSyncedAt, lastError }) => {
-                  if (lastSyncedAt !== undefined) setCalendarLastSyncedAt(lastSyncedAt);
-                  if (lastError !== undefined) setCalendarLastError(lastError);
-                }}
-                reportAction={{ sending: sendingReport, onSend: sendOrganizerReportNow }}
-              />
+            {/* Settings live on Edit only; Manage links there so there is one place to change them. */}
+            <div className="mb-4 rounded-xl border border-[#0E96B0]/18 bg-[#F8FCFD] px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-[#0D2B35] mb-0.5">Event settings</div>
+                <div className="text-[11px] text-[#5A8399] leading-snug">
+                  Visibility, notifications, Google Calendar, leader, time zone and guests are in Edit details.
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2 sm:flex-shrink-0">
+                {(digestEnabled || instantEnabled) && (
+                  <button
+                    type="button"
+                    onClick={sendOrganizerReportNow}
+                    disabled={sendingReport}
+                    className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl border-[1.5px] border-[#0E96B0]/35 text-[#08647E] bg-white/60 hover:border-[#0E96B0] hover:bg-white transition-all disabled:opacity-60"
+                  >
+                    {sendingReport ? "Sending…" : "Send organizer report now"}
+                  </button>
+                )}
+                <Link
+                  href={`/edit/${eventId}#event-settings`}
+                  className="inline-flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white no-underline"
+                >
+                  Edit settings
+                </Link>
+              </div>
             </div>
 
             <div className="rounded-xl border border-[#0E96B0]/18 bg-[#F8FCFD] px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -1139,7 +1127,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
           {/* Sessions — spots/rsvp type */}
           {(eventType === "spots" || eventType === "rsvp") && Object.keys(groupedSessions).length === 0 ? (
             <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-10 text-center">
-              <p className="text-sm text-[#5A8399]">No sessions created yet.</p>
+              <p className="text-sm text-[#5A8399]">No slots yet.</p>
             </div>
           ) : (eventType === "spots" || eventType === "rsvp") && (
             <div className="space-y-4">
@@ -1260,8 +1248,10 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                           </div>
                                         </div>
                                         <button
+                                          type="button"
+                                          aria-label={`Remove ${signup.member_name} from this slot`}
                                           onClick={() => handleRemoveSignup(signup.id, signup.member_name)}
-                                          className="mt-2 text-[11px] font-medium text-red-500 hover:text-red-700 hover:underline transition-colors"
+                                          className="mt-1 -ml-2 px-2 py-2 min-h-[36px] rounded-lg text-[12px] font-medium text-red-500 hover:text-red-700 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-red-400 transition-colors"
                                         >
                                           Remove signup
                                         </button>
