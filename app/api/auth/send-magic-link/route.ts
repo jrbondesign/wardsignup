@@ -150,7 +150,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Build a direct token_hash callback URL (no PKCE verifier needed)
-    let actionLink = `${origin}/auth/callback?token_hash=${encodeURIComponent(hashedToken)}&type=magiclink`;
+    let actionLink = `${origin}/auth/callback?token_hash=${encodeURIComponent(hashedToken)}&type=email`;
     if (nextParam) {
       actionLink += `&next=${encodeURIComponent(nextParam)}`;
     }
