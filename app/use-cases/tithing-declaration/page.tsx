@@ -274,7 +274,7 @@ export default async function TithingDeclarationPage() {
             </p>
 
             <p className="text-[17px] text-[#2E5566] leading-[1.75]">
-              That path — discover in ChatGPT → create the declaration events → share a flyer or link → run signups → <Link href="/faq" className="text-[#0E96B0] hover:underline">invite a co admin</Link> — is the same workflow this page describes.
+              That path — discover in ChatGPT → create the declaration events → share a flyer or link → run signups → <Link href="/faq" className="text-[#0E96B0] hover:underline">invite a co-admin</Link> — is the same workflow this page describes.
             </p>
           </div>
         </div>
