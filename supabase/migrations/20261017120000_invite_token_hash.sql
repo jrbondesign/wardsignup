@@ -186,17 +186,55 @@ BEGIN
         token_expires_at = NULL
     WHERE id = v_invite.id;
 
-    -- Handle ownership transfer if requested (uses v_uid from auth)
+    -- Handle ownership transfer if requested
+    -- Inline the transfer logic (can't call transfer_organization_ownership because
+    -- it requires auth.uid() = current owner, but we're running as the invitee)
     IF v_invite.transfer_on_accept THEN
+        DECLARE
+            v_current_owner UUID;
+            v_old_owner_member_id UUID;
         BEGIN
-            PERFORM public.transfer_organization_ownership(
-                v_invite.organization_id,
-                v_uid
-            );
+            -- Get current owner
+            SELECT owner_id INTO v_current_owner
+            FROM public.organizations
+            WHERE id = v_invite.organization_id;
+
+            IF v_current_owner IS NULL THEN
+                RAISE EXCEPTION 'Organization not found for transfer' USING ERRCODE = 'P0002';
+            END IF;
+
+            IF v_current_owner = v_uid THEN
+                RAISE EXCEPTION 'Target user is already the owner' USING ERRCODE = '22023';
+            END IF;
+
+            -- Get old owner's member row
+            SELECT id INTO v_old_owner_member_id
+            FROM public.organization_members
+            WHERE organization_id = v_invite.organization_id
+              AND user_id = v_current_owner
+              AND role = 'owner'
+              AND status = 'accepted';
+
+            IF v_old_owner_member_id IS NULL THEN
+                RAISE EXCEPTION 'Current owner has no owner membership row' USING ERRCODE = 'P0002';
+            END IF;
+
+            -- Demote old owner to admin (frees the unique index: one accepted owner per org)
+            UPDATE public.organization_members
+            SET role = 'admin'
+            WHERE id = v_old_owner_member_id;
+
+            -- Promote new owner (the invitee we just accepted)
+            UPDATE public.organization_members
+            SET role = 'owner'
+            WHERE id = v_invite.id;
+
+            -- Update org owner_id
+            UPDATE public.organizations
+            SET owner_id = v_uid
+            WHERE id = v_invite.organization_id;
+
             v_ownership_transferred := TRUE;
-        EXCEPTION WHEN OTHERS THEN
-            -- Log but don't fail the acceptance
-            RAISE WARNING 'Ownership transfer failed: %', SQLERRM;
         END;
     END IF;
 
