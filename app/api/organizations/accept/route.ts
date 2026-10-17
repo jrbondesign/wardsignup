@@ -44,13 +44,10 @@ export async function POST(request: NextRequest) {
     const tokenHash = hashToken(token);
 
     // Use the transactional RPC function for secure acceptance
+    // RPC reads user_id and email from auth.uid() and auth.users for security
     const { data: result, error: acceptErr } = await admin.rpc(
       "accept_organization_invite",
-      {
-        p_token_hash: tokenHash,
-        p_user_id: user.id,
-        p_user_email: user.email ?? "",
-      } as never,
+      { p_token_hash: tokenHash } as never,
     );
 
     if (acceptErr) {

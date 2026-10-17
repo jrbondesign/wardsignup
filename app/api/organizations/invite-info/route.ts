@@ -78,11 +78,11 @@ export async function POST(request: NextRequest) {
 
     const inviteData = Array.isArray(invite) ? (invite as unknown[])[0] : invite;
 
+    // Return only masked values (RPC function already masks them)
     return NextResponse.json({
       organizationName: (inviteData as { organization_name: string }).organization_name,
-      invitedEmail: (inviteData as { invited_email: string }).invited_email,
-      invitedByName: (inviteData as { invited_by_name?: string }).invited_by_name || "",
-      invitedByEmail: (inviteData as { invited_by_email?: string }).invited_by_email || "",
+      maskedInvitedEmail: (inviteData as { masked_invited_email: string }).masked_invited_email,
+      inviterDisplayName: (inviteData as { inviter_display_name?: string }).inviter_display_name || "",
     });
   } catch (e) {
     console.error("POST /api/organizations/invite-info:", e);

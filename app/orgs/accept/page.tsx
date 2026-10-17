@@ -21,10 +21,8 @@ type Status =
 
 type InviteInfo = {
   organizationName: string;
-  invitedEmail: string;
   maskedEmail: string;
-  invitedByName?: string;
-  invitedByEmail?: string;
+  inviterDisplayName?: string;
 };
 
 type ErrorType =
@@ -114,10 +112,8 @@ function AcceptInner() {
         const data = await res.json();
         setInviteInfo({
           organizationName: data.organizationName,
-          invitedEmail: data.invitedEmail,
-          maskedEmail: maskEmail(data.invitedEmail),
-          invitedByName: data.invitedByName,
-          invitedByEmail: data.invitedByEmail,
+          maskedEmail: data.maskedInvitedEmail,
+          inviterDisplayName: data.inviterDisplayName,
         });
         setStatus("needs_magic_link");
         return;
@@ -144,21 +140,14 @@ function AcceptInner() {
       }
 
       const infoData = await infoRes.json();
-      const invitedEmail = (infoData.invitedEmail ?? "").toLowerCase();
-      const currentEmail = (user.email ?? "").toLowerCase();
-
-      if (invitedEmail !== currentEmail) {
-        setInviteInfo({
-          organizationName: infoData.organizationName,
-          invitedEmail: infoData.invitedEmail,
-          maskedEmail: maskEmail(infoData.invitedEmail),
-          invitedByName: infoData.invitedByName,
-          invitedByEmail: infoData.invitedByEmail,
-        });
-        setStatus("wrong_account");
-        posthog?.capture("invite_error", { type: "email_mismatch" });
-        return;
-      }
+      
+      // Server will validate the actual email match
+      // We just need to try acceptance and let it handle the validation
+      setInviteInfo({
+        organizationName: infoData.organizationName,
+        maskedEmail: infoData.maskedInvitedEmail,
+        inviterDisplayName: infoData.inviterDisplayName,
+      });
 
       // Correct account - accept the invite
       setStatus("accepting");
@@ -174,6 +163,14 @@ function AcceptInner() {
       const acceptData = await acceptRes.json().catch(() => ({}));
 
       if (!acceptRes.ok) {
+        // Check for email mismatch error
+        if (acceptRes.status === 403 && acceptData?.error?.toLowerCase().includes("mismatch")) {
+          setStatus("wrong_account");
+          setUserEmail(user.email ?? "");
+          posthog?.capture("invite_error", { type: "email_mismatch" });
+          return;
+        }
+        
         setStatus("error");
         setErrorType("generic");
         setErrorMessage(acceptData?.error ?? "Failed to accept invitation.");
@@ -238,12 +235,6 @@ function AcceptInner() {
   }
 
   if (status === "needs_magic_link" && inviteInfo) {
-    const inviterDisplay = inviteInfo.invitedByName
-      ? inviteInfo.invitedByName
-      : inviteInfo.invitedByEmail
-        ? maskEmail(inviteInfo.invitedByEmail)
-        : "";
-
     return (
       <>
         <Navigation />
@@ -257,10 +248,10 @@ function AcceptInner() {
                 <strong className="text-[#0D2B35] font-semibold">Ward:</strong>{" "}
                 {inviteInfo.organizationName}
               </p>
-              {inviterDisplay && (
+              {inviteInfo.inviterDisplayName && (
                 <p className="text-sm text-[#2E5566] mb-1">
                   <strong className="text-[#0D2B35] font-semibold">Invited by:</strong>{" "}
-                  {inviterDisplay}
+                  {inviteInfo.inviterDisplayName}
                 </p>
               )}
               <p className="text-sm text-[#2E5566]">

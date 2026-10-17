@@ -118,6 +118,7 @@ export async function POST(
     }
 
     const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
     const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
     // Re-invite cooldown: refreshing the token is fine, but re-emailing the
@@ -138,6 +139,7 @@ export async function POST(
     }
 
     // Upsert by (organization_id, invited_email) — re-inviting refreshes the token + status.
+    // Store hashed token in accept_token_hash, clear plaintext accept_token for new invites.
     const { data: memberRow, error: insertErr } = await supabase
       .from("organization_members")
       .upsert(
@@ -147,7 +149,8 @@ export async function POST(
           invited_by: user.id,
           role: "admin",
           status: "pending",
-          accept_token: token,
+          accept_token: null,
+          accept_token_hash: tokenHash,
           token_expires_at: expiresAt,
           user_id: null,
           accepted_at: null,
