@@ -167,8 +167,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build token_hash callback URL
-    const actionLink = `${origin}/auth/callback?token_hash=${encodeURIComponent(hashedOtpToken)}&type=magiclink&next=${encodeURIComponent(`/orgs/accept?token=${encodeURIComponent(token)}`)}`;
+    // Build token_hash callback URL (type=email for new accounts with confirmation_token)
+    const actionLink = `${origin}/auth/callback?token_hash=${encodeURIComponent(hashedOtpToken)}&type=email&next=${encodeURIComponent(`/orgs/accept?token=${encodeURIComponent(token)}`)}`;
 
     const resend = getResendForBrand(brand);
     if (!resend && !brevoConfig()) {
