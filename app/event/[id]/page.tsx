@@ -519,6 +519,8 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   // Also applies to rsvp events which always have exactly 1 session
   const isSingleSession = (eventType === "spots" || eventType === "rsvp") && sessions.length === 1;
   const singleSession = isSingleSession ? sessions[0] : null;
+  /** Slots the signup form will submit (same rule as handleSignup). */
+  const signupSessionIds = isSingleSession ? [sessions[0].id] : selectedSessions;
   // capacity >= 999 means "unlimited" — never consider it full
   const singleSessionFull = singleSession
     ? singleSession.capacity < 999 && sessionHeadcount(singleSession) >= singleSession.capacity
@@ -861,7 +863,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       disabled={submitting} />
                     <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />
                     <p className="mt-1.5 text-[11px] text-[#5A8399] leading-snug">
-                      {signerEmailHint(sessions)}
+                      {signerEmailHint(sessions, signupSessionIds)}
                     </p>
                   </div>
                   <div>
@@ -932,12 +934,12 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                         <div className="font-semibold text-[15px] text-[#0D2B35] leading-snug">{item.label}</div>
                         <div className="text-xs text-[#5A8399] mt-0.5">
                           {isFull
-                            ? `Full — ${claimed} claimed`
+                            ? `Full, ${claimed} claimed`
                             : limit !== null
                             ? `${claimed} of ${limit} claimed`
                             : claimed > 0
                             ? `${claimed} claimed`
-                            : "No one yet — be first!"}
+                            : "No one yet. Be first!"}
                         </div>
                       </div>
                       {!isFull && (
@@ -1519,7 +1521,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70" />
                 <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />
                 <p className="mt-1.5 text-[11px] text-[#5A8399] leading-snug">
-                  {signerEmailHint(sessions)}
+                  {signerEmailHint(sessions, signupSessionIds)}
                 </p>
               </div>
               <div>

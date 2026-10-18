@@ -1151,8 +1151,8 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                 <div className="text-sm font-semibold text-[#0D2B35] mb-0.5">Signup link</div>
                 <div className="text-[11px] text-[#5A8399] leading-snug">
                   {isWardBrand
-                    ? "Copy and share with ward members — no account required to sign up"
-                    : "Copy and share with your group — no account required to sign up"}
+                    ? "Copy and share with ward members. No account required to sign up"
+                    : "Copy and share with your group. No account required to sign up"}
                 </div>
               </div>
               <div className="flex gap-2 sm:flex-shrink-0">

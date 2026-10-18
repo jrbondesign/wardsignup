@@ -10,7 +10,7 @@ import dynamic from "next/dynamic";
 
 type EmailCaptureWeekRow = { weekStart: string; total: number; withEmail: number; ratePct: number | null };
 
-function formatCaptureRate(w: EmailCaptureWeekRow): string {
+function formatCaptureRate(w: Pick<EmailCaptureWeekRow, "ratePct">): string {
   return w.ratePct === null ? "n/a" : `${w.ratePct.toFixed(1)}%`;
 }
 
@@ -78,6 +78,7 @@ interface MetricsData {
   emailCapture?: {
     thisWeek: EmailCaptureWeekRow;
     completedWeeks: EmailCaptureWeekRow[];
+    rolling4Week?: { weeks: number; total: number; withEmail: number; ratePct: number | null };
   };
   totalUsers: number;
   newUsersThisWeek: number;
@@ -425,8 +426,9 @@ export default function MetricsPage() {
                     <p className="text-[13px] text-[#5A8399] mb-5 max-w-3xl">
                       Signups that include an email (and so can get a reminder) divided by all signups, per week, Monday to Sunday in Phoenix time.
                       Counts signups that still exist; cancelled signups are gone from the database.
+                      Test and team accounts are excluded, same as New wards.
                     </p>
-                    <div className="grid sm:grid-cols-2 gap-6 mb-6">
+                    <div className="grid sm:grid-cols-3 gap-6 mb-6">
                       <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
                         <div className="text-[13px] text-[#5A8399] mb-2 font-medium">This week so far</div>
                         <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
@@ -444,6 +446,17 @@ export default function MetricsPage() {
                           </div>
                           <div className="text-[12px] text-[#5A8399] mt-3 tabular-nums">
                             {lastDone.withEmail} of {lastDone.total} signups
+                          </div>
+                        </div>
+                      )}
+                      {ec.rolling4Week && (
+                        <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
+                          <div className="text-[13px] text-[#5A8399] mb-2 font-medium">Rolling 4 weeks (pooled)</div>
+                          <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
+                            {formatCaptureRate(ec.rolling4Week)}
+                          </div>
+                          <div className="text-[12px] text-[#5A8399] mt-3 tabular-nums">
+                            {ec.rolling4Week.withEmail} of {ec.rolling4Week.total} signups, last {ec.rolling4Week.weeks} completed weeks
                           </div>
                         </div>
                       )}

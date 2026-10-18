@@ -20,35 +20,51 @@ const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
 describe("reminder copy text", () => {
   it("matches the agreed wording", () => {
     expect(WELCOME_REMINDERS_LINE).toBe(
-      "Reminders are automatic. Anyone who adds their email when they sign up gets a reminder before their time.",
+      "Reminders are automatic. People who add their email when they sign up get a reminder about a day before their time.",
     );
-    expect(CREATOR_REMINDERS_NOTE).toBe("Reminders go out automatically to everyone who adds an email.");
-    expect(SIGNER_EMAIL_HINT_DATED).toBe("Add your email to get a reminder before your time.");
+    expect(CREATOR_REMINDERS_NOTE).toBe("Reminders go out automatically, about a day before, to people who add an email.");
+    expect(SIGNER_EMAIL_HINT_DATED).toBe("Add your email to get a reminder before your time. We never share or sell your info.");
+    expect(SIGNER_EMAIL_HINT_UNDATED).toBe("Optional. For updates from the organizer. We never share or sell your info.");
   });
 
-  it("new lines contain no dashes", () => {
-    for (const line of [WELCOME_REMINDERS_LINE, CREATOR_REMINDERS_NOTE, SIGNER_EMAIL_HINT_DATED]) {
+  it("lines contain no dashes", () => {
+    for (const line of [WELCOME_REMINDERS_LINE, CREATOR_REMINDERS_NOTE, SIGNER_EMAIL_HINT_DATED, SIGNER_EMAIL_HINT_UNDATED]) {
       expect(line).not.toMatch(/[\u2012\u2013\u2014\u2015-]/);
     }
   });
 });
 
 describe("signerEmailHint", () => {
-  it("uses the reminder hint when any slot has a date", () => {
-    expect(signerEmailHint([{ session_date: "2026-11-01" }])).toBe(SIGNER_EMAIL_HINT_DATED);
-    expect(signerEmailHint([{ session_date: null }, { session_date: "2026-11-01" }])).toBe(SIGNER_EMAIL_HINT_DATED);
+  const dated = { id: "d1", session_date: "2026-11-01" };
+  const dated2 = { id: "d2", session_date: "2026-11-08" };
+  const undated = { id: "u1", session_date: null };
+  const undated2 = { id: "u2" };
+
+  it("uses the reminder hint on fully dated events", () => {
+    expect(signerEmailHint([dated, dated2])).toBe(SIGNER_EMAIL_HINT_DATED);
+    expect(signerEmailHint([dated, dated2], ["d2"])).toBe(SIGNER_EMAIL_HINT_DATED);
   });
 
-  it("keeps the current hint for undated or recurring events", () => {
-    expect(signerEmailHint([{ session_date: null }, { session_date: null }])).toBe(SIGNER_EMAIL_HINT_UNDATED);
-    expect(signerEmailHint([{}])).toBe(SIGNER_EMAIL_HINT_UNDATED);
+  it("keeps the undated hint for undated or recurring events", () => {
+    expect(signerEmailHint([undated, undated2])).toBe(SIGNER_EMAIL_HINT_UNDATED);
+    expect(signerEmailHint([undated, undated2], ["u1", "u2"])).toBe(SIGNER_EMAIL_HINT_UNDATED);
     expect(signerEmailHint([])).toBe(SIGNER_EMAIL_HINT_UNDATED);
-    expect(SIGNER_EMAIL_HINT_UNDATED).toBe("Optional — for updates from the organizer. We never share or sell your info.");
   });
 
-  it("is what the public event page renders in both signup forms", () => {
+  it("on mixed events follows the selected slots", () => {
+    const mixed = [dated, undated, undated2];
+    expect(signerEmailHint(mixed, ["u1"])).toBe(SIGNER_EMAIL_HINT_UNDATED);
+    expect(signerEmailHint(mixed, ["u1", "u2"])).toBe(SIGNER_EMAIL_HINT_UNDATED);
+    expect(signerEmailHint(mixed, ["d1"])).toBe(SIGNER_EMAIL_HINT_DATED);
+    expect(signerEmailHint(mixed, ["u1", "d1"])).toBe(SIGNER_EMAIL_HINT_DATED);
+    // nothing selected yet: falls back to whether the event has any dated slot
+    expect(signerEmailHint(mixed, [])).toBe(SIGNER_EMAIL_HINT_DATED);
+  });
+
+  it("is what the public event page renders in both signup forms, for the slots being submitted", () => {
     const src = read("app/event/[id]/page.tsx");
-    expect(src.match(/\{signerEmailHint\(sessions\)\}/g)).toHaveLength(2);
+    expect(src.match(/\{signerEmailHint\(sessions, signupSessionIds\)\}/g)).toHaveLength(2);
+    expect(src).toContain("const signupSessionIds = isSingleSession ? [sessions[0].id] : selectedSessions;");
     expect(src).not.toContain("reminder the day before");
   });
 });

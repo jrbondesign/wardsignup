@@ -7,6 +7,7 @@ import { founderNotifySkipEmails } from "@/lib/founder-notify";
 import {
   computeEmailCaptureRate,
   emailCaptureWindowStart,
+  testCampaignIds,
   type CaptureSignupRow,
 } from "@/lib/email-capture-rate";
 
@@ -254,8 +255,8 @@ export async function GET(request: NextRequest) {
       ? admin.from("signups").select("member_email").in("campaign_id", brandCampaignIds).not("member_email", "is", null)
       : admin.from("signups").select("member_email").not("member_email", "is", null),
     brandCampaignIds !== null
-      ? admin.from("campaigns").select("id, created_at, created_by, user_email").in("id", brandCampaignIds)
-      : admin.from("campaigns").select("id, created_at, created_by, user_email"),
+      ? admin.from("campaigns").select("id, created_at, created_by, user_email, organization_id").in("id", brandCampaignIds)
+      : admin.from("campaigns").select("id, created_at, created_by, user_email, organization_id"),
     brandCampaignIds !== null
       ? admin.from("sessions").select("campaign_id").in("campaign_id", brandCampaignIds)
       : admin.from("sessions").select("campaign_id"),
@@ -732,7 +733,7 @@ export async function GET(request: NextRequest) {
   for (let from = 0; ; from += 1000) {
     let q = admin
       .from("signups")
-      .select("signed_up_at, member_email")
+      .select("signed_up_at, member_email, campaign_id")
       .gte("signed_up_at", captureWindowIso);
     if (brandCampaignIds !== null) q = q.in("campaign_id", brandCampaignIds);
     const { data: page, error: pageErr } = await q
@@ -746,7 +747,16 @@ export async function GET(request: NextRequest) {
     captureRows.push(...((page ?? []) as CaptureSignupRow[]));
     if (!page || page.length < 1000) break;
   }
-  const emailCapture = computeEmailCaptureRate(captureRows, nowDate, 8);
+  // Exclude test / team accounts the same way New wards does.
+  const excludedCaptureCampaigns = testCampaignIds({
+    campaigns: (campaignsSlim ?? []) as (SlimCampaign & { organization_id: string | null })[],
+    orgOwnerById: new Map(
+      ((orgsWithCampaigns ?? []) as { id: string; created_by: string | null }[]).map((o) => [o.id, o.created_by]),
+    ),
+    emailByUserId: new Map(allAuthUsers.map((u) => [u.id, u.email ?? null])),
+    skipEmails: founderNotifySkipEmails(),
+  });
+  const emailCapture = computeEmailCaptureRate(captureRows, nowDate, 8, excludedCaptureCampaigns);
 
   return NextResponse.json({
     totalEvents: totalEvents ?? 0,

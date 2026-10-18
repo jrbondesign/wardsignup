@@ -23,7 +23,7 @@ export function buildWelcomeEmail({
   const brand = { name: brandName, siteHost };
   const text = `Hi ${firstName},
 
-Thanks for signing up — you're one of our very first users!
+Thanks for signing up. You're one of our very first users!
 
 Quick start: ${quickPlain}
 
@@ -31,7 +31,7 @@ Quick start: ${quickPlain}
 
 ${WELCOME_REMINDERS_LINE}
 
-This is free to use — if anything feels off, just reply. I read every message.
+This is free to use. If anything feels off, just reply. I read every message.
 
 One quick question: What's the first event you plan to use it for?
 
@@ -46,7 +46,7 @@ Made with ❤️ in Arizona`;
           <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">Hi ${safeFirst},</p>
 
           <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
-            Thanks for signing up — you're one of our very first users!
+            Thanks for signing up. You're one of our very first users!
           </p>
 
           <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
@@ -62,7 +62,7 @@ Made with ❤️ in Arizona`;
           </p>
 
           <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
-            This is free to use — if anything feels off, just reply. I read every message.
+            This is free to use. If anything feels off, just reply. I read every message.
           </p>
 
           <p style="font-size: 16px; line-height: 1.7; margin: 0 0 24px;">

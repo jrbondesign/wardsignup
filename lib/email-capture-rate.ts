@@ -7,7 +7,7 @@
 const PHOENIX_OFFSET_MS = -7 * 60 * 60 * 1000;
 const MS_DAY = 24 * 60 * 60 * 1000;
 
-export type CaptureSignupRow = { signed_up_at: string; member_email: string | null };
+export type CaptureSignupRow = { signed_up_at: string; member_email: string | null; campaign_id?: string | null };
 
 export type EmailCaptureWeek = {
   /** Phoenix Monday, YYYY-MM-DD. */
@@ -18,11 +18,54 @@ export type EmailCaptureWeek = {
   ratePct: number | null;
 };
 
+export type EmailCapturePooled = {
+  weeks: number;
+  total: number;
+  withEmail: number;
+  ratePct: number | null;
+};
+
 export type EmailCaptureRate = {
   thisWeek: EmailCaptureWeek;
   /** Most recent completed weeks, oldest first. */
   completedWeeks: EmailCaptureWeek[];
+  /** Pooled rate over the last 4 completed weeks: sum(with email) / sum(signups). */
+  rolling4Week: EmailCapturePooled;
 };
+
+function pct(withEmail: number, total: number): number | null {
+  return total === 0 ? null : Math.round((1000 * withEmail) / total) / 10;
+}
+
+/** Pool the last `n` completed weeks into one rate. */
+export function pooledRate(completedWeeks: ReadonlyArray<EmailCaptureWeek>, n = 4): EmailCapturePooled {
+  const last = completedWeeks.slice(-n);
+  const total = last.reduce((a, w) => a + w.total, 0);
+  const withEmail = last.reduce((a, w) => a + w.withEmail, 0);
+  return { weeks: last.length, total, withEmail, ratePct: pct(withEmail, total) };
+}
+
+/**
+ * Campaigns owned by test / team accounts (founderNotifySkipEmails, the same
+ * marker the New wards metric uses). A campaign is excluded when its creator,
+ * its user_email, or its organization's owner is a skip email.
+ */
+export function testCampaignIds(opts: {
+  campaigns: ReadonlyArray<{ id: string; created_by: string | null; user_email: string | null; organization_id?: string | null }>;
+  orgOwnerById: ReadonlyMap<string, string | null>;
+  emailByUserId: ReadonlyMap<string, string | null | undefined>;
+  skipEmails: ReadonlySet<string>;
+}): Set<string> {
+  const { campaigns, orgOwnerById, emailByUserId, skipEmails } = opts;
+  const isSkip = (email: string | null | undefined) => !!email && skipEmails.has(email.trim().toLowerCase());
+  const isSkipUser = (userId: string | null | undefined) => !!userId && isSkip(emailByUserId.get(userId));
+  const out = new Set<string>();
+  for (const c of campaigns) {
+    const orgOwner = c.organization_id ? orgOwnerById.get(c.organization_id) : null;
+    if (isSkip(c.user_email) || isSkipUser(c.created_by) || isSkipUser(orgOwner)) out.add(c.id);
+  }
+  return out;
+}
 
 /** UTC instant of Phoenix midnight on the Monday of the week containing `at`. */
 export function phoenixWeekStartUtc(at: Date): Date {
@@ -51,6 +94,7 @@ export function computeEmailCaptureRate(
   rows: ReadonlyArray<CaptureSignupRow>,
   now: Date,
   completedWeekCount = 8,
+  excludeCampaignIds: ReadonlySet<string> = new Set(),
 ): EmailCaptureRate {
   const currentStart = phoenixWeekStartUtc(now);
   const starts: Date[] = [];
@@ -61,6 +105,7 @@ export function computeEmailCaptureRate(
   const firstMs = buckets[0]!.startMs;
   const endMs = currentStart.getTime() + 7 * MS_DAY;
   for (const r of rows) {
+    if (r.campaign_id && excludeCampaignIds.has(r.campaign_id)) continue;
     const t = new Date(r.signed_up_at).getTime();
     if (Number.isNaN(t) || t < firstMs || t >= endMs) continue;
     const idx = Math.floor((t - firstMs) / (7 * MS_DAY));
@@ -72,7 +117,8 @@ export function computeEmailCaptureRate(
     weekStart,
     total,
     withEmail,
-    ratePct: total === 0 ? null : Math.round((1000 * withEmail) / total) / 10,
+    ratePct: pct(withEmail, total),
   }));
-  return { thisWeek: weeks[weeks.length - 1]!, completedWeeks: weeks.slice(0, -1) };
+  const completedWeeks = weeks.slice(0, -1);
+  return { thisWeek: weeks[weeks.length - 1]!, completedWeeks, rolling4Week: pooledRate(completedWeeks, 4) };
 }

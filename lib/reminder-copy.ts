@@ -6,21 +6,34 @@
 
 /** Creator welcome email line. */
 export const WELCOME_REMINDERS_LINE =
-  "Reminders are automatic. Anyone who adds their email when they sign up gets a reminder before their time.";
+  "Reminders are automatic. People who add their email when they sign up get a reminder about a day before their time.";
 
 /** Note on the creator / manager event page (never shown to signers). */
-export const CREATOR_REMINDERS_NOTE = "Reminders go out automatically to everyone who adds an email.";
+export const CREATOR_REMINDERS_NOTE =
+  "Reminders go out automatically, about a day before, to people who add an email.";
 
 /** Signer email hint on events that have dated slots (the only ones reminded). */
-export const SIGNER_EMAIL_HINT_DATED = "Add your email to get a reminder before your time.";
+export const SIGNER_EMAIL_HINT_DATED =
+  "Add your email to get a reminder before your time. We never share or sell your info.";
 
-/** Signer email hint on undated / recurring / items events. Unchanged copy. */
+/** Signer email hint on undated / recurring / items events. */
 export const SIGNER_EMAIL_HINT_UNDATED =
-  "Optional — for updates from the organizer. We never share or sell your info.";
+  "Optional. For updates from the organizer. We never share or sell your info.";
 
-/** Email field hint for the signer form. Reminders only go out for dated slots. */
-export function signerEmailHint(sessions: ReadonlyArray<{ session_date?: string | null }>): string {
-  return sessions.some((s) => Boolean(s.session_date)) ? SIGNER_EMAIL_HINT_DATED : SIGNER_EMAIL_HINT_UNDATED;
+type HintSession = { id: string; session_date?: string | null };
+
+/**
+ * Email field hint for the signer form. Reminders only go out for dated slots,
+ * so the reminder hint shows only when at least one of the slots being signed
+ * up for has a date. With nothing selected yet, falls back to whether the
+ * event has any dated slot.
+ */
+export function signerEmailHint(
+  sessions: ReadonlyArray<HintSession>,
+  selectedIds: ReadonlyArray<string> = [],
+): string {
+  const chosen = selectedIds.length > 0 ? sessions.filter((s) => selectedIds.includes(s.id)) : sessions;
+  return chosen.some((s) => Boolean(s.session_date)) ? SIGNER_EMAIL_HINT_DATED : SIGNER_EMAIL_HINT_UNDATED;
 }
 
 /** Whether the creator reminder note applies. Items events have no slots and

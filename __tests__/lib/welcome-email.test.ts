@@ -17,6 +17,8 @@ describe("buildWelcomeEmail", () => {
     expect(text).toContain(`${MEMBERS}\n\n${WELCOME_REMINDERS_LINE}\n\nThis is free to use`);
     expect(text.split(WELCOME_REMINDERS_LINE)).toHaveLength(2);
     expect(text.startsWith("Hi Ann <b>,")).toBe(true);
+    expect(text).toContain("Thanks for signing up. You're one of our very first users!");
+    expect(text).toContain("This is free to use. If anything feels off, just reply.");
   });
 
   it("adds the reminders line right after the members line in the html body", () => {
@@ -29,5 +31,13 @@ describe("buildWelcomeEmail", () => {
     expect(free).toBeGreaterThan(line);
     expect(html).toContain("Hi Ann &lt;b&gt;,");
     expect(html).toContain('href="https://wardsignup.com/?utm_source=email"');
+    expect(html).toContain("Thanks for signing up. You're one of our very first users!");
+    expect(html).toContain("This is free to use. If anything feels off, just reply.");
+  });
+
+  it("has no em or en dashes in either body", () => {
+    const { text, html } = buildWelcomeEmail(input);
+    expect(text).not.toMatch(/[\u2013\u2014]/);
+    expect(html).not.toMatch(/[\u2013\u2014]/);
   });
 });
