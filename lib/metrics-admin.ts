@@ -1,6 +1,9 @@
+import { isLocalDevelopment } from "@/lib/runtime-env";
+
 /**
  * Emails allowed to access /api/metrics and /admin-utils.
  * Set METRICS_ADMIN_EMAILS (comma-separated) or METRICS_ADMIN_EMAIL in the server environment.
+ * Production / preview: empty env means nobody. Local development keeps a default inbox.
  */
 export function parseMetricsAdminEmails(): string[] {
   const raw =
@@ -11,7 +14,8 @@ export function parseMetricsAdminEmails(): string[] {
       .map((e) => e.trim().toLowerCase())
       .filter(Boolean);
   }
-  return ["bondesign@gmail.com"];
+  if (isLocalDevelopment()) return ["bondesign@gmail.com"];
+  return [];
 }
 
 export function isMetricsAdminEmail(email: string | undefined | null): boolean {

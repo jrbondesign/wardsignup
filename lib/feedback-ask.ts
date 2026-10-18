@@ -36,7 +36,7 @@ const DEFAULT_SKIP_EMAILS = [
 /** Founder/internal/test inboxes that should never receive the feedback ask. */
 function feedbackSkipEmails(): Set<string> {
   const set = new Set<string>(parseMetricsAdminEmails());
-  set.add(creatorNotifyTo.trim().toLowerCase());
+  if (creatorNotifyTo) set.add(creatorNotifyTo.trim().toLowerCase());
   for (const e of DEFAULT_SKIP_EMAILS) set.add(e);
   const raw = process.env.CREATOR_NOTIFY_SKIP_EMAILS?.trim();
   if (raw) {
@@ -323,13 +323,17 @@ export async function runFeedbackDigestPass(
 
   // Founder-only internal mail: transactional category (no unsubscribe needed)
   // but still under the global ceiling.
+  const digestTo = creatorNotifyTo;
+  if (!digestTo) {
+    return { ran: true, responses: 0, error: "FOUNDER_NOTIFY_TO is not set" };
+  }
   const send = await sendGuardedEmail({
     brand,
     deferrable: true,
       kind: "feedback_summary",
       category: "transactional",
     from: feedbackEmailFrom(brand),
-    to: creatorNotifyTo,
+    to: digestTo,
     subject: `${brand.name}: ${rows.length} creator feedback response${rows.length === 1 ? "" : "s"} this week`,
     html: buildFeedbackDigestEmailHtml({ brand, responses: rows }),
   });

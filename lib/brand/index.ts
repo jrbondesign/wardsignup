@@ -22,7 +22,7 @@ export {
   participantEmailFrom,
   welcomeEmailFrom,
 } from "./email-from";
-export { publicSiteOriginFromRequest } from "./request-origin";
+export { publicSiteOriginFromRequest, trustedAuthOriginFromRequest } from "./request-origin";
 export {
   publicSiteOriginAndBrandForCampaign,
   type CampaignBrandFields,

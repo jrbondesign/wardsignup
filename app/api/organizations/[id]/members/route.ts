@@ -1,13 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
-import crypto from "crypto";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userIsAcceptedOrgMember } from "@/lib/campaign-access";
-import { getBrandFromHost, inviteEmailFrom, publicSiteOriginFromRequest } from "@/lib/brand";
+import { getBrandFromHost, inviteEmailFrom, trustedAuthOriginFromRequest } from "@/lib/brand";
 import { escapeHtml } from "@/lib/html-escape";
 import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { buildBrandSignatureFooterHtml } from "@/lib/site-footer";
 import { getPostHogClient } from "@/lib/posthog-server";
+import crypto from "crypto";
 
 const TOKEN_TTL_DAYS = 14;
 
@@ -173,8 +173,8 @@ export async function POST(
       );
     }
 
-    const siteOrigin = publicSiteOriginFromRequest(request);
-    const acceptUrl = `${siteOrigin}/orgs/accept?token=${encodeURIComponent(token)}`;
+    const siteOrigin = trustedAuthOriginFromRequest(request) ?? hostBrand.siteUrl;
+    const acceptUrl = `${siteOrigin.replace(/\/$/, "")}/orgs/accept?token=${encodeURIComponent(token)}`;
     const orgNameEsc = escapeHtml(org.name);
     const inviterEsc = escapeHtml(user.email ?? "an organizer");
 

@@ -72,7 +72,15 @@ export async function POST(request: Request) {
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     let admin: ReturnType<typeof createClient> | null = null;
-    if (serviceKey && url) {
+    const isProduction = process.env.NODE_ENV === "production" || process.env.VERCEL_ENV === "production";
+    if (!serviceKey || !url) {
+      if (isProduction) {
+        return NextResponse.json(
+          { error: "Signup is temporarily unavailable" },
+          { status: 503 }
+        );
+      }
+    } else {
       admin = createClient(url, serviceKey);
       const ip = getClientIp(request);
       const bucket = new Date();

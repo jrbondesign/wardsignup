@@ -237,7 +237,7 @@ Made with ❤️ in Arizona`;
       deferrable: true,
       kind: "welcome",
       from: welcomeEmailFrom(brand),
-      replyTo: welcomeReplyTo,
+      ...(welcomeReplyTo ? { replyTo: welcomeReplyTo } : {}),
       to: canonicalUser.email!,
       subject: welcomeSubject,
       text: welcomeText,

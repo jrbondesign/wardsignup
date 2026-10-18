@@ -3,9 +3,7 @@ import { feedbackEmailFrom } from "@/lib/brand/email-from";
 import { escapeHtml } from "@/lib/html-escape";
 import { sendGuardedEmail } from "@/lib/email-send";
 
-/** Replies should reach a real inbox, same as the welcome email. */
-const feedbackReplyTo =
-  process.env.WELCOME_REPLY_TO?.trim() || "jonathan@wardsignup.com";
+const welcomeReplyTo = process.env.WELCOME_REPLY_TO?.trim() || "jonathan@wardsignup.com";
 
 export type FeedbackSendResult =
   | { ok: true }
@@ -50,7 +48,7 @@ Made with ❤️ in Arizona`;
       kind: "feedback",
       category: "notification",
     from: feedbackEmailFrom(brand),
-    replyTo: feedbackReplyTo,
+    ...(welcomeReplyTo ? { replyTo: welcomeReplyTo } : {}),
     to,
     subject: `Quick question about your ${brand.name} event`,
     text,

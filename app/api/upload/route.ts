@@ -1,7 +1,9 @@
+import { createHash } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
+import { extensionForImageMime, sniffImageMime } from "@/lib/image-magic";
 import type { Campaign } from "@/lib/types";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import { EVENT_MEDIA_BUCKET, eventMediaPath, removeCoverIfUnreferenced } from "@/lib/event-media";
@@ -83,22 +85,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 5. Build storage path
-    const ext =
-      file.type === "image/jpeg" ? "jpg"
-      : file.type === "image/png" ? "png"
-      : "webp";
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const sniffed = sniffImageMime(bytes);
+    if (!sniffed || sniffed !== file.type) {
+      return NextResponse.json(
+        { error: "File contents do not match the declared image type" },
+        { status: 400 }
+      );
+    }
+
+    // 5. Content-addressed path (hash of bytes + sniffed type)
+    const ext = extensionForImageMime(sniffed);
+    const digest = createHash("sha256").update(bytes).digest("hex").slice(0, 32);
     const storagePath =
       uploadType === "logo"
-        ? `${user.id}/logo.${ext}`
-        : `${user.id}/events/${eventId}/cover.${ext}`;
+        ? `${user.id}/logo/${digest}.${ext}`
+        : `${user.id}/events/${eventId}/${digest}.${ext}`;
 
     // 6. Upload to Supabase Storage (service role for consistency with codebase patterns)
-    const bytes = await file.arrayBuffer();
     const { error: uploadErr } = await admin.storage
       .from(BUCKET)
       .upload(storagePath, bytes, {
-        contentType: file.type,
+        contentType: sniffed,
         upsert: true,
         // Seconds only; supabase-js builds the header. URLs carry ?v= so a year is safe.
         cacheControl: "31536000",
@@ -206,18 +214,16 @@ export async function DELETE(request: NextRequest) {
 
     if (type === "logo") {
       const brandId = brand ?? "wardsignup";
-      // Clear DB column
       await admin
         .from("organizer_profiles")
         .update({ logo_url: null } as never)
         .eq("user_id", user.id)
         .eq("brand_id", brandId);
-      // Best-effort: remove all possible extensions from storage
-      for (const ext of ["jpg", "png", "webp"]) {
-        await admin.storage.from(BUCKET).remove([`${user.id}/logo.${ext}`]);
-      }
+      const { data: listed } = await admin.storage.from(BUCKET).list(`${user.id}/logo`);
+      const hashed = (listed ?? []).map((f) => `${user.id}/logo/${f.name}`);
+      const legacy = ["jpg", "png", "webp"].map((ext) => `${user.id}/logo.${ext}`);
+      await admin.storage.from(BUCKET).remove([...hashed, ...legacy]);
     } else {
-      // Clear DB column
       await admin
         .from("campaigns")
         .update({ cover_image_url: null, cover_position: null } as never)
