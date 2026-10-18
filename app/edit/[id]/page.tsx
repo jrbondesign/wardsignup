@@ -45,6 +45,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import MenuTrigger from "@/components/edit/MenuTrigger";
 import MenuStepForm from "@/components/edit/MenuStepForm";
 import SectionHeader from "@/components/edit/SectionHeader";
+import ReorderPanel from "@/components/edit/ReorderPanel";
 import {
   applyCapacityDrafts,
   cardLocation,
@@ -54,6 +55,8 @@ import {
   removeSectionConfirmBody,
   removeSlotConfirmBody,
   renameSection,
+  reorderSessions,
+  reorderStep,
   sectionSlotIndices,
   sharedLocations,
 } from "@/lib/edit-slot-actions";
@@ -96,6 +99,17 @@ function mapDbSessionsToState(rows: any[] | null): SessionData[] {
     created_at: s.created_at || undefined,
     sort_order: typeof s.sort_order === "number" ? s.sort_order : undefined,
   }));
+}
+
+/** "Thursday, Oct 8" for a dated day, or the weekday name for a recurring one. */
+function dayShortLabel(group: { sessionDate: string | null; dayOfWeek: number }): string {
+  if (!group.sessionDate) return DAYS[group.dayOfWeek];
+  const [year, month, day] = group.sessionDate.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 const DAYS = [
@@ -284,6 +298,9 @@ export default function EditEventPage() {
   // Second step state for day menu actions
   const [dayMenuSecondStep, setDayMenuSecondStep] = useState<"change-date" | "duplicate-day" | null>(null);
   const [dayMenuSecondStepDate, setDayMenuSecondStepDate] = useState("");
+
+  // Reorder mode: the day (group key) whose slots show up and down buttons
+  const [reorderGroupKey, setReorderGroupKey] = useState<string | null>(null);
 
   // Section menu state (section names are per day, so key by day + section)
   const [sectionMenu, setSectionMenu] = useState<{ groupKey: string; section: string } | null>(null);
@@ -1245,29 +1262,7 @@ export default function EditEventPage() {
    *  `toIndex` (same date only), then renumber sort_order across all slots by
    *  the resulting display order so it persists on save. */
   const reorderSlot = (fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex) return;
-    const from = sessions[fromIndex];
-    const to = sessions[toIndex];
-    if (!from || !to) return;
-    if ((from.session_date ?? "") !== (to.session_date ?? "")) return;
-
-    const displayOrder = groupSessionsForDisplay(sessions).flatMap((g) =>
-      g.items.map((i) => i.index),
-    );
-    const fromPos = displayOrder.indexOf(fromIndex);
-    if (fromPos < 0) return;
-    displayOrder.splice(fromPos, 1);
-    let insertAt = displayOrder.indexOf(toIndex);
-    if (insertAt < 0) insertAt = displayOrder.length;
-    displayOrder.splice(insertAt, 0, fromIndex);
-
-    setSessions((prev) => {
-      const next = prev.map((s) => ({ ...s }));
-      displayOrder.forEach((flatIdx, pos) => {
-        if (next[flatIdx]) next[flatIdx].sort_order = pos;
-      });
-      return next;
-    });
+    setSessions((prev) => reorderSessions(prev, fromIndex, toIndex));
   };
 
   /** Duplicate every class in a section on a date as a new, distinctly-named
@@ -2703,6 +2698,29 @@ export default function EditEventPage() {
                             : ""
                         }`}
                       >
+                        {reorderGroupKey === group.key ? (
+                          <ReorderPanel
+                            dayLabel={dayShortLabel(group)}
+                            rows={group.items.map(({ session, index }, pos) => {
+                              const title = (session.label ?? "").trim();
+                              const time = formatTimeRange(session.time, session.end_time);
+                              return {
+                                key: index,
+                                name: title || time,
+                                detail: title ? time : undefined,
+                                section: session.section,
+                                canMoveUp: reorderStep(group, pos, "up") !== null,
+                                canMoveDown: reorderStep(group, pos, "down") !== null,
+                              };
+                            })}
+                            onMove={(pos, direction) => {
+                              const step = reorderStep(group, pos, direction);
+                              if (step) reorderSlot(step.fromIndex, step.toIndex);
+                            }}
+                            onDone={() => setReorderGroupKey(null)}
+                          />
+                        ) : (
+                        <>
                         {/* Date header: date on its own line, one three dots menu at the
                             right (aligned with the slot cards' menus), shared location below. */}
                         <div className="pl-0.5 pr-[17px] md:pr-[21px]">
@@ -3001,6 +3019,8 @@ export default function EditEventPage() {
                           <span className="w-4 h-4 rounded bg-[#E6F7FB] flex items-center justify-center text-[#0E96B0] leading-none">+</span>
                           Add a slot to this date
                         </button>
+                        </>
+                        )}
                       </div>
                       );
                     })}
@@ -3173,6 +3193,18 @@ export default function EditEventPage() {
           );
         }
 
+        // Reorder only makes sense when at least two slots share a section.
+        const canReorder = group.items.some((_, pos) => reorderStep(group, pos, "down") !== null);
+        const reorderItem: ActionMenuItem | null = canReorder
+          ? {
+              label: "Reorder slots",
+              onSelect: () => {
+                if (editingSessionIndex !== null) commitCapacityDraft(editingSessionIndex);
+                setEditingSessionIndex(null);
+                setReorderGroupKey(group.key);
+              },
+            }
+          : null;
         const removeDayItem: ActionMenuItem = {
           label: "Remove day",
           onSelect: () => {
@@ -3203,9 +3235,10 @@ export default function EditEventPage() {
                   setDayMenuSecondStep("duplicate-day");
                 },
               },
+              ...(reorderItem ? [reorderItem] : []),
               removeDayItem,
             ]
-          : [removeDayItem];
+          : [...(reorderItem ? [reorderItem] : []), removeDayItem];
 
         return (
           <ActionMenu
