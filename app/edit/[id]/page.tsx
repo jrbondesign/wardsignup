@@ -42,12 +42,19 @@ import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import { COVER_SIZE_HINT, coverObjectPosition } from "@/lib/cover-position";
 import ActionMenu, { type ActionMenuItem } from "@/components/ActionMenu";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import MenuTrigger from "@/components/edit/MenuTrigger";
+import MenuStepForm from "@/components/edit/MenuStepForm";
+import SectionHeader from "@/components/edit/SectionHeader";
 import {
   applyCapacityDrafts,
   cardLocation,
   duplicateSessionAfter,
   removeDayConfirmBody,
+  removeSection,
+  removeSectionConfirmBody,
   removeSlotConfirmBody,
+  renameSection,
+  sectionSlotIndices,
   sharedLocations,
 } from "@/lib/edit-slot-actions";
 
@@ -260,12 +267,6 @@ export default function EditEventPage() {
   const pendingDeleteSessionIdsRef = useRef<string[] | null>(null);
   const allowDestructiveDeletesOnceRef = useRef(false);
   const [editingSessionIndex, setEditingSessionIndex] = useState<number | null>(null);
-  /** Group key (ISO date) whose date is currently being changed inline. */
-  const [editingDateGroupKey, setEditingDateGroupKey] = useState<string | null>(null);
-  const [changeDateDraft, setChangeDateDraft] = useState("");
-  /** Group key (ISO date) currently being duplicated to a new date. */
-  const [duplicatingDayGroupKey, setDuplicatingDayGroupKey] = useState<string | null>(null);
-  const [dupDayDraft, setDupDayDraft] = useState("");
   /** Flat-array index of the slot being dragged to reorder, or null. */
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -283,6 +284,12 @@ export default function EditEventPage() {
   // Second step state for day menu actions
   const [dayMenuSecondStep, setDayMenuSecondStep] = useState<"change-date" | "duplicate-day" | null>(null);
   const [dayMenuSecondStepDate, setDayMenuSecondStepDate] = useState("");
+
+  // Section menu state (section names are per day, so key by day + section)
+  const [sectionMenu, setSectionMenu] = useState<{ groupKey: string; section: string } | null>(null);
+  const [sectionMenuButtonEl, setSectionMenuButtonEl] = useState<HTMLElement | null>(null);
+  const [sectionMenuStep, setSectionMenuStep] = useState<"rename" | null>(null);
+  const [sectionRenameDraft, setSectionRenameDraft] = useState("");
 
   // Confirm dialog state
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -1293,10 +1300,34 @@ export default function EditEventPage() {
       section: name,
     }));
     setSessions([...sessions, ...copies]);
-    setToastMessage(
-      `Duplicated “${sectionKey}” as “${name}” (${copies.length} slot${copies.length !== 1 ? "s" : ""})`,
-    );
+    setToastMessage(`Duplicated ${sectionKey} as ${name}`);
     setShowToast(true);
+  };
+
+  /** Rename a section on one day (staged until Save). */
+  const renameSectionOnDay = (groupKey: string, section: string, newName: string) => {
+    setSessions((prev) => renameSection(prev, groupKey, section, newName));
+  };
+
+  /** Remove every slot in a section on one day, after an in app confirm. */
+  const removeSectionOnDay = (groupKey: string, section: string) => {
+    const indices = sectionSlotIndices(sessions, groupKey, section);
+    if (indices.length === 0) return;
+    const people = indices.reduce((sum, i) => {
+      const id = sessions[i]?.id;
+      return sum + (id ? signupsBySession[id] ?? 0 : 0);
+    }, 0);
+    setConfirmDialog({
+      title: `Remove ${section}?`,
+      body: removeSectionConfirmBody(indices.length, people),
+      confirmLabel: "Remove section",
+      onConfirm: () => {
+        setSessions((prev) => removeSection(prev, groupKey, section));
+        setCapacityInputDraft({});
+        setEditingSessionIndex(null);
+        setConfirmDialog(null);
+      },
+    });
   };
 
   /** Duplicate a single slot right below the original, then open the copy for
@@ -2699,23 +2730,15 @@ export default function EditEventPage() {
                                   })()
                                 : DAYS[group.dayOfWeek]}
                             </div>
-                            <button
-                              type="button"
-                              onClick={(e) => {
+                            <MenuTrigger
+                              label={`Options for ${group.sessionDate ?? DAYS[group.dayOfWeek]}`}
+                              onOpen={(el) => {
                                 setDayMenuSecondStep(null);
                                 setDayMenuSecondStepDate("");
                                 setDayMenuGroupKey(group.key);
-                                setDayMenuButtonEl(e.currentTarget);
+                                setDayMenuButtonEl(el);
                               }}
-                              aria-label={`Options for ${group.sessionDate ?? DAYS[group.dayOfWeek]}`}
-                              className="w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
-                            >
-                              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5" aria-hidden="true">
-                                <circle cx="12" cy="5" r="2" />
-                                <circle cx="12" cy="12" r="2" />
-                                <circle cx="12" cy="19" r="2" />
-                              </svg>
-                            </button>
+                            />
                           </div>
                           {groupLocs.day && (
                             <div className="text-[12px] text-[#5A8399] truncate -mt-1" title={groupLocs.day}>
@@ -2730,33 +2753,18 @@ export default function EditEventPage() {
                           const classTitle = (session.label ?? "").trim();
                           return (
                             <div key={session.id ?? `${group.key}-${index}`}>
-                              {/* Section header — shown when the section changes within a date */}
+                              {/* Section header: shown when the section changes within a date */}
                               {showHeader && (
-                                <div className="flex items-center justify-between gap-2 px-0.5 pt-2 pb-1">
-                                  <div className="text-[11px] font-semibold uppercase tracking-[0.6px] text-[#5A8399]">
-                                    {sectionKey}
-                                  </div>
-                                  <button
-                                    type="button"
-                                    onClick={() => duplicateSection(group, sectionKey)}
-                                    title={`Duplicate all slots in ${sectionKey}`}
-                                    className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0E96B0] hover:text-[#08647E] transition-colors"
-                                  >
-                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                                      <rect x="9" y="9" width="13" height="13" rx="2" />
-                                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                                    </svg>
-                                    Duplicate section
-                                  </button>
-                                </div>
-                              )}
-                              {showHeader && groupLocs.bySection[sectionKey] && (
-                                <div
-                                  className="px-0.5 -mt-1 pb-1 text-[12px] text-[#5A8399] truncate"
-                                  title={groupLocs.bySection[sectionKey]}
-                                >
-                                  {groupLocs.bySection[sectionKey]}
-                                </div>
+                                <SectionHeader
+                                  name={sectionKey}
+                                  sharedLocation={groupLocs.bySection[sectionKey]}
+                                  onOpenMenu={(el) => {
+                                    setSectionMenuStep(null);
+                                    setSectionRenameDraft("");
+                                    setSectionMenu({ groupKey: group.key, section: sectionKey });
+                                    setSectionMenuButtonEl(el);
+                                  }}
+                                />
                               )}
                               <div
                                 draggable={editingSessionIndex !== index}
@@ -2854,22 +2862,14 @@ export default function EditEventPage() {
                             )}
                           </div>
                           </div>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
+                          <MenuTrigger
+                            label={`Options for ${classTitle || formatTimeRange(session.time, session.end_time)}`}
+                            className="-my-[13px]"
+                            onOpen={(el) => {
                               setSlotMenuIndex(index);
-                              setSlotMenuButtonEl(e.currentTarget);
+                              setSlotMenuButtonEl(el);
                             }}
-                            aria-label={`Options for ${classTitle || formatTimeRange(session.time, session.end_time)}`}
-                            className="w-11 h-11 -my-[13px] flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
-                          >
-                            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5" aria-hidden="true">
-                              <circle cx="12" cy="5" r="2" />
-                              <circle cx="12" cy="12" r="2" />
-                              <circle cx="12" cy="19" r="2" />
-                            </svg>
-                          </button>
+                          />
                         </div>
 
                         {editingSessionIndex === index && (
@@ -3125,122 +3125,54 @@ export default function EditEventPage() {
             })()
           : DAYS[group.dayOfWeek];
 
-        if (dayMenuSecondStep === "change-date") {
-          return (
-            <ActionMenu
-              title="Change date"
-              items={[]}
-              onClose={() => {
-                setDayMenuGroupKey(null);
-                setDayMenuSecondStep(null);
-              }}
-              buttonElement={dayMenuButtonEl}
-              secondStepContent={
-                <>
-                  <div className="px-4 py-3 border-b border-gray-200">
-                    <h3 className="text-base font-bold text-[#0D2B35]">Change date</h3>
-                    <p className="text-sm text-[#5A8399] mt-1">Every slot on this day moves to the new date.</p>
-                  </div>
-                  <div className="p-4">
-                    <input
-                      type="date"
-                      autoFocus
-                      value={dayMenuSecondStepDate}
-                      onChange={(e) => setDayMenuSecondStepDate(e.target.value)}
-                      className="w-full text-sm text-[#0D2B35] px-3 py-2.5 border-[1.5px] border-[#0E96B0] rounded-lg bg-white outline-none"
-                    />
-                  </div>
-                  <div className="px-4 pb-4 flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDayMenuGroupKey(null);
-                        setDayMenuSecondStep(null);
-                      }}
-                      className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-[#0D2B35] bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (dayMenuSecondStepDate && group.sessionDate) {
-                          changeGroupDate(group.sessionDate, dayMenuSecondStepDate);
-                        }
-                        setDayMenuGroupKey(null);
-                        setDayMenuSecondStep(null);
-                      }}
-                      className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-white bg-[#0E96B0] hover:bg-[#08647E] rounded-lg transition-colors"
-                    >
-                      Move
-                    </button>
-                  </div>
-                </>
-              }
-            />
-          );
-        }
-
-        if (dayMenuSecondStep === "duplicate-day") {
-          return (
-            <ActionMenu
-              title="Duplicate day"
-              items={[]}
-              onClose={() => {
-                setDayMenuGroupKey(null);
-                setDayMenuSecondStep(null);
-              }}
-              buttonElement={dayMenuButtonEl}
-              secondStepContent={
-                <>
-                  <div className="px-4 py-3 border-b border-gray-200">
-                    <h3 className="text-base font-bold text-[#0D2B35]">Duplicate day</h3>
-                    <p className="text-sm text-[#5A8399] mt-1">Every slot is copied to the new date. Signups stay on the original day.</p>
-                  </div>
-                  <div className="p-4">
-                    <input
-                      type="date"
-                      autoFocus
-                      value={dayMenuSecondStepDate}
-                      onChange={(e) => setDayMenuSecondStepDate(e.target.value)}
-                      className="w-full text-sm text-[#0D2B35] px-3 py-2.5 border-[1.5px] border-[#0E96B0] rounded-lg bg-white outline-none"
-                    />
-                  </div>
-                  <div className="px-4 pb-4 flex gap-3">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setDayMenuGroupKey(null);
-                        setDayMenuSecondStep(null);
-                      }}
-                      className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-[#0D2B35] bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (dayMenuSecondStepDate) {
-                          duplicateGroupToDate(group, dayMenuSecondStepDate);
-                        }
-                        setDayMenuGroupKey(null);
-                        setDayMenuSecondStep(null);
-                      }}
-                      className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-white bg-[#0E96B0] hover:bg-[#08647E] rounded-lg transition-colors"
-                    >
-                      Duplicate
-                    </button>
-                  </div>
-                </>
-              }
-            />
-          );
-        }
-
         const closeDayMenu = () => {
           setDayMenuGroupKey(null);
           setDayMenuSecondStep(null);
         };
+
+        if (dayMenuSecondStep === "change-date" || dayMenuSecondStep === "duplicate-day") {
+          const isChange = dayMenuSecondStep === "change-date";
+          const stepTitle = isChange ? "Change date" : "Duplicate day";
+          return (
+            <ActionMenu
+              title={stepTitle}
+              items={[]}
+              onClose={closeDayMenu}
+              buttonElement={dayMenuButtonEl}
+              secondStepContent={
+                <MenuStepForm
+                  title={stepTitle}
+                  helper={
+                    isChange
+                      ? "Every slot on this day moves to the new date."
+                      : "Every slot is copied to the new date. Signups stay on the original day."
+                  }
+                  confirmLabel={isChange ? "Move" : "Duplicate"}
+                  confirmDisabled={!dayMenuSecondStepDate}
+                  onCancel={closeDayMenu}
+                  onConfirm={() => {
+                    if (isChange) {
+                      if (group.sessionDate) changeGroupDate(group.sessionDate, dayMenuSecondStepDate);
+                    } else {
+                      duplicateGroupToDate(group, dayMenuSecondStepDate);
+                    }
+                    closeDayMenu();
+                  }}
+                >
+                  <input
+                    type="date"
+                    autoFocus
+                    aria-label={isChange ? "New date" : "Copy to date"}
+                    value={dayMenuSecondStepDate}
+                    onChange={(e) => setDayMenuSecondStepDate(e.target.value)}
+                    className="w-full text-sm text-[#0D2B35] px-3 py-2.5 border-[1.5px] border-[#0E96B0] rounded-lg bg-white outline-none"
+                  />
+                </MenuStepForm>
+              }
+            />
+          );
+        }
+
         const removeDayItem: ActionMenuItem = {
           label: "Remove day",
           onSelect: () => {
@@ -3281,6 +3213,85 @@ export default function EditEventPage() {
             items={items}
             onClose={closeDayMenu}
             buttonElement={dayMenuButtonEl}
+          />
+        );
+      })()}
+
+      {/* Section menu */}
+      {sectionMenu && sectionMenuButtonEl && (() => {
+        const { groupKey, section } = sectionMenu;
+        const group = groupSessionsForDisplay(sessions).find((g) => g.key === groupKey);
+        if (!group || sectionSlotIndices(sessions, groupKey, section).length === 0) return null;
+        const closeSectionMenu = () => {
+          setSectionMenu(null);
+          setSectionMenuStep(null);
+        };
+
+        if (sectionMenuStep === "rename") {
+          const draft = sectionRenameDraft.trim();
+          return (
+            <ActionMenu
+              title="Rename section"
+              items={[]}
+              onClose={closeSectionMenu}
+              buttonElement={sectionMenuButtonEl}
+              secondStepContent={
+                <MenuStepForm
+                  title="Rename section"
+                  helper="Every slot in this section on this day gets the new name."
+                  confirmLabel="Save"
+                  confirmDisabled={draft === ""}
+                  onCancel={closeSectionMenu}
+                  onConfirm={() => {
+                    renameSectionOnDay(groupKey, section, draft);
+                    closeSectionMenu();
+                  }}
+                >
+                  <input
+                    type="text"
+                    autoFocus
+                    aria-label="Section name"
+                    list="edit-session-sections"
+                    value={sectionRenameDraft}
+                    onChange={(e) => setSectionRenameDraft(e.target.value)}
+                    className="w-full text-sm text-[#0D2B35] px-3 py-2.5 border-[1.5px] border-[#0E96B0] rounded-lg bg-white outline-none"
+                  />
+                </MenuStepForm>
+              }
+            />
+          );
+        }
+
+        return (
+          <ActionMenu
+            title={section}
+            items={[
+              {
+                label: "Duplicate section",
+                onSelect: () => {
+                  closeSectionMenu();
+                  duplicateSection(group, section);
+                },
+              },
+              {
+                label: "Rename section",
+                closeOnSelect: false,
+                onSelect: () => {
+                  setSectionRenameDraft(section);
+                  setSectionMenuStep("rename");
+                },
+              },
+              {
+                label: "Remove section",
+                tone: "danger",
+                onSelect: () => {
+                  closeSectionMenu();
+                  removeSectionOnDay(groupKey, section);
+                },
+              },
+            ]}
+            onClose={closeSectionMenu}
+            buttonElement={sectionMenuButtonEl}
           />
         );
       })()}

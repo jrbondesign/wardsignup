@@ -114,3 +114,47 @@ export function removeDayConfirmBody(slots: number, signups: number): string {
     ? `This removes ${slotText} and ${signups} ${signups === 1 ? "signup" : "signups"} on this day. Changes apply when you save.`
     : `This removes ${slotText}. No one has signed up yet. Changes apply when you save.`;
 }
+
+/** The display group (day) a slot belongs to: its ISO date, or `dow-N` for a
+ *  recurring weekday slot. Matches DisplayDateGroup.key. */
+export function sessionGroupKey(session: EditSession): string {
+  return session.session_date ?? `dow-${session.day_of_week}`;
+}
+
+const inSection = (s: EditSession, groupKey: string, section: string) =>
+  sessionGroupKey(s) === groupKey && (s.section ?? "").trim() === section.trim();
+
+/** Flat indices of every slot in one section on one day. */
+export function sectionSlotIndices(sessions: EditSession[], groupKey: string, section: string): number[] {
+  const out: number[] = [];
+  sessions.forEach((s, i) => {
+    if (inSection(s, groupKey, section)) out.push(i);
+  });
+  return out;
+}
+
+/** Rename a section on one day only. Slots in a same named section on other
+ *  days are left alone. A blank new name is ignored. */
+export function renameSection<T extends EditSession>(
+  sessions: T[],
+  groupKey: string,
+  section: string,
+  newName: string,
+): T[] {
+  const name = newName.trim();
+  if (name === "" || name === section.trim()) return sessions;
+  return sessions.map((s) => (inSection(s, groupKey, section) ? { ...s, section: name } : s));
+}
+
+/** Remove every slot in one section on one day. */
+export function removeSection<T extends EditSession>(sessions: T[], groupKey: string, section: string): T[] {
+  return sessions.filter((s) => !inSection(s, groupKey, section));
+}
+
+/** ConfirmDialog body for removing a section. */
+export function removeSectionConfirmBody(slots: number, signups: number): string {
+  const slotText = `${slots} ${slots === 1 ? "slot" : "slots"}`;
+  return signups > 0
+    ? `This removes ${slotText} and ${signups} ${signups === 1 ? "signup" : "signups"} in this section. Changes apply when you save.`
+    : `This removes ${slotText}. No one has signed up yet. Changes apply when you save.`;
+}

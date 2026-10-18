@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+/** Popover size for a second step (title, helper, one field, two buttons). */
+const SECOND_STEP_WIDTH = 320;
+const SECOND_STEP_HEIGHT = 230;
+
 export interface ActionMenuItem {
   label: string;
   onSelect: () => void;
@@ -30,6 +34,7 @@ export default function ActionMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const firstButtonRef = useRef<HTMLButtonElement>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const hasSecondStep = Boolean(secondStepContent);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; flipUp: boolean } | null>(null);
 
   useEffect(() => {
@@ -41,8 +46,8 @@ export default function ActionMenu({
       const buttonRect = buttonElement.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
-      const menuWidth = 280;
-      const menuHeight = items.length * 44 + 8;
+      const menuWidth = hasSecondStep ? SECOND_STEP_WIDTH : 280;
+      const menuHeight = hasSecondStep ? SECOND_STEP_HEIGHT : items.length * 44 + 8;
       const gap = 4;
 
       const spaceBelow = viewportHeight - buttonRect.bottom;
@@ -109,7 +114,7 @@ export default function ActionMenu({
       document.removeEventListener("keydown", handleEscape);
       document.removeEventListener("mousedown", handleClickOutside);
     };
-  }, [onClose, buttonElement, items.length]);
+  }, [onClose, buttonElement, items.length, hasSecondStep]);
 
   // Only ever opened from a click, so this runs in the browser; guard for SSR anyway.
   if (typeof document === "undefined") return null;
@@ -118,6 +123,30 @@ export default function ActionMenu({
     if (item.closeOnSelect !== false) onClose();
     item.onSelect();
   };
+
+  if (secondStepContent && !isMobile) {
+    // Desktop: the second step opens as a popover anchored to the same button.
+    if (!menuPosition) return null;
+    return createPortal(
+      <>
+        <div className="fixed inset-0 z-[100]" onClick={onClose} />
+        <div
+          ref={menuRef}
+          className="fixed bg-white border border-gray-200 rounded-lg shadow-[0_8px_28px_rgba(8,100,126,0.18)] z-[101] animate-fade-in"
+          style={{
+            top: `${menuPosition.top}px`,
+            left: `${menuPosition.left}px`,
+            width: `${SECOND_STEP_WIDTH}px`,
+          }}
+          role="dialog"
+          aria-label={title}
+        >
+          {secondStepContent}
+        </div>
+      </>,
+      document.body
+    );
+  }
 
   if (secondStepContent) {
     return createPortal(
