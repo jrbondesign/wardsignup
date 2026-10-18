@@ -7,6 +7,9 @@ export interface ActionMenuItem {
   label: string;
   onSelect: () => void;
   tone?: "default" | "danger";
+  /** Set false when selecting the item swaps the menu to a second step
+   *  (the parent then renders `secondStepContent`), so the menu stays open. */
+  closeOnSelect?: boolean;
 }
 
 interface ActionMenuProps {
@@ -28,11 +31,6 @@ export default function ActionMenu({
   const firstButtonRef = useRef<HTMLButtonElement>(null);
   const [isMobile, setIsMobile] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; flipUp: boolean } | null>(null);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
 
   useEffect(() => {
     const checkMobile = () => window.innerWidth < 768;
@@ -113,7 +111,13 @@ export default function ActionMenu({
     };
   }, [onClose, buttonElement, items.length]);
 
-  if (!mounted) return null;
+  // Only ever opened from a click, so this runs in the browser; guard for SSR anyway.
+  if (typeof document === "undefined") return null;
+
+  const selectItem = (item: ActionMenuItem) => {
+    if (item.closeOnSelect !== false) onClose();
+    item.onSelect();
+  };
 
   if (secondStepContent) {
     return createPortal(
@@ -151,10 +155,7 @@ export default function ActionMenu({
                 key={idx}
                 ref={idx === 0 ? firstButtonRef : undefined}
                 type="button"
-                onClick={() => {
-                  onClose();
-                  item.onSelect();
-                }}
+                onClick={() => selectItem(item)}
                 className={`w-full min-h-[44px] px-4 py-3 text-left rounded-lg transition-colors text-sm font-medium ${
                   item.tone === "danger"
                     ? "text-red-600 hover:bg-red-50"
@@ -203,11 +204,8 @@ export default function ActionMenu({
               key={idx}
               ref={idx === 0 ? firstButtonRef : undefined}
               type="button"
-              onClick={() => {
-                onClose();
-                item.onSelect();
-              }}
-              className={`w-full min-h-[36px] px-3 py-2 text-left rounded-md transition-colors text-sm font-medium whitespace-nowrap ${
+              onClick={() => selectItem(item)}
+              className={`w-full min-h-[44px] px-3 py-2.5 text-left rounded-md transition-colors text-sm font-medium whitespace-nowrap ${
                 item.tone === "danger"
                   ? "text-red-600 hover:bg-red-50"
                   : "text-[#0D2B35] hover:bg-gray-50"

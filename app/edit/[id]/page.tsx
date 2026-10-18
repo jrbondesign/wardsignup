@@ -42,6 +42,14 @@ import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import { COVER_SIZE_HINT, coverObjectPosition } from "@/lib/cover-position";
 import ActionMenu, { type ActionMenuItem } from "@/components/ActionMenu";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import {
+  applyCapacityDrafts,
+  cardLocation,
+  duplicateSessionAfter,
+  removeDayConfirmBody,
+  removeSlotConfirmBody,
+  sharedLocations,
+} from "@/lib/edit-slot-actions";
 
 interface SessionData {
   id?: string;
@@ -1096,16 +1104,26 @@ export default function EditEventPage() {
       const name = (session.label ?? "").trim() || formatTimeRange(session.time, session.end_time);
       setConfirmDialog({
         title: `Remove ${name}?`,
-        body: `${n} ${n === 1 ? "person is" : "people are"} signed up for this slot. Removing it removes ${n === 1 ? "that signup" : "those signups"} when you save.`,
+        body: removeSlotConfirmBody(n),
         confirmLabel: "Remove slot",
         onConfirm: () => {
-          setSessions(sessions.filter((_, i) => i !== index));
+          dropSessionAt(index);
           setConfirmDialog(null);
         },
       });
     } else {
-      setSessions(sessions.filter((_, i) => i !== index));
+      dropSessionAt(index);
     }
+  };
+
+  /** Remove one slot and keep the open editor pointing at the same slot
+   *  (indices after the removed one shift down by one). */
+  const dropSessionAt = (index: number) => {
+    setSessions((prev) => prev.filter((_, i) => i !== index));
+    setCapacityInputDraft({});
+    setEditingSessionIndex((cur) =>
+      cur === null || cur === index ? null : cur > index ? cur - 1 : cur,
+    );
   };
 
   /** Remove every session on one date (takes effect on Save). */
@@ -1127,9 +1145,7 @@ export default function EditEventPage() {
         })()
       : DAYS[group.dayOfWeek];
 
-    const body = people > 0
-      ? `This removes ${n} ${n === 1 ? "slot" : "slots"} and ${people} ${people === 1 ? "signup" : "signups"} on this day. Changes apply when you save.`
-      : `This removes ${n} ${n === 1 ? "slot" : "slots"}. No one has signed up yet. Changes apply when you save.`;
+    const body = removeDayConfirmBody(n, people);
 
     setConfirmDialog({
       title: `Remove ${dateStr}?`,
@@ -1137,7 +1153,9 @@ export default function EditEventPage() {
       confirmLabel: "Remove day",
       onConfirm: () => {
         const drop = new Set(group.items.map((it) => it.index));
-        setSessions(sessions.filter((_, i) => !drop.has(i)));
+        setSessions((prev) => prev.filter((_, i) => !drop.has(i)));
+        setCapacityInputDraft({});
+        setEditingSessionIndex(null);
         setConfirmDialog(null);
       },
     });
@@ -1281,28 +1299,18 @@ export default function EditEventPage() {
     setShowToast(true);
   };
 
-  /** Duplicate a single slot and insert it right after the original, then open for editing. */
+  /** Duplicate a single slot right below the original, then open the copy for
+   *  editing. Any pending Spots draft is committed first so the copy (and the
+   *  original) carry the number the organizer typed. */
   const duplicateSession = (index: number) => {
-    const original = sessions[index];
-    if (!original) return;
+    const base = applyCapacityDrafts(sessions, capacityInputDraft);
+    const result = duplicateSessionAfter(base, index);
+    if (!result) return;
+    setCapacityInputDraft({});
+    setSessions(result.sessions);
+    setEditingSessionIndex(result.copyIndex);
 
-    const copy: SessionData = {
-      day_of_week: original.day_of_week,
-      time: original.time,
-      end_time: original.end_time,
-      capacity: original.capacity,
-      location: original.location,
-      notes: original.notes,
-      session_date: original.session_date,
-      label: original.label,
-      section: original.section,
-    };
-
-    const before = sessions.slice(0, index + 1);
-    const after = sessions.slice(index + 1);
-    setSessions([...before, copy, ...after]);
-    setEditingSessionIndex(index + 1);
-
+    const original = base[index];
     const name = (original.label ?? "").trim() || formatTimeRange(original.time, original.end_time);
     setToastMessage(`Duplicated ${name}`);
     setShowToast(true);
@@ -2652,7 +2660,9 @@ export default function EditEventPage() {
                   </div>
                 ) : (
                   <div className="space-y-6">
-                    {groupSessionsForDisplay(sessions).map((group) => (
+                    {groupSessionsForDisplay(sessions).map((group) => {
+                      const groupLocs = sharedLocations(group);
+                      return (
                       <div
                         key={group.key}
                         id={group.sessionDate ? `edit-date-${group.sessionDate}` : undefined}
@@ -2662,45 +2672,55 @@ export default function EditEventPage() {
                             : ""
                         }`}
                       >
-                        {/* Date header — mirrors the public preview's per-date grouping */}
-                        <div className="flex items-start gap-2 px-0.5">
-                          <div className="font-serif text-[17px] text-[#0D2B35] whitespace-nowrap leading-tight flex-1">
-                            {group.sessionDate
-                              ? (() => {
-                                  const [year, month, day] = group.sessionDate.split("-").map(Number);
-                                  const date = new Date(year, month - 1, day);
-                                  const longFormat = date.toLocaleDateString("en-US", {
-                                    weekday: "long",
-                                    month: "short",
-                                    day: "numeric",
-                                    year: "numeric",
-                                  });
-                                  const shortFormat = date.toLocaleDateString("en-US", {
-                                    weekday: "short",
-                                    month: "short",
-                                    day: "numeric",
-                                    year: "numeric",
-                                  });
-                                  return window.innerWidth < 390 ? shortFormat : longFormat;
-                                })()
-                              : DAYS[group.dayOfWeek]}
-                          </div>
-                          {group.sessionDate && (
+                        {/* Date header: date on its own line, one three dots menu at the
+                            right (aligned with the slot cards' menus), shared location below. */}
+                        <div className="pl-0.5 pr-[17px] md:pr-[21px]">
+                          <div className="flex items-center gap-2">
+                            <div className="font-serif text-[17px] text-[#0D2B35] whitespace-nowrap leading-tight flex-1 min-w-0">
+                              {group.sessionDate
+                                ? (() => {
+                                    const [year, month, day] = group.sessionDate.split("-").map(Number);
+                                    const date = new Date(year, month - 1, day);
+                                    const fmt = (weekday: "long" | "short") =>
+                                      date.toLocaleDateString("en-US", {
+                                        weekday,
+                                        month: "short",
+                                        day: "numeric",
+                                        year: "numeric",
+                                      });
+                                    // Narrow phones get the short weekday so the date never wraps;
+                                    // swapped in CSS so server and client render the same markup.
+                                    return (
+                                      <>
+                                        <span className="min-[360px]:hidden">{fmt("short")}</span>
+                                        <span className="hidden min-[360px]:inline">{fmt("long")}</span>
+                                      </>
+                                    );
+                                  })()
+                                : DAYS[group.dayOfWeek]}
+                            </div>
                             <button
                               type="button"
                               onClick={(e) => {
+                                setDayMenuSecondStep(null);
+                                setDayMenuSecondStepDate("");
                                 setDayMenuGroupKey(group.key);
                                 setDayMenuButtonEl(e.currentTarget);
                               }}
-                              aria-label={`Options for ${group.sessionDate}`}
+                              aria-label={`Options for ${group.sessionDate ?? DAYS[group.dayOfWeek]}`}
                               className="w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
                             >
-                              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5" aria-hidden="true">
                                 <circle cx="12" cy="5" r="2" />
                                 <circle cx="12" cy="12" r="2" />
                                 <circle cx="12" cy="19" r="2" />
                               </svg>
                             </button>
+                          </div>
+                          {groupLocs.day && (
+                            <div className="text-[12px] text-[#5A8399] truncate -mt-1" title={groupLocs.day}>
+                              {groupLocs.day}
+                            </div>
                           )}
                         </div>
                         {group.items.map(({ session, index }, itemIdx, itemArr) => {
@@ -2728,6 +2748,14 @@ export default function EditEventPage() {
                                     </svg>
                                     Duplicate section
                                   </button>
+                                </div>
+                              )}
+                              {showHeader && groupLocs.bySection[sectionKey] && (
+                                <div
+                                  className="px-0.5 -mt-1 pb-1 text-[12px] text-[#5A8399] truncate"
+                                  title={groupLocs.bySection[sectionKey]}
+                                >
+                                  {groupLocs.bySection[sectionKey]}
                                 </div>
                               )}
                               <div
@@ -2778,7 +2806,7 @@ export default function EditEventPage() {
                                 }`}
                               >
                         <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0 flex items-start gap-2.5">
+                          <div className="min-w-0 flex-1 flex items-start gap-2.5">
                             {editingSessionIndex !== index && (
                               <span
                                 title="Drag to reorder"
@@ -2791,7 +2819,7 @@ export default function EditEventPage() {
                                 </svg>
                               </span>
                             )}
-                          <div className="min-w-0">
+                          <div className="min-w-0 flex-1">
                             {classTitle && (
                               <div className="text-[14px] font-semibold text-[#0D2B35] leading-tight">
                                 {classTitle}
@@ -2811,6 +2839,19 @@ export default function EditEventPage() {
                                 </>
                               )}
                             </div>
+                            {(() => {
+                              const ownLoc = cardLocation(session, groupLocs);
+                              return ownLoc ? (
+                                <div className="text-[11px] text-[#5A8399] mt-1 truncate" title={ownLoc}>
+                                  {ownLoc}
+                                </div>
+                              ) : null;
+                            })()}
+                            {(session.notes ?? "").trim() && (
+                              <div className="hidden md:block text-[11px] text-[#5A8399] mt-1 truncate" title={session.notes}>
+                                {session.notes}
+                              </div>
+                            )}
                           </div>
                           </div>
                           <button
@@ -2821,9 +2862,9 @@ export default function EditEventPage() {
                               setSlotMenuButtonEl(e.currentTarget);
                             }}
                             aria-label={`Options for ${classTitle || formatTimeRange(session.time, session.end_time)}`}
-                            className="w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
+                            className="w-11 h-11 -my-[13px] flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
                           >
-                            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5" aria-hidden="true">
                               <circle cx="12" cy="5" r="2" />
                               <circle cx="12" cy="12" r="2" />
                               <circle cx="12" cy="19" r="2" />
@@ -2933,6 +2974,19 @@ export default function EditEventPage() {
                                 className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70 resize-none"
                               />
                             </div>
+                            <div className="col-span-2 md:col-span-5 flex justify-end">
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  commitCapacityDraft(index);
+                                  setEditingSessionIndex(null);
+                                }}
+                                className="min-h-[44px] px-6 text-sm font-semibold text-white bg-[#0E96B0] hover:bg-[#08647E] rounded-xl transition-colors"
+                              >
+                                Done
+                              </button>
+                            </div>
                           </div>
                         )}
                               </div>{/* session card */}
@@ -2948,7 +3002,8 @@ export default function EditEventPage() {
                           Add a slot to this date
                         </button>
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </>
@@ -3065,6 +3120,7 @@ export default function EditEventPage() {
                 weekday: "long",
                 month: "short",
                 day: "numeric",
+                year: "numeric",
               });
             })()
           : DAYS[group.dayOfWeek];
@@ -3181,12 +3237,24 @@ export default function EditEventPage() {
           );
         }
 
-        return (
-          <ActionMenu
-            title={dateStr}
-            items={[
+        const closeDayMenu = () => {
+          setDayMenuGroupKey(null);
+          setDayMenuSecondStep(null);
+        };
+        const removeDayItem: ActionMenuItem = {
+          label: "Remove day",
+          onSelect: () => {
+            closeDayMenu();
+            removeDateGroup(group);
+          },
+          tone: "danger",
+        };
+        // Recurring weekday groups have no calendar date, so only Remove day applies.
+        const items: ActionMenuItem[] = group.sessionDate
+          ? [
               {
                 label: "Change date",
+                closeOnSelect: false,
                 onSelect: () => {
                   setDayMenuSecondStepDate(group.sessionDate || "");
                   setDayMenuSecondStep("change-date");
@@ -3194,26 +3262,24 @@ export default function EditEventPage() {
               },
               {
                 label: "Duplicate day",
+                closeOnSelect: false,
                 onSelect: () => {
-                  if (group.sessionDate) {
-                    const [yy, mm, dd] = group.sessionDate.split("-").map(Number);
-                    const nd = new Date(yy, mm - 1, dd);
-                    nd.setDate(nd.getDate() + 7);
-                    setDayMenuSecondStepDate(`${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, "0")}-${String(nd.getDate()).padStart(2, "0")}`);
-                  }
+                  const [yy, mm, dd] = group.sessionDate!.split("-").map(Number);
+                  const nd = new Date(yy, mm - 1, dd);
+                  nd.setDate(nd.getDate() + 7);
+                  setDayMenuSecondStepDate(`${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, "0")}-${String(nd.getDate()).padStart(2, "0")}`);
                   setDayMenuSecondStep("duplicate-day");
                 },
               },
-              {
-                label: "Remove day",
-                onSelect: () => {
-                  setDayMenuGroupKey(null);
-                  removeDateGroup(group);
-                },
-                tone: "danger",
-              },
-            ]}
-            onClose={() => setDayMenuGroupKey(null)}
+              removeDayItem,
+            ]
+          : [removeDayItem];
+
+        return (
+          <ActionMenu
+            title={dateStr}
+            items={items}
+            onClose={closeDayMenu}
             buttonElement={dayMenuButtonEl}
           />
         );
