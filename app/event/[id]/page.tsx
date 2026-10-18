@@ -383,7 +383,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     const sessionsToSignUp = isSingleSession && sessions.length === 1
       ? [sessions[0].id]
       : selectedSessions;
-    if (sessionsToSignUp.length === 0) { setError("Please select at least one session"); return; }
+    if (sessionsToSignUp.length === 0) { setError("Please select at least one slot"); return; }
     if (!formData.name.trim()) { setError("Please enter your name"); return; }
 
     setSubmitting(true);
@@ -729,7 +729,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 ? "Claim an item below to sign up"
                 : isSingleSession
                 ? "Fill in your information below to register"
-                : "Select sessions below, then complete your sign up"}
+                : "Select slots below, then complete your sign up"}
             </div>
           </div>
         </div>
@@ -1182,7 +1182,20 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         {!isSingleSession && (eventType === "spots" || eventType === "rsvp") && (
           Object.keys(groupedSessions).length === 0 ? (
             <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-10 text-center">
-              <p className="text-sm text-[#5A8399]">No sessions available yet. Check back later!</p>
+              <p className="text-sm text-[#5A8399]">
+                {(() => {
+                  if (sessions.length === 0) return "No slots yet. Check back soon!";
+                  const today = new Date();
+                  today.setHours(0, 0, 0, 0);
+                  const allPast = sessions.every((s) => {
+                    if (!s.session_date) return false;
+                    const [y, m, d] = s.session_date.split("-").map(Number);
+                    return new Date(y, m - 1, d) < today;
+                  });
+                  if (allPast) return "This event has ended. All slots have passed.";
+                  return "All slots are full.";
+                })()}
+              </p>
             </div>
           ) : null
         )}
@@ -1302,7 +1315,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
             {/* No sessions for this date */}
             {selectedCalendarDate && Object.keys(groupedSessions).length === 0 && (
               <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-8 text-center">
-                <p className="text-sm text-[#5A8399]">No sessions on this date.</p>
+                <p className="text-sm text-[#5A8399]">No slots on this date.</p>
               </div>
             )}
 
@@ -1465,7 +1478,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
             {/* Selected sessions summary */}
             <div className="mb-5 bg-[#E6F7FB] border border-[#0E96B0]/15 rounded-xl p-4 max-h-36 overflow-y-auto">
-              <div className="text-[11px] font-semibold text-[#0E96B0] uppercase tracking-[0.6px] mb-2">Selected Sessions</div>
+              <div className="text-[11px] font-semibold text-[#0E96B0] uppercase tracking-[0.6px] mb-2">Selected slots</div>
               <div className="space-y-1">
                 {selectedSessions.map((sessionId) => {
                   const session = sessions.find((s) => s.id === sessionId);

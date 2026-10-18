@@ -197,6 +197,10 @@ export default function EditEventPage() {
   const [showReschedule, setShowReschedule] = useState(false);
   const [showRescheduleConfirm, setShowRescheduleConfirm] = useState(false);
   const [signupCount, setSignupCount] = useState(0);
+  /** Signup count per session id, so Edit can show who is in a slot before it is removed. */
+  const [signupsBySession, setSignupsBySession] = useState<Record<string, number>>({});
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  const [settingsStatus, setSettingsStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [rescheduleStart, setRescheduleStart] = useState<Date | null>(null);
   const [rescheduleEnd, setRescheduleEnd] = useState<Date | null>(null);
   const [rescheduleTime, setRescheduleTime] = useState("17:00");
@@ -487,6 +491,15 @@ export default function EditEventPage() {
               .select("id", { count: "exact", head: true })
               .in("session_id", sessionIds);
             setSignupCount(count ?? 0);
+            const { data: suRows } = await supabase
+              .from("signups")
+              .select("session_id")
+              .in("session_id", sessionIds);
+            const bySession: Record<string, number> = {};
+            for (const r of (suRows ?? []) as { session_id: string }[]) {
+              bySession[r.session_id] = (bySession[r.session_id] ?? 0) + 1;
+            }
+            setSignupsBySession(bySession);
           }
 
           // Pre-fill reschedule range from existing session_dates
@@ -624,10 +637,14 @@ export default function EditEventPage() {
       if (!(key in patch) || typeof patch[key] !== "boolean") return;
       const next = patch[key] as boolean;
       setter(next);
-      patchCampaignFields({ [apiKey]: next }).catch((err: unknown) => {
-        setter(current);
-        alert(err instanceof Error ? err.message : "Could not save");
-      });
+      setSettingsStatus("saving");
+      patchCampaignFields({ [apiKey]: next })
+        .then(() => setSettingsStatus("saved"))
+        .catch((err: unknown) => {
+          setter(current);
+          setSettingsStatus("error");
+          alert(err instanceof Error ? err.message : "Could not save");
+        });
     };
 
     saveBool("showSignupsPublicly", "show_signups_publicly", showSignupsPublicly, setShowSignupsPublicly);
@@ -885,7 +902,7 @@ export default function EditEventPage() {
     setShowReschedule(false);
     setShowRescheduleConfirm(false);
     setSignupCount(0);
-    setToastMessage(`Rescheduled to ${newSessions.length} session${newSessions.length !== 1 ? 's' : ''}`);
+    setToastMessage(`Rescheduled to ${newSessions.length} slot${newSessions.length !== 1 ? 's' : ''}`);
     setShowToast(true);
   };
 
@@ -970,7 +987,7 @@ export default function EditEventPage() {
       if (newSessions.length === 0) {
         setShowBulk(true);
         setError(
-          "No sessions would be created — pick weekdays that actually occur between your start and end dates.",
+          "No slots would be created. Pick weekdays that actually occur between your start and end dates.",
         );
         scrollToEditSection("edit-bulk-calendar");
         return;
@@ -990,7 +1007,7 @@ export default function EditEventPage() {
     setSessions([...sessions, ...newSessions]);
 
     // Show toast
-    setToastMessage(`Added ${newSessions.length} session${newSessions.length > 1 ? 's' : ''}!`);
+    setToastMessage(`Added ${newSessions.length} slot${newSessions.length > 1 ? 's' : ''}!`);
     setShowToast(true);
 
     // Reset bulk form
@@ -1011,7 +1028,7 @@ export default function EditEventPage() {
   const addSession = () => {
     if (newSessionUseDate && !newSessionDate) {
       setShowAddSession(true);
-      setError("Please select a date for this session.");
+      setError("Please select a date for this slot.");
       scrollToEditSection("edit-individual-date");
       return;
     }
@@ -1049,13 +1066,26 @@ export default function EditEventPage() {
   };
 
   const removeSession = (index: number) => {
+    const id = sessions[index]?.id;
+    const n = id ? signupsBySession[id] ?? 0 : 0;
+    if (
+      n > 0 &&
+      !confirm(
+        `${n} ${n === 1 ? "person is" : "people are"} signed up for this slot. Removing it deletes ${n === 1 ? "that signup" : "those signups"} when you save. Remove it?`,
+      )
+    ) return;
     setSessions(sessions.filter((_, i) => i !== index));
   };
 
   /** Remove every session on one date (takes effect on Save). */
   const removeDateGroup = (group: { items: { index: number }[] }) => {
     const n = group.items.length;
-    if (!confirm(`Remove this date${n > 1 ? ` and its ${n} sessions` : ""}? Changes apply when you save.`)) return;
+    const people = group.items.reduce((sum, it) => {
+      const id = sessions[it.index]?.id;
+      return sum + (id ? signupsBySession[id] ?? 0 : 0);
+    }, 0);
+    const peopleNote = people > 0 ? ` ${people} ${people === 1 ? "person is" : "people are"} signed up and will be removed.` : "";
+    if (!confirm(`Remove this date${n > 1 ? ` and its ${n} slots` : ""}?${peopleNote} Changes apply when you save.`)) return;
     const drop = new Set(group.items.map((it) => it.index));
     setSessions(sessions.filter((_, i) => !drop.has(i)));
   };
@@ -1193,7 +1223,7 @@ export default function EditEventPage() {
     }));
     setSessions([...sessions, ...copies]);
     setToastMessage(
-      `Duplicated “${sectionKey}” as “${name}” (${copies.length} class${copies.length !== 1 ? "es" : ""})`,
+      `Duplicated “${sectionKey}” as “${name}” (${copies.length} slot${copies.length !== 1 ? "s" : ""})`,
     );
     setShowToast(true);
   };
@@ -1385,10 +1415,21 @@ export default function EditEventPage() {
           .select("id", { count: "exact", head: true })
           .in("session_id", sessionIds);
         setSignupCount(count ?? 0);
+        const { data: suRows } = await supabase
+          .from("signups")
+          .select("session_id")
+          .in("session_id", sessionIds);
+        const bySession: Record<string, number> = {};
+        for (const r of (suRows ?? []) as { session_id: string }[]) {
+          bySession[r.session_id] = (bySession[r.session_id] ?? 0) + 1;
+        }
+        setSignupsBySession(bySession);
       } else {
         setSignupCount(0);
+        setSignupsBySession({});
       }
 
+      setLastSavedAt(new Date());
       setToastMessage("Changes saved");
       setShowToast(true);
       setSaving(false);
@@ -1713,7 +1754,16 @@ export default function EditEventPage() {
             <div className="p-4 md:p-8">
             <div className="flex items-center gap-3 mb-4">
               {/* Future: Org logo support */}
-              <h1 className="font-serif text-[28px] text-[#0D2B35]">Edit Event</h1>
+              <h1 className="font-serif text-[28px] text-[#0D2B35]">Edit details</h1>
+              <span role="status" aria-live="polite" className="ml-auto text-[11px] font-semibold rounded-full px-2.5 py-1 border border-[rgba(14,150,176,0.25)] text-[#08647E] bg-[#F8FCFD] whitespace-nowrap">
+                {saving
+                  ? "Saving…"
+                  : (savedSnapshot !== null && savedSnapshot !== JSON.stringify({ name: eventName, description: eventDescription, eventTimezone, sessions }))
+                    ? "Unsaved changes"
+                    : lastSavedAt
+                      ? "All changes saved"
+                      : "No changes yet"}
+              </span>
             </div>
 
             <form onSubmit={handleSave} className="space-y-6">
@@ -1747,14 +1797,22 @@ export default function EditEventPage() {
                 />
               </div>
 
-              {optionalSettingsEl(((event as { event_type?: CreateFormState["eventType"] } | null)?.event_type) || "spots", true)}
+              <div id="event-settings" className="scroll-mt-20">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-[13px] font-semibold text-[#2E5566]">Settings</div>
+                  <span role="status" aria-live="polite" className="text-[11px] text-[#5A8399]">
+                    {settingsStatus === "saving" ? "Saving…" : settingsStatus === "saved" ? "Saved" : settingsStatus === "error" ? "Not saved" : "Settings save as you change them"}
+                  </span>
+                </div>
+                {optionalSettingsEl(((event as { event_type?: CreateFormState["eventType"] } | null)?.event_type) || "spots", true)}
+              </div>
 
               {/* Sessions */}
               <div id="sessions-section" className="border-t border-[rgba(14,150,176,0.12)] pt-6">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between mb-3">
                   <div className="min-w-0">
                     <div className="text-sm font-semibold text-[#0D2B35]">Slots</div>
-                    <div className="text-xs text-[#5A8399]">Add, edit, or replace sessions for this event</div>
+                    <div className="text-xs text-[#5A8399]">Add, edit, or replace slots for this event</div>
                   </div>
 
                   <div className="w-full sm:w-auto flex flex-col sm:flex-row sm:items-center gap-2 sm:flex-shrink-0">
@@ -1764,7 +1822,7 @@ export default function EditEventPage() {
                         onClick={() => setShowAddSessionsMenu((v) => !v)}
                         className="w-full sm:w-auto inline-flex items-center justify-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.30)] hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(14,150,176,0.40)] transition-all"
                       >
-                        Add sessions
+                        Add slots
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 transition-transform ${showAddSessionsMenu ? "rotate-180" : ""}`}>
                           <polyline points="6 9 12 15 18 9"/>
                         </svg>
@@ -1851,8 +1909,8 @@ export default function EditEventPage() {
                   <div id="replace-schedule" className="border border-amber-200 rounded-xl p-5 space-y-5 bg-white overflow-x-hidden">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <div className="text-sm font-semibold text-[#0D2B35]">Replace all sessions</div>
-                        <div className="text-xs text-[#5A8399]">Regenerate sessions using the settings below</div>
+                        <div className="text-sm font-semibold text-[#0D2B35]">Replace all slots</div>
+                        <div className="text-xs text-[#5A8399]">Regenerate slots using the settings below</div>
                       </div>
                       <button
                         type="button"
@@ -2098,8 +2156,8 @@ export default function EditEventPage() {
 
                     <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
                       {isTithingReschedule
-                        ? "This will replace all existing sessions with appointment slots across the new range."
-                        : `This will replace all ${sessions.length} existing session${sessions.length !== 1 ? "s" : ""} with new sessions based on the settings above.`}
+                        ? "This will replace all existing slots with new ones across the new range."
+                        : `This will replace all ${sessions.length} existing slot${sessions.length !== 1 ? "s" : ""} with new slots based on the settings above.`}
                     </div>
 
                     <div className="bg-[#E6F7FB] border border-[rgba(14,150,176,0.18)] rounded-xl px-[18px] py-[14px] text-sm leading-relaxed text-[#2E5566]">
@@ -2116,11 +2174,11 @@ export default function EditEventPage() {
                                 : "Configure the schedule above to auto-generate slots.";
                             }
 
-                            if (rescheduleDays.length === 0) return "Choose days of week to generate sessions.";
+                            if (rescheduleDays.length === 0) return "Choose days of week to generate slots.";
                             const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, rescheduleDays);
                             return dayCount > 0
                               ? `${dayCount} session${dayCount !== 1 ? "s" : ""} will be created — ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
-                              : "Choose a date range and days of week to generate sessions.";
+                              : "Choose a date range and days of week to generate slots.";
                           })()
                         : "Choose a date range to see a preview."}
                     </div>
@@ -2153,7 +2211,7 @@ export default function EditEventPage() {
                           ? (() => {
                               if (!isTithingReschedule) {
                                 const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, rescheduleDays);
-                                return `Apply — ${dayCount} session${dayCount === 1 ? "" : "s"}`;
+                                return `Apply: ${dayCount} slot${dayCount === 1 ? "" : "s"}`;
                               }
                               const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, tithingDays);
                               const perDay = countTithingSlotsPerDay(rescheduleTime, rescheduleEndTime, tithingDuration);
@@ -2176,7 +2234,7 @@ export default function EditEventPage() {
                   <div id="add-multiple-sessions" className="bg-[#E6F7FB] border border-[rgba(14,150,176,0.18)] rounded-xl p-5 space-y-4">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="text-sm font-semibold text-[#0D2B35]">Add multiple sessions</div>
+                        <div className="text-sm font-semibold text-[#0D2B35]">Add multiple slots</div>
                         <div className="text-xs text-[#5A8399]">Same time &amp; details across several days</div>
                       </div>
                       <button
@@ -2364,7 +2422,7 @@ export default function EditEventPage() {
                     <div id="add-one-session" className="mt-3 bg-[#E6F7FB] border border-[rgba(14,150,176,0.18)] rounded-xl p-5 space-y-4">
                       <div className="flex items-center justify-between gap-3">
                         <div>
-                          <div className="text-sm font-semibold text-[#0D2B35]">Add one session</div>
+                          <div className="text-sm font-semibold text-[#0D2B35]">Add one slot</div>
                           <div className="text-xs text-[#5A8399]">Pick a single date or day-of-week</div>
                         </div>
                         <button
@@ -2436,7 +2494,7 @@ export default function EditEventPage() {
                             placeholder="e.g. Women's Side"
                             className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
                           />
-                          <p className="text-[12px] text-[#5A8399] mt-1">Groups classes under a header (e.g. Women&apos;s Side).</p>
+                          <p className="text-[12px] text-[#5A8399] mt-1">Groups slots under a header (e.g. Women&apos;s Side).</p>
                         </div>
                         <div className="min-w-0">
                           <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">
@@ -2509,8 +2567,8 @@ export default function EditEventPage() {
                     className="bg-[#F4FAFB] rounded-xl p-6 text-center text-sm text-[#5A8399]"
                   >
                     No sessions yet. Use <span className="font-medium text-[#2E5566]">Add sessions</span>{" "}
-                    above — <span className="font-medium text-[#2E5566]">Add multiple sessions</span> or{" "}
-                    <span className="font-medium text-[#2E5566]">Add one session</span>.
+                    above — <span className="font-medium text-[#2E5566]">Add multiple slots</span> or{" "}
+                    <span className="font-medium text-[#2E5566]">Add one slot</span>.
                   </div>
                 ) : (
                   <div className="space-y-6">
@@ -2575,7 +2633,7 @@ export default function EditEventPage() {
                                   setDuplicatingDayGroupKey(null);
                                   setEditingDateGroupKey(group.key);
                                 }}
-                                title="Change the date for all classes on this day"
+                                title="Change the date for all slots on this day"
                                 className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0E96B0] hover:text-[#08647E] transition-colors"
                               >
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -2627,7 +2685,7 @@ export default function EditEventPage() {
                                   setEditingDateGroupKey(null);
                                   setDuplicatingDayGroupKey(group.key);
                                 }}
-                                title="Copy every class on this day to a new date"
+                                title="Copy every slot on this day to a new date"
                                 className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0E96B0] hover:text-[#08647E] transition-colors"
                               >
                                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -2641,7 +2699,7 @@ export default function EditEventPage() {
                           <button
                             type="button"
                             onClick={() => removeDateGroup(group)}
-                            title="Remove every class on this day"
+                            title="Remove every slot on this day"
                             className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-red-500 hover:text-red-700 transition-colors"
                           >
                             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -2669,7 +2727,7 @@ export default function EditEventPage() {
                                   <button
                                     type="button"
                                     onClick={() => duplicateSection(group, sectionKey)}
-                                    title={`Duplicate all classes in ${sectionKey}`}
+                                    title={`Duplicate all slots in ${sectionKey}`}
                                     className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0E96B0] hover:text-[#08647E] transition-colors"
                                   >
                                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -2738,6 +2796,14 @@ export default function EditEventPage() {
                             </div>
                             <div className="text-[11px] text-[#5A8399] mt-1">
                               <span className="font-semibold text-[#2E5566]">Spots:</span> {session.capacity}
+                              {session.id ? (
+                                <>
+                                  <span className="mx-2 text-[#A0B7C2]">·</span>
+                                  <span className={(signupsBySession[session.id] ?? 0) > 0 ? "font-semibold text-[#0F6E56]" : ""}>
+                                    {signupsBySession[session.id] ?? 0} signed up
+                                  </span>
+                                </>
+                              ) : null}
                               {session.location ? (
                                 <>
                                   <span className="mx-2 text-[#A0B7C2]">·</span>
@@ -2768,7 +2834,7 @@ export default function EditEventPage() {
                                   return index;
                                 });
                               }}
-                              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#08647E] bg-white hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all opacity-100 supports-[hover:hover]:sm:opacity-0 supports-[hover:hover]:sm:group-hover:opacity-100"
+                              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#08647E] bg-white hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all opacity-100 supports-[hover:hover]:sm:opacity-0 supports-[hover:hover]:sm:group-hover:opacity-100 focus-visible:opacity-100 supports-[hover:hover]:sm:group-focus-within:opacity-100"
                             >
                               {editingSessionIndex === index ? "Done" : "Edit"}
                               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
@@ -2785,6 +2851,7 @@ export default function EditEventPage() {
                             <button
                               type="button"
                               onClick={() => removeSession(index)}
+                              aria-label="Remove this slot"
                               className="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors px-2 py-2"
                             >
                               Remove
@@ -2906,7 +2973,7 @@ export default function EditEventPage() {
                           className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#0E96B0] hover:text-[#08647E] transition-colors px-0.5 pt-1"
                         >
                           <span className="w-4 h-4 rounded bg-[#E6F7FB] flex items-center justify-center text-[#0E96B0] leading-none">+</span>
-                          Add a class to this date
+                          Add a slot to this date
                         </button>
                       </div>
                     ))}
@@ -2984,7 +3051,7 @@ export default function EditEventPage() {
             </div>
             <h2 className="font-serif text-[20px] text-[#0D2B35] text-center mb-2">Signups will be lost</h2>
             <p className="text-sm text-[#5A8399] text-center mb-6">
-              You removed session(s) that currently have <span className="font-semibold text-[#0D2B35]">{deleteSessionsSignupCount} signup{deleteSessionsSignupCount !== 1 ? "s" : ""}</span>.
+              You removed slot(s) that currently have <span className="font-semibold text-[#0D2B35]">{deleteSessionsSignupCount} signup{deleteSessionsSignupCount !== 1 ? "s" : ""}</span>.
               Saving will permanently remove those signups. This cannot be undone.
             </p>
             <div className="flex gap-3">
