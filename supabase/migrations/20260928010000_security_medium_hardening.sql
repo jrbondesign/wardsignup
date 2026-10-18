@@ -79,13 +79,6 @@ GRANT SELECT ON public.sessions_public TO anon, authenticated;
 -- on the public signup page and there is no organizer-only column.
 
 -- ---------------------------------------------------------------------------
--- M5 — hash stored invite tokens; hide accept_token from member SELECT *
+-- M5 — invite token hashing is handled by migration 20261017120000_invite_token_hash.sql
+-- (which uses accept_token_hash column and more sophisticated approach)
 -- ---------------------------------------------------------------------------
-
-UPDATE public.organization_members
-SET accept_token = 'h1:' || encode(sha256(convert_to(accept_token, 'UTF8')), 'hex')
-WHERE accept_token IS NOT NULL
-  AND accept_token NOT LIKE 'h1:%';
-
-REVOKE SELECT (accept_token) ON public.organization_members FROM anon;
-REVOKE SELECT (accept_token) ON public.organization_members FROM authenticated;
