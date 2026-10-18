@@ -2,7 +2,8 @@ import type { PublicBrand } from "@/lib/brand/types";
 import { feedbackEmailFrom } from "@/lib/brand/email-from";
 import { escapeHtml } from "@/lib/html-escape";
 import { sendGuardedEmail } from "@/lib/email-send";
-import { welcomeReplyAddress } from "@/lib/founder-notify";
+
+const welcomeReplyTo = process.env.WELCOME_REPLY_TO?.trim() || "jonathan@wardsignup.com";
 
 export type FeedbackSendResult =
   | { ok: true }
@@ -41,14 +42,13 @@ Jonathan
 ${brand.name} · ${brand.siteUrl}
 Made with ❤️ in Arizona`;
 
-  const replyTo = welcomeReplyAddress();
   const send = await sendGuardedEmail({
     brand,
     deferrable: true,
       kind: "feedback",
       category: "notification",
     from: feedbackEmailFrom(brand),
-    ...(replyTo ? { replyTo } : {}),
+    ...(welcomeReplyTo ? { replyTo: welcomeReplyTo } : {}),
     to,
     subject: `Quick question about your ${brand.name} event`,
     text,
