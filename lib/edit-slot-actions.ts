@@ -158,3 +158,26 @@ export function removeSectionConfirmBody(slots: number, signups: number): string
     ? `This removes ${slotText} and ${signups} ${signups === 1 ? "signup" : "signups"} in this section. Changes apply when you save.`
     : `This removes the ${slotText} in this section. No one has signed up yet, and nothing changes until you save.`;
 }
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** The day heading text: "Thursday, Oct 22, 2026" (or "Thu, Oct 22, 2026"
+ *  with weekday "short") for a dated day, the weekday name for a recurring one. */
+export function formatDayHeading(
+  group: { sessionDate: string | null; dayOfWeek: number },
+  weekday: "long" | "short" = "long",
+): string {
+  if (!group.sessionDate) return WEEKDAYS[group.dayOfWeek] ?? "";
+  const [year, month, day] = group.sessionDate.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    weekday,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** Accessible name for a day's three dots button, using the heading date. */
+export function dayMenuLabel(group: { sessionDate: string | null; dayOfWeek: number }): string {
+  return `Options for ${formatDayHeading(group)}`;
+}

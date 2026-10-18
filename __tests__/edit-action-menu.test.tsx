@@ -2,7 +2,8 @@
  * Exercises the real shared ActionMenu used by the editor's day and slot menus
  * (and, through SignupOptionsMenu, the Manage page).
  */
-import { fireEvent, render, screen } from "@testing-library/react";
+import { useState } from "react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import ActionMenu, { type ActionMenuItem } from "@/components/ActionMenu";
 import SignupOptionsMenu from "@/components/SignupOptionsMenu";
@@ -123,5 +124,85 @@ describe("ActionMenu", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Remove from the 5:00 PM slot" }));
     expect(onClose).toHaveBeenCalled();
     expect(onRemove).toHaveBeenCalled();
+  });
+
+  it("desktop popover is exactly 280px wide and right aligned to its button", () => {
+    setViewport(1280);
+    render(<ActionMenu title="Day" items={[{ label: "Change date", onSelect: jest.fn() }, { label: "Duplicate day", onSelect: jest.fn() }, { label: "Remove day", onSelect: jest.fn(), tone: "danger" }]} onClose={jest.fn()} buttonElement={anchorButton()} />);
+    const menu = screen.getByRole("menu");
+    expect(menu.style.width).toBe("280px");
+    expect(menu.style.minWidth).toBe("");
+    // Button right edge is 944, so the menu starts at 944 - 280.
+    expect(menu.style.left).toBe("664px");
+    screen.getAllByRole("menuitem").forEach((r) => {
+      expect(r).toHaveClass("block", "whitespace-normal");
+      expect(r.className).not.toMatch(/whitespace-nowrap/);
+    });
+  });
+});
+
+/** Opens the menu from a real trigger and unmounts it on close, like the editor. */
+function FocusHarness({ onPick = jest.fn() }: { onPick?: () => void }) {
+  const [btn, setBtn] = useState<HTMLElement | null>(null);
+  return (
+    <>
+      <button type="button" aria-label="Options for Thursday, Oct 22, 2026" onClick={(e) => setBtn(e.currentTarget)}>
+        dots
+      </button>
+      <button type="button">elsewhere</button>
+      {btn && (
+        <ActionMenu
+          title="Thursday, Oct 22, 2026"
+          items={[{ label: "Duplicate day", onSelect: onPick }]}
+          onClose={() => setBtn(null)}
+          buttonElement={btn}
+        />
+      )}
+    </>
+  );
+}
+
+describe("ActionMenu focus return", () => {
+  beforeEach(() => jest.useFakeTimers());
+  afterEach(() => jest.useRealTimers());
+
+  const open = () => {
+    const trigger = screen.getByRole("button", { name: "Options for Thursday, Oct 22, 2026" });
+    fireEvent.click(trigger);
+    act(() => {
+      jest.runOnlyPendingTimers();
+    });
+    // Focus moved into the menu.
+    expect(screen.getByRole("menuitem", { name: "Duplicate day" })).toHaveFocus();
+    return trigger;
+  };
+
+  it.each([390, 1280])("returns focus to the dots button on Escape (%ipx)", (width) => {
+    setViewport(width);
+    render(<FocusHarness />);
+    const trigger = open();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it.each([390, 1280])("returns focus to the dots button after picking an item (%ipx)", (width) => {
+    setViewport(width);
+    const onPick = jest.fn();
+    render(<FocusHarness onPick={onPick} />);
+    const trigger = open();
+    fireEvent.click(screen.getByRole("menuitem", { name: "Duplicate day" }));
+    expect(onPick).toHaveBeenCalled();
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
+  });
+
+  it.each([390, 1280])("returns focus to the dots button on a click outside (%ipx)", (width) => {
+    setViewport(width);
+    render(<FocusHarness />);
+    const trigger = open();
+    fireEvent.mouseDown(document.body);
+    expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+    expect(trigger).toHaveFocus();
   });
 });
