@@ -159,6 +159,60 @@ export function removeSectionConfirmBody(slots: number, signups: number): string
     : `This removes the ${slotText} in this section. No one has signed up yet, and nothing changes until you save.`;
 }
 
+/**
+ * Move the slot at `fromIndex` to just before the slot at `toIndex` (same day
+ * only), then renumber sort_order across all slots from the resulting display
+ * order so it persists on save. Returns the input unchanged when the move is
+ * not allowed. Used by desktop drag and by reorder mode.
+ */
+export function reorderSessions<T extends EditSession>(sessions: T[], fromIndex: number, toIndex: number): T[] {
+  if (fromIndex === toIndex) return sessions;
+  const from = sessions[fromIndex];
+  const to = sessions[toIndex];
+  if (!from || !to) return sessions;
+  if (sessionGroupKey(from) !== sessionGroupKey(to)) return sessions;
+
+  const displayOrder = groupSessionsForDisplay(sessions).flatMap((g) => g.items.map((i) => i.index));
+  const fromPos = displayOrder.indexOf(fromIndex);
+  if (fromPos < 0) return sessions;
+  displayOrder.splice(fromPos, 1);
+  let insertAt = displayOrder.indexOf(toIndex);
+  if (insertAt < 0) insertAt = displayOrder.length;
+  displayOrder.splice(insertAt, 0, fromIndex);
+
+  const next = sessions.map((s) => ({ ...s }));
+  displayOrder.forEach((flatIdx, pos) => {
+    if (next[flatIdx]) next[flatIdx].sort_order = pos;
+  });
+  return next;
+}
+
+/**
+ * For reorder mode: the (fromIndex, toIndex) pair to pass to reorderSlot to
+ * move the slot at display position `pos` in `group` one step up or down.
+ * Moves stay inside the slot's section (sections are grouped together on the
+ * page, so crossing a section boundary would not change what people see).
+ * Returns null when the slot is already first or last in its section.
+ */
+export function reorderStep(
+  group: Pick<DisplayDateGroup, "items">,
+  pos: number,
+  direction: "up" | "down",
+): { fromIndex: number; toIndex: number } | null {
+  const items = group.items;
+  const here = items[pos];
+  if (!here) return null;
+  const section = (here.session.section ?? "").trim();
+  const neighborPos = direction === "up" ? pos - 1 : pos + 1;
+  const neighbor = items[neighborPos];
+  if (!neighbor || (neighbor.session.section ?? "").trim() !== section) return null;
+  // reorderSlot inserts "from" before "to": moving up puts this slot before the
+  // one above it; moving down puts the one below before this slot.
+  return direction === "up"
+    ? { fromIndex: here.index, toIndex: neighbor.index }
+    : { fromIndex: neighbor.index, toIndex: here.index };
+}
+
 const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
 /** The day heading text: "Thursday, Oct 22, 2026" (or "Thu, Oct 22, 2026"
