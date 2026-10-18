@@ -40,6 +40,8 @@ import { formatTime, formatTimeRange } from "@/lib/utils";
 import { coverFileError, prepareCoverUpload } from "@/lib/cover-upload";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import { COVER_SIZE_HINT, coverObjectPosition } from "@/lib/cover-position";
+import ActionMenu, { type ActionMenuItem } from "@/components/ActionMenu";
+import ConfirmDialog from "@/components/ConfirmDialog";
 
 interface SessionData {
   id?: string;
@@ -263,6 +265,24 @@ export default function EditEventPage() {
   const [capacityInputDraft, setCapacityInputDraft] = useState<Record<number, string>>({});
   const [showAddSessionsMenu, setShowAddSessionsMenu] = useState(false);
   const addSessionsMenuRef = useRef<HTMLDivElement>(null);
+
+  // Action menu state
+  const [dayMenuGroupKey, setDayMenuGroupKey] = useState<string | null>(null);
+  const [dayMenuButtonEl, setDayMenuButtonEl] = useState<HTMLElement | null>(null);
+  const [slotMenuIndex, setSlotMenuIndex] = useState<number | null>(null);
+  const [slotMenuButtonEl, setSlotMenuButtonEl] = useState<HTMLElement | null>(null);
+
+  // Second step state for day menu actions
+  const [dayMenuSecondStep, setDayMenuSecondStep] = useState<"change-date" | "duplicate-day" | null>(null);
+  const [dayMenuSecondStepDate, setDayMenuSecondStepDate] = useState("");
+
+  // Confirm dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    title: string;
+    body: string;
+    confirmLabel: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Items-event state
   const [isItemsEvent, setIsItemsEvent] = useState(false);
@@ -1066,28 +1086,61 @@ export default function EditEventPage() {
   };
 
   const removeSession = (index: number) => {
-    const id = sessions[index]?.id;
+    const session = sessions[index];
+    if (!session) return;
+
+    const id = session.id;
     const n = id ? signupsBySession[id] ?? 0 : 0;
-    if (
-      n > 0 &&
-      !confirm(
-        `${n} ${n === 1 ? "person is" : "people are"} signed up for this slot. Removing it deletes ${n === 1 ? "that signup" : "those signups"} when you save. Remove it?`,
-      )
-    ) return;
-    setSessions(sessions.filter((_, i) => i !== index));
+
+    if (n > 0) {
+      const name = (session.label ?? "").trim() || formatTimeRange(session.time, session.end_time);
+      setConfirmDialog({
+        title: `Remove ${name}?`,
+        body: `${n} ${n === 1 ? "person is" : "people are"} signed up for this slot. Removing it removes ${n === 1 ? "that signup" : "those signups"} when you save.`,
+        confirmLabel: "Remove slot",
+        onConfirm: () => {
+          setSessions(sessions.filter((_, i) => i !== index));
+          setConfirmDialog(null);
+        },
+      });
+    } else {
+      setSessions(sessions.filter((_, i) => i !== index));
+    }
   };
 
   /** Remove every session on one date (takes effect on Save). */
-  const removeDateGroup = (group: { items: { index: number }[] }) => {
+  const removeDateGroup = (group: { sessionDate: string | null; dayOfWeek: number; items: { index: number }[] }) => {
     const n = group.items.length;
     const people = group.items.reduce((sum, it) => {
       const id = sessions[it.index]?.id;
       return sum + (id ? signupsBySession[id] ?? 0 : 0);
     }, 0);
-    const peopleNote = people > 0 ? ` ${people} ${people === 1 ? "person is" : "people are"} signed up and will be removed.` : "";
-    if (!confirm(`Remove this date${n > 1 ? ` and its ${n} slots` : ""}?${peopleNote} Changes apply when you save.`)) return;
-    const drop = new Set(group.items.map((it) => it.index));
-    setSessions(sessions.filter((_, i) => !drop.has(i)));
+
+    const dateStr = group.sessionDate
+      ? (() => {
+          const [year, month, day] = group.sessionDate.split("-").map(Number);
+          return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+            weekday: "long",
+            month: "short",
+            day: "numeric",
+          });
+        })()
+      : DAYS[group.dayOfWeek];
+
+    const body = people > 0
+      ? `This removes ${n} ${n === 1 ? "slot" : "slots"} and ${people} ${people === 1 ? "signup" : "signups"} on this day. Changes apply when you save.`
+      : `This removes ${n} ${n === 1 ? "slot" : "slots"}. No one has signed up yet. Changes apply when you save.`;
+
+    setConfirmDialog({
+      title: `Remove ${dateStr}?`,
+      body,
+      confirmLabel: "Remove day",
+      onConfirm: () => {
+        const drop = new Set(group.items.map((it) => it.index));
+        setSessions(sessions.filter((_, i) => !drop.has(i)));
+        setConfirmDialog(null);
+      },
+    });
   };
 
   /** Add another class slot to an existing date, copying that date's time/location
@@ -1225,6 +1278,33 @@ export default function EditEventPage() {
     setToastMessage(
       `Duplicated “${sectionKey}” as “${name}” (${copies.length} slot${copies.length !== 1 ? "s" : ""})`,
     );
+    setShowToast(true);
+  };
+
+  /** Duplicate a single slot and insert it right after the original, then open for editing. */
+  const duplicateSession = (index: number) => {
+    const original = sessions[index];
+    if (!original) return;
+
+    const copy: SessionData = {
+      day_of_week: original.day_of_week,
+      time: original.time,
+      end_time: original.end_time,
+      capacity: original.capacity,
+      location: original.location,
+      notes: original.notes,
+      session_date: original.session_date,
+      label: original.label,
+      section: original.section,
+    };
+
+    const before = sessions.slice(0, index + 1);
+    const after = sessions.slice(index + 1);
+    setSessions([...before, copy, ...after]);
+    setEditingSessionIndex(index + 1);
+
+    const name = (original.label ?? "").trim() || formatTimeRange(original.time, original.end_time);
+    setToastMessage(`Duplicated ${name}`);
     setShowToast(true);
   };
 
@@ -2583,133 +2663,45 @@ export default function EditEventPage() {
                         }`}
                       >
                         {/* Date header — mirrors the public preview's per-date grouping */}
-                        <div className="flex items-center gap-2 px-0.5">
-                          <div className="font-serif text-[17px] text-[#0D2B35]">
+                        <div className="flex items-start gap-2 px-0.5">
+                          <div className="font-serif text-[17px] text-[#0D2B35] whitespace-nowrap leading-tight flex-1">
                             {group.sessionDate
                               ? (() => {
                                   const [year, month, day] = group.sessionDate.split("-").map(Number);
-                                  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+                                  const date = new Date(year, month - 1, day);
+                                  const longFormat = date.toLocaleDateString("en-US", {
                                     weekday: "long",
                                     month: "short",
                                     day: "numeric",
                                     year: "numeric",
                                   });
+                                  const shortFormat = date.toLocaleDateString("en-US", {
+                                    weekday: "short",
+                                    month: "short",
+                                    day: "numeric",
+                                    year: "numeric",
+                                  });
+                                  return window.innerWidth < 390 ? shortFormat : longFormat;
                                 })()
                               : DAYS[group.dayOfWeek]}
                           </div>
                           {group.sessionDate && (
-                            editingDateGroupKey === group.key ? (
-                              <span className="inline-flex items-center gap-1.5">
-                                <input
-                                  type="date"
-                                  autoFocus
-                                  value={changeDateDraft}
-                                  onChange={(e) => setChangeDateDraft(e.target.value)}
-                                  className="text-sm text-[#0D2B35] px-2 py-1 border-[1.5px] border-[#0E96B0] rounded-lg bg-white outline-none"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (changeDateDraft) changeGroupDate(group.sessionDate!, changeDateDraft);
-                                    setEditingDateGroupKey(null);
-                                  }}
-                                  className="text-[11px] font-semibold text-white bg-[#0E96B0] hover:bg-[#08647E] px-2.5 py-1.5 rounded-lg transition-colors"
-                                >
-                                  Move
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setEditingDateGroupKey(null)}
-                                  className="text-[11px] font-semibold text-[#5A8399] hover:text-[#2E5566] px-1.5 py-1.5 transition-colors"
-                                >
-                                  Cancel
-                                </button>
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setChangeDateDraft(group.sessionDate!);
-                                  setDuplicatingDayGroupKey(null);
-                                  setEditingDateGroupKey(group.key);
-                                }}
-                                title="Change the date for all slots on this day"
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0E96B0] hover:text-[#08647E] transition-colors"
-                              >
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                                  <line x1="16" y1="2" x2="16" y2="6" />
-                                  <line x1="8" y1="2" x2="8" y2="6" />
-                                  <line x1="3" y1="10" x2="21" y2="10" />
-                                </svg>
-                                Change date
-                              </button>
-                            )
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                setDayMenuGroupKey(group.key);
+                                setDayMenuButtonEl(e.currentTarget);
+                              }}
+                              aria-label={`Options for ${group.sessionDate}`}
+                              className="w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
+                            >
+                              <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                                <circle cx="12" cy="5" r="2" />
+                                <circle cx="12" cy="12" r="2" />
+                                <circle cx="12" cy="19" r="2" />
+                              </svg>
+                            </button>
                           )}
-                          {group.sessionDate && (
-                            duplicatingDayGroupKey === group.key ? (
-                              <span className="inline-flex items-center gap-1.5">
-                                <input
-                                  type="date"
-                                  autoFocus
-                                  value={dupDayDraft}
-                                  onChange={(e) => setDupDayDraft(e.target.value)}
-                                  className="text-sm text-[#0D2B35] px-2 py-1 border-[1.5px] border-[#0E96B0] rounded-lg bg-white outline-none"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (dupDayDraft) duplicateGroupToDate(group, dupDayDraft);
-                                    setDuplicatingDayGroupKey(null);
-                                  }}
-                                  className="text-[11px] font-semibold text-white bg-[#0E96B0] hover:bg-[#08647E] px-2.5 py-1.5 rounded-lg transition-colors"
-                                >
-                                  Duplicate
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => setDuplicatingDayGroupKey(null)}
-                                  className="text-[11px] font-semibold text-[#5A8399] hover:text-[#2E5566] px-1.5 py-1.5 transition-colors"
-                                >
-                                  Cancel
-                                </button>
-                              </span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const [yy, mm, dd] = group.sessionDate!.split("-").map(Number);
-                                  const nd = new Date(yy, mm - 1, dd);
-                                  nd.setDate(nd.getDate() + 7);
-                                  setDupDayDraft(`${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, "0")}-${String(nd.getDate()).padStart(2, "0")}`);
-                                  setEditingDateGroupKey(null);
-                                  setDuplicatingDayGroupKey(group.key);
-                                }}
-                                title="Copy every slot on this day to a new date"
-                                className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#0E96B0] hover:text-[#08647E] transition-colors"
-                              >
-                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                                  <rect x="9" y="9" width="13" height="13" rx="2" />
-                                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-                                </svg>
-                                Duplicate day
-                              </button>
-                            )
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => removeDateGroup(group)}
-                            title="Remove every slot on this day"
-                            className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-red-500 hover:text-red-700 transition-colors"
-                          >
-                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                              <polyline points="3 6 5 6 21 6" />
-                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                              <path d="M10 11v6M14 11v6" />
-                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                            </svg>
-                            Remove
-                          </button>
                         </div>
                         {group.items.map(({ session, index }, itemIdx, itemArr) => {
                           const sectionKey = (session.section ?? "").trim();
@@ -2767,18 +2759,30 @@ export default function EditEventPage() {
                                   setDraggingIndex(null);
                                   setDragOverIndex(null);
                                 }}
-                                className={`border rounded-xl p-4 md:p-5 bg-white group transition-shadow ${
+                                onClick={(e) => {
+                                  if (editingSessionIndex === index) return;
+                                  if ((e.target as HTMLElement).closest('button[aria-label^="Options for"]')) return;
+                                  setEditingSessionIndex((cur) => {
+                                    if (cur !== null && cur !== index) {
+                                      commitCapacityDraft(cur);
+                                    }
+                                    return index;
+                                  });
+                                }}
+                                className={`border rounded-xl p-4 md:p-5 bg-white group transition-shadow cursor-pointer ${
                                   dragOverIndex === index
                                     ? "border-[#0E96B0] shadow-[0_0_0_2px_rgba(14,150,176,0.35)]"
                                     : "border-[rgba(14,150,176,0.16)]"
-                                } ${draggingIndex === index ? "opacity-50" : ""}`}
+                                } ${draggingIndex === index ? "opacity-50" : ""} ${
+                                  editingSessionIndex !== index ? "hover:border-[#0E96B0]/40" : ""
+                                }`}
                               >
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0 flex items-start gap-2.5">
                             {editingSessionIndex !== index && (
                               <span
                                 title="Drag to reorder"
-                                className="mt-0.5 cursor-grab active:cursor-grabbing text-[#A0B7C2] hover:text-[#0E96B0] transition-colors flex-shrink-0 touch-none"
+                                className="mt-0.5 cursor-grab active:cursor-grabbing text-[#A0B7C2] hover:text-[#0E96B0] transition-colors flex-shrink-0 touch-none hidden md:block"
                               >
                                 <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true">
                                   <circle cx="9" cy="6" r="1.6" /><circle cx="15" cy="6" r="1.6" />
@@ -2788,75 +2792,43 @@ export default function EditEventPage() {
                               </span>
                             )}
                           <div className="min-w-0">
-                            <div className="text-[14px] font-semibold text-[#0D2B35]">
-                              {classTitle || formatTimeRange(session.time, session.end_time)}
-                            </div>
-                            <div className="text-xs text-[#5A8399] mt-1">
+                            {classTitle && (
+                              <div className="text-[14px] font-semibold text-[#0D2B35] leading-tight">
+                                {classTitle}
+                              </div>
+                            )}
+                            <div className={`text-xs text-[#5A8399] whitespace-nowrap ${classTitle ? "mt-1" : "text-[14px] font-semibold text-[#0D2B35] leading-tight"}`}>
                               {formatTimeRange(session.time, session.end_time)}
                             </div>
                             <div className="text-[11px] text-[#5A8399] mt-1">
-                              <span className="font-semibold text-[#2E5566]">Spots:</span> {session.capacity}
                               {session.id ? (
                                 <>
-                                  <span className="mx-2 text-[#A0B7C2]">·</span>
-                                  <span className={(signupsBySession[session.id] ?? 0) > 0 ? "font-semibold text-[#0F6E56]" : ""}>
-                                    {signupsBySession[session.id] ?? 0} signed up
-                                  </span>
+                                  {signupsBySession[session.id] ?? 0} of {session.capacity} {session.capacity === 1 ? "spot" : "spots"} filled
                                 </>
-                              ) : null}
-                              {session.location ? (
+                              ) : (
                                 <>
-                                  <span className="mx-2 text-[#A0B7C2]">·</span>
-                                  <span className="font-semibold text-[#2E5566]">Location:</span> {session.location}
+                                  {session.capacity} {session.capacity === 1 ? "spot" : "spots"}
                                 </>
-                              ) : null}
-                              {session.notes ? (
-                                <>
-                                  <span className="mx-2 text-[#A0B7C2]">·</span>
-                                  Notes: {session.notes.length > 42 ? `${session.notes.slice(0, 42)}…` : session.notes}
-                                </>
-                              ) : null}
+                              )}
                             </div>
                           </div>
                           </div>
-                          <div className="flex items-center gap-2 flex-shrink-0">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingSessionIndex((cur) => {
-                                  if (cur === index) {
-                                    commitCapacityDraft(index);
-                                    return null;
-                                  }
-                                  if (cur !== null) {
-                                    commitCapacityDraft(cur);
-                                  }
-                                  return index;
-                                });
-                              }}
-                              className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#08647E] bg-white hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all opacity-100 supports-[hover:hover]:sm:opacity-0 supports-[hover:hover]:sm:group-hover:opacity-100 focus-visible:opacity-100 supports-[hover:hover]:sm:group-focus-within:opacity-100"
-                            >
-                              {editingSessionIndex === index ? "Done" : "Edit"}
-                              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                                {editingSessionIndex === index ? (
-                                  <polyline points="20 6 9 17 4 12" />
-                                ) : (
-                                  <>
-                                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-                                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-                                  </>
-                                )}
-                              </svg>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeSession(index)}
-                              aria-label="Remove this slot"
-                              className="text-xs font-semibold text-red-500 hover:text-red-700 transition-colors px-2 py-2"
-                            >
-                              Remove
-                            </button>
-                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setSlotMenuIndex(index);
+                              setSlotMenuButtonEl(e.currentTarget);
+                            }}
+                            aria-label={`Options for ${classTitle || formatTimeRange(session.time, session.end_time)}`}
+                            className="w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
+                          >
+                            <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+                              <circle cx="12" cy="5" r="2" />
+                              <circle cx="12" cy="12" r="2" />
+                              <circle cx="12" cy="19" r="2" />
+                            </svg>
+                          </button>
                         </div>
 
                         {editingSessionIndex === index && (
@@ -3079,6 +3051,228 @@ export default function EditEventPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Day menu */}
+      {dayMenuGroupKey && dayMenuButtonEl && (() => {
+        const group = groupSessionsForDisplay(sessions).find((g) => g.key === dayMenuGroupKey);
+        if (!group) return null;
+
+        const dateStr = group.sessionDate
+          ? (() => {
+              const [year, month, day] = group.sessionDate.split("-").map(Number);
+              return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "short",
+                day: "numeric",
+              });
+            })()
+          : DAYS[group.dayOfWeek];
+
+        if (dayMenuSecondStep === "change-date") {
+          return (
+            <ActionMenu
+              title="Change date"
+              items={[]}
+              onClose={() => {
+                setDayMenuGroupKey(null);
+                setDayMenuSecondStep(null);
+              }}
+              buttonElement={dayMenuButtonEl}
+              secondStepContent={
+                <>
+                  <div className="px-4 py-3 border-b border-gray-200">
+                    <h3 className="text-base font-bold text-[#0D2B35]">Change date</h3>
+                    <p className="text-sm text-[#5A8399] mt-1">Every slot on this day moves to the new date.</p>
+                  </div>
+                  <div className="p-4">
+                    <input
+                      type="date"
+                      autoFocus
+                      value={dayMenuSecondStepDate}
+                      onChange={(e) => setDayMenuSecondStepDate(e.target.value)}
+                      className="w-full text-sm text-[#0D2B35] px-3 py-2.5 border-[1.5px] border-[#0E96B0] rounded-lg bg-white outline-none"
+                    />
+                  </div>
+                  <div className="px-4 pb-4 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDayMenuGroupKey(null);
+                        setDayMenuSecondStep(null);
+                      }}
+                      className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-[#0D2B35] bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (dayMenuSecondStepDate && group.sessionDate) {
+                          changeGroupDate(group.sessionDate, dayMenuSecondStepDate);
+                        }
+                        setDayMenuGroupKey(null);
+                        setDayMenuSecondStep(null);
+                      }}
+                      className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-white bg-[#0E96B0] hover:bg-[#08647E] rounded-lg transition-colors"
+                    >
+                      Move
+                    </button>
+                  </div>
+                </>
+              }
+            />
+          );
+        }
+
+        if (dayMenuSecondStep === "duplicate-day") {
+          return (
+            <ActionMenu
+              title="Duplicate day"
+              items={[]}
+              onClose={() => {
+                setDayMenuGroupKey(null);
+                setDayMenuSecondStep(null);
+              }}
+              buttonElement={dayMenuButtonEl}
+              secondStepContent={
+                <>
+                  <div className="px-4 py-3 border-b border-gray-200">
+                    <h3 className="text-base font-bold text-[#0D2B35]">Duplicate day</h3>
+                    <p className="text-sm text-[#5A8399] mt-1">Every slot is copied to the new date. Signups stay on the original day.</p>
+                  </div>
+                  <div className="p-4">
+                    <input
+                      type="date"
+                      autoFocus
+                      value={dayMenuSecondStepDate}
+                      onChange={(e) => setDayMenuSecondStepDate(e.target.value)}
+                      className="w-full text-sm text-[#0D2B35] px-3 py-2.5 border-[1.5px] border-[#0E96B0] rounded-lg bg-white outline-none"
+                    />
+                  </div>
+                  <div className="px-4 pb-4 flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDayMenuGroupKey(null);
+                        setDayMenuSecondStep(null);
+                      }}
+                      className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-[#0D2B35] bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (dayMenuSecondStepDate) {
+                          duplicateGroupToDate(group, dayMenuSecondStepDate);
+                        }
+                        setDayMenuGroupKey(null);
+                        setDayMenuSecondStep(null);
+                      }}
+                      className="flex-1 min-h-[44px] px-4 py-2.5 text-sm font-semibold text-white bg-[#0E96B0] hover:bg-[#08647E] rounded-lg transition-colors"
+                    >
+                      Duplicate
+                    </button>
+                  </div>
+                </>
+              }
+            />
+          );
+        }
+
+        return (
+          <ActionMenu
+            title={dateStr}
+            items={[
+              {
+                label: "Change date",
+                onSelect: () => {
+                  setDayMenuSecondStepDate(group.sessionDate || "");
+                  setDayMenuSecondStep("change-date");
+                },
+              },
+              {
+                label: "Duplicate day",
+                onSelect: () => {
+                  if (group.sessionDate) {
+                    const [yy, mm, dd] = group.sessionDate.split("-").map(Number);
+                    const nd = new Date(yy, mm - 1, dd);
+                    nd.setDate(nd.getDate() + 7);
+                    setDayMenuSecondStepDate(`${nd.getFullYear()}-${String(nd.getMonth() + 1).padStart(2, "0")}-${String(nd.getDate()).padStart(2, "0")}`);
+                  }
+                  setDayMenuSecondStep("duplicate-day");
+                },
+              },
+              {
+                label: "Remove day",
+                onSelect: () => {
+                  setDayMenuGroupKey(null);
+                  removeDateGroup(group);
+                },
+                tone: "danger",
+              },
+            ]}
+            onClose={() => setDayMenuGroupKey(null)}
+            buttonElement={dayMenuButtonEl}
+          />
+        );
+      })()}
+
+      {/* Slot menu */}
+      {slotMenuIndex !== null && slotMenuButtonEl && (() => {
+        const session = sessions[slotMenuIndex];
+        if (!session) return null;
+
+        const name = (session.label ?? "").trim() || formatTimeRange(session.time, session.end_time);
+
+        return (
+          <ActionMenu
+            title={name}
+            items={[
+              {
+                label: "Edit slot",
+                onSelect: () => {
+                  setSlotMenuIndex(null);
+                  setEditingSessionIndex((cur) => {
+                    if (cur !== null && cur !== slotMenuIndex) {
+                      commitCapacityDraft(cur);
+                    }
+                    return slotMenuIndex;
+                  });
+                },
+              },
+              {
+                label: "Duplicate slot",
+                onSelect: () => {
+                  setSlotMenuIndex(null);
+                  duplicateSession(slotMenuIndex);
+                },
+              },
+              {
+                label: "Remove slot",
+                onSelect: () => {
+                  setSlotMenuIndex(null);
+                  removeSession(slotMenuIndex);
+                },
+                tone: "danger",
+              },
+            ]}
+            onClose={() => setSlotMenuIndex(null)}
+            buttonElement={slotMenuButtonEl}
+          />
+        );
+      })()}
+
+      {/* Confirm dialog */}
+      {confirmDialog && (
+        <ConfirmDialog
+          title={confirmDialog.title}
+          body={confirmDialog.body}
+          confirmLabel={confirmDialog.confirmLabel}
+          onConfirm={confirmDialog.onConfirm}
+          onCancel={() => setConfirmDialog(null)}
+        />
       )}
 
       {/* Sticky bottom save bar — only shown when there are unsaved changes */}
