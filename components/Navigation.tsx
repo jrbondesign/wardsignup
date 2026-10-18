@@ -6,10 +6,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { useBrand } from "@/components/BrandProvider";
 import { createClientComponentClient } from "@/lib/auth";
+import { usePostHog } from "posthog-js/react";
+import { GearIcon } from "@/components/OrgSettingsEntry";
 
 export default function Navigation() {
   const brand = useBrand();
   const router = useRouter();
+  const posthog = usePostHog();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -56,13 +59,24 @@ export default function Navigation() {
           </span>
         </Link>
 
-        {/* Nav links — desktop only */}
-        <div className="hidden md:flex items-center gap-1 absolute left-1/2 -translate-x-1/2">
+        {/* Nav links: desktop (lg and up) only */}
+        <div className="hidden lg:flex items-center gap-1 absolute left-1/2 -translate-x-1/2">
           <Link href="/dashboard" className="text-sm font-medium text-[#2E5566] hover:text-[#0D2B35] px-4 py-2 rounded-full hover:bg-[#0E96B0]/8 transition-all no-underline">
             My Events
           </Link>
           <Link href="/create" className="text-sm font-medium text-[#2E5566] hover:text-[#0D2B35] px-4 py-2 rounded-full hover:bg-[#0E96B0]/8 transition-all no-underline">
             Create Event
+          </Link>
+          <Link
+            href="/settings/organization"
+            onClick={() => posthog?.capture("org_settings_opened", { source: "nav" })}
+            aria-label="Organization settings"
+            className="inline-flex items-center gap-1.5 text-sm font-medium text-[#2E5566] hover:text-[#0D2B35] px-4 py-2 rounded-full hover:bg-[#0E96B0]/8 transition-all no-underline whitespace-nowrap"
+          >
+            <GearIcon className="w-4 h-4 text-[#5A8399]" />
+            {/* Short label at lg so the centered links clear the logo and email */}
+            <span className="xl:hidden">Settings</span>
+            <span className="hidden xl:inline">Organization settings</span>
           </Link>
           {isFounder && (
             <Link href="/admin/metrics" className="text-sm font-medium text-[#2E5566] hover:text-[#0D2B35] px-4 py-2 rounded-full hover:bg-[#0E96B0]/8 transition-all no-underline">
@@ -73,20 +87,20 @@ export default function Navigation() {
 
         {/* Right side */}
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-          <span className="text-sm text-[#5A8399] hidden lg:block truncate max-w-[200px]">
+          <span className="text-sm text-[#5A8399] hidden lg:block truncate max-w-[160px] xl:max-w-[200px]" title={user.email}>
             {user.email}
           </span>
           {/* Desktop sign out */}
           <button
             onClick={handleSignOut}
-            className="hidden md:block text-sm font-medium px-3 sm:px-[18px] py-2 rounded-full border-[1.5px] border-[#0E96B0]/40 text-[#08647E] bg-transparent hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all whitespace-nowrap"
+            className="hidden lg:block text-sm font-medium px-3 sm:px-[18px] py-2 rounded-full border-[1.5px] border-[#0E96B0]/40 text-[#08647E] bg-transparent hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all whitespace-nowrap"
           >
             Sign Out
           </button>
-          {/* Hamburger — mobile only */}
+          {/* Hamburger: below lg only */}
           <button
             onClick={() => setMenuOpen(!menuOpen)}
-            className="md:hidden flex items-center justify-center w-9 h-9 rounded-xl text-[#2E5566] hover:bg-[#0E96B0]/8 transition-colors"
+            className="lg:hidden flex items-center justify-center w-9 h-9 rounded-xl text-[#2E5566] hover:bg-[#0E96B0]/8 transition-colors"
             aria-label="Menu"
           >
             {menuOpen ? (
@@ -104,7 +118,7 @@ export default function Navigation() {
 
       {/* Mobile menu drawer */}
       {menuOpen && (
-        <div className="md:hidden fixed inset-0 z-[999] top-[60px]">
+        <div className="lg:hidden fixed inset-0 z-[999] top-[60px]">
           {/* Backdrop */}
           <div className="absolute inset-0 bg-[#0D2B35]/20 backdrop-blur-[2px]" onClick={() => setMenuOpen(false)} />
           {/* Panel */}
@@ -126,6 +140,16 @@ export default function Navigation() {
                   <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
                 Create Event
+              </Link>
+              <Link
+                href="/settings/organization"
+                onClick={() => {
+                  posthog?.capture("org_settings_opened", { source: "nav" });
+                  setMenuOpen(false);
+                }}
+                className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium text-[#0D2B35] hover:bg-[#F4FAFB] transition-colors no-underline">
+                <GearIcon className="w-4 h-4 text-[#5A8399]" />
+                Organization settings
               </Link>
               {isFounder && (
                 <Link href="/admin/metrics" onClick={() => setMenuOpen(false)}
