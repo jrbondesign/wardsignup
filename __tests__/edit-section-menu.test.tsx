@@ -198,6 +198,11 @@ describe("renameSection / removeSection", () => {
   it("confirm copy names the slot and signup counts", () => {
     expect(removeSectionConfirmBody(2, 3)).toBe("This removes 2 slots and 3 signups in this section. Changes apply when you save.");
     expect(removeSectionConfirmBody(1, 1)).toBe("This removes 1 slot and 1 signup in this section. Changes apply when you save.");
-    expect(removeSectionConfirmBody(2, 0)).toBe("This removes 2 slots. No one has signed up yet. Changes apply when you save.");
+    expect(removeSectionConfirmBody(3, 0)).toBe(
+      "This removes the 3 slots in this section. No one has signed up yet, and nothing changes until you save.",
+    );
+    expect(removeSectionConfirmBody(1, 0)).toBe(
+      "This removes the 1 slot in this section. No one has signed up yet, and nothing changes until you save.",
+    );
   });
 });
