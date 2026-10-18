@@ -40,6 +40,7 @@ interface Props {
 export default function OrgSettingsEntry({ isWardBrand }: Props) {
   const posthog = usePostHog();
   const [orgCount, setOrgCount] = useState(0);
+  const [orgsLoading, setOrgsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,6 +57,8 @@ export default function OrgSettingsEntry({ isWardBrand }: Props) {
         if (!cancelled) setOrgCount(data.organizations?.length ?? 0);
       } catch {
         // Switching is optional; settings stay reachable without the list.
+      } finally {
+        if (!cancelled) setOrgsLoading(false);
       }
     };
     void load();
@@ -81,10 +84,10 @@ export default function OrgSettingsEntry({ isWardBrand }: Props) {
       <p id="org-settings-caption" className="text-xs text-[#5A8399] mt-1.5">
         {caption}
       </p>
-      {showSwitch && (
+      {showSwitch ? (
         <Link
           href="/orgs/select?next=/dashboard"
-          className="mt-2 inline-flex items-center gap-1.5 min-h-11 text-[13px] font-medium text-[#0E96B0] hover:text-[#08647E] no-underline"
+          className="mt-1 inline-flex items-center gap-1.5 min-h-11 rounded-full text-[13px] font-medium text-[#0E96B0] hover:text-[#08647E] no-underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0E96B0]"
         >
           <svg
             viewBox="0 0 24 24"
@@ -103,6 +106,10 @@ export default function OrgSettingsEntry({ isWardBrand }: Props) {
           </svg>
           Switch organization
         </Link>
+      ) : (
+        // Hold the Switch row's height until the org list loads so the header
+        // doesn't jump for multi-org users; collapses for single-org users.
+        orgsLoading && <div data-testid="org-switch-placeholder" aria-hidden="true" className="mt-1 min-h-11" />
       )}
     </div>
   );

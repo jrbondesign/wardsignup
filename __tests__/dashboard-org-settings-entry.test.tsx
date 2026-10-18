@@ -125,6 +125,22 @@ describe("OrgSettingsEntry", () => {
     expect(link).toHaveAttribute("href", "/orgs/select?next=/dashboard");
   });
 
+  it("reserves the Switch row while loading, then collapses it for a single org", async () => {
+    mockOrgList(1);
+    render(<OrgSettingsEntry isWardBrand />);
+    expect(screen.getByTestId("org-switch-placeholder")).toHaveClass("min-h-11");
+    await waitFor(() => expect(screen.queryByTestId("org-switch-placeholder")).not.toBeInTheDocument());
+    expect(screen.queryByRole("link", { name: /switch organization/i })).not.toBeInTheDocument();
+  });
+
+  it("swaps the placeholder for a focusable Switch link with 2+ orgs", async () => {
+    mockOrgList(2);
+    render(<OrgSettingsEntry isWardBrand />);
+    const link = await screen.findByRole("link", { name: /switch organization/i });
+    expect(screen.queryByTestId("org-switch-placeholder")).not.toBeInTheDocument();
+    expect(link).toHaveClass("mt-1", "min-h-11", "rounded-full", "focus-visible:outline-[#0E96B0]");
+  });
+
   it("keeps copy free of dashes", async () => {
     mockOrgList(2);
     const { container } = render(<OrgSettingsEntry isWardBrand />);
@@ -143,6 +159,12 @@ describe("Navigation", () => {
     );
     const desktop = await screen.findByRole("link", { name: "Organization settings" });
     expect(desktop).toHaveAttribute("href", "/settings/organization");
+    expect(desktop).toHaveClass("inline-flex");
+    expect(desktop).not.toHaveClass("hidden");
+    const email = screen.getByText("owner@example.com");
+    expect(email).toHaveAttribute("title", "owner@example.com");
+    expect(email).toHaveClass("hidden", "lg:block", "max-w-[160px]", "xl:max-w-[200px]");
+    expect(screen.getByRole("button", { name: "Menu" })).toHaveClass("lg:hidden");
 
     fireEvent.click(screen.getByRole("button", { name: "Menu" }));
     const links = screen.getAllByRole("link", { name: "Organization settings" });
