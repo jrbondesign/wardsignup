@@ -1225,7 +1225,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                 type="button"
                                 onClick={() => setOpenMenuSignupId(sig.id)}
                                 aria-label={`Options for ${sig.member_name}`}
-                                className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
+                                className="absolute top-1/2 -translate-y-1/2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
                               >
                                 <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                                   <circle cx="12" cy="5" r="2" />
@@ -1281,7 +1281,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                         type="button"
                         onClick={() => setOpenMenuSignupId(sig.id)}
                         aria-label={`Options for ${sig.member_name}`}
-                        className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
+                        className="absolute top-1/2 -translate-y-1/2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
                       >
                         <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                           <circle cx="12" cy="5" r="2" />
@@ -1432,13 +1432,13 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                             )}
                                           </div>
                                         </div>
-                                        <button
-                                          ref={(el) => { if (el) menuButtonRefs.current.set(signup.id, el); }}
-                                          type="button"
-                                          onClick={() => setOpenMenuSignupId(signup.id)}
-                                          aria-label={`Options for ${signup.member_name}`}
-                                          className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
-                                        >
+                        <button
+                          ref={(el) => { if (el) menuButtonRefs.current.set(signup.id, el); }}
+                          type="button"
+                          onClick={() => setOpenMenuSignupId(signup.id)}
+                          aria-label={`Options for ${signup.member_name}`}
+                          className="absolute top-1/2 -translate-y-1/2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
+                        >
                                           <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
                                             <circle cx="12" cy="5" r="2" />
                                             <circle cx="12" cy="12" r="2" />
