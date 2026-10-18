@@ -40,8 +40,9 @@ export type LeaderCoverageFields = {
 
 /**
  * True when the assigned leader already gets organizer faster alerts for this
- * event (faster alerts are on and the leader is the organizer address), so a
- * per signup leader email would only repeat the same news.
+ * event (faster alerts are on and the leader is the organizer address).
+ * Note: Per-signup leader emails are now disabled entirely (PR #81 Oct 2026);
+ * this helper remains for reference but is no longer used in email send logic.
  */
 export function leaderCoveredByOrganizerAlerts(c: LeaderCoverageFields): boolean {
   if (!c.organizer_instant_notify_enabled) return false;
@@ -50,7 +51,11 @@ export function leaderCoveredByOrganizerAlerts(c: LeaderCoverageFields): boolean
   return leader !== "" && leader === organizer;
 }
 
-/** Max leader signup emails per event per hour. Default 1. */
+/** 
+ * Max leader signup emails per event per hour. Default 1.
+ * Note: Per-signup leader emails are now disabled entirely (PR #81 Oct 2026);
+ * this constant remains for reference but is no longer used.
+ */
 export function leaderNotifyMaxPerHour(
   env: Record<string, string | undefined> = process.env,
 ): number {

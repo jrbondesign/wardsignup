@@ -112,7 +112,6 @@ export async function PATCH(
     const hasOrganizerPrefs =
       body.organizer_digest_enabled !== undefined ||
       body.organizer_instant_notify_enabled !== undefined ||
-      body.leader_signup_email_enabled !== undefined ||
       body.show_signups_publicly !== undefined ||
       body.allow_guests !== undefined ||
       body.show_capacity_publicly !== undefined ||
@@ -184,10 +183,6 @@ export async function PATCH(
       if (next && !wasEnabled) {
         updates.organizer_last_instant_notify_at = new Date().toISOString();
       }
-    }
-
-    if (body.leader_signup_email_enabled !== undefined) {
-      updates.leader_signup_email_enabled = Boolean(body.leader_signup_email_enabled);
     }
 
     if (body.show_signups_publicly !== undefined) {

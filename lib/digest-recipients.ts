@@ -44,13 +44,16 @@ export async function campaignNeedsDigest(
   return (touched?.length ?? 0) > 0;
 }
 
-/** Leader gets the digest when per signup emails are off and they are not the organizer. */
+/** 
+ * Leader gets the daily digest when they are not the organizer.
+ * Per-signup leader emails are now disabled entirely; all leaders get the digest.
+ */
 export function leaderDigestRecipient(
-  c: { leader_email?: string | null; leader_signup_email_enabled?: boolean | null },
+  c: { leader_email?: string | null },
   organizerEmail: string | null | undefined,
 ): string | null {
   const leader = (c.leader_email ?? "").trim().toLowerCase();
-  if (!leader || c.leader_signup_email_enabled) return null;
+  if (!leader) return null;
   if (leader === (organizerEmail ?? "").trim().toLowerCase()) return null;
   return leader;
 }

@@ -109,7 +109,6 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const [eventTimezone, setEventTimezone] = useState("America/Phoenix");
   const [leaderName, setLeaderName] = useState("");
   const [leaderEmail, setLeaderEmail] = useState("");
-  const [leaderSignupEmailEnabled, setLeaderSignupEmailEnabled] = useState(false);
   const leaderSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [visibilityOpen, setVisibilityOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -294,7 +293,6 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       if (typeof tzRaw === "string" && tzRaw.trim()) setEventTimezone(tzRaw.trim());
       setLeaderName((eventData as any).leader_name ?? "");
       setLeaderEmail((eventData as any).leader_email ?? "");
-        setLeaderSignupEmailEnabled(Boolean((eventData as any).leader_signup_email_enabled));
 
       // Future: Load org logo if Ward Signup supports custom logos
       const profileLogoUrl = null;
@@ -308,7 +306,6 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const patchOrganizerEmailPrefs = async (partial: {
     organizer_digest_enabled?: boolean;
     organizer_instant_notify_enabled?: boolean;
-    leader_signup_email_enabled?: boolean;
     show_signups_publicly?: boolean;
     list_on_directory?: boolean;
     allow_guests?: boolean;
@@ -359,7 +356,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
 
     const saveBool = (
       key: keyof CreateFormState,
-      apiKey: "show_signups_publicly" | "list_on_directory" | "organizer_digest_enabled" | "organizer_instant_notify_enabled" | "leader_signup_email_enabled" | "allow_guests" | "show_capacity_publicly",
+      apiKey: "show_signups_publicly" | "list_on_directory" | "organizer_digest_enabled" | "organizer_instant_notify_enabled" | "allow_guests" | "show_capacity_publicly",
       current: boolean,
       setter: (v: boolean) => void,
     ) => {
@@ -376,7 +373,6 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
     saveBool("listOnDirectory", "list_on_directory", listOnDirectory, setListOnDirectory);
     saveBool("organizerDigestEnabled", "organizer_digest_enabled", digestEnabled, setDigestEnabled);
     saveBool("organizerInstantNotifyEnabled", "organizer_instant_notify_enabled", instantEnabled, setInstantEnabled);
-    saveBool("leaderSignupEmailEnabled", "leader_signup_email_enabled", leaderSignupEmailEnabled, setLeaderSignupEmailEnabled);
     saveBool("allowGuests", "allow_guests", allowGuests, setAllowGuests);
     saveBool("showCapacityPublicly", "show_capacity_publicly", showCapacityPublicly, setShowCapacityPublicly);
 
@@ -997,7 +993,6 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                   eventTimezone,
                   leaderName,
                   leaderEmail,
-                  leaderSignupEmailEnabled,
                   allowGuests,
                   showCapacityPublicly,
                   expanded: {

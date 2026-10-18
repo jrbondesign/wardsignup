@@ -56,15 +56,6 @@ export default function EventSettingsSection({ state, set }: Props) {
               aria-label="Leader email"
             />
           </div>
-          {state.leaderEmail.trim() ? (
-            <div className="mt-2">
-              <SettingsToggle
-                checked={state.leaderSignupEmailEnabled}
-                onChange={(v) => set({ leaderSignupEmailEnabled: v })}
-                label="Email the leader when someone signs up, at most once an hour, with a calendar file. This replaces their daily digest."
-              />
-            </div>
-          ) : null}
         </div>
 
         <div>
