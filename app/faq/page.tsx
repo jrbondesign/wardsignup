@@ -85,6 +85,14 @@ export default async function FAQPage() {
       },
       {
         "@type": "Question",
+        "name": "Can other leaders or helpers see who's signing up too?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Anyone who needs to see signups, like your bishop, a clerk, or another leader, can get access. From your dashboard, invite them as a Co-admin using their email. Once they accept the invite and sign in, they can see the signups. They can also keep an eye on the event preview to see who has signed up."
+        }
+      },
+      {
+        "@type": "Question",
         "name": "Does Ward Signup show ads or sell emails?",
         "acceptedAnswer": {
           "@type": "Answer",
@@ -145,6 +153,15 @@ export default async function FAQPage() {
                 </h3>
                 <p className="text-[17px] leading-[1.7] text-[#2E5566]">
                   Yes. The organization owner can invite other leaders (for example counselors or clerks) as Co-admins. Co-admins can edit and delete events, manage signups, and view analytics. Only the owner can invite more Co-admins, delete the organization, rename the organization, or transfer ownership. Ward members signing up still need no account.
+                </p>
+              </div>
+
+              <div>
+                <h3 className="font-serif text-[20px] text-[#0D2B35] mb-3">
+                  Can other leaders or helpers see who's signing up too?
+                </h3>
+                <p className="text-[17px] leading-[1.7] text-[#2E5566]">
+                  Yes. Anyone who needs to see signups, like your bishop, a clerk, or another leader, can get access. From your dashboard, invite them as a Co-admin using their email. Once they accept the invite and sign in, they can see the signups. They can also keep an eye on the event preview to see who has signed up.
                 </p>
               </div>
             </div>
