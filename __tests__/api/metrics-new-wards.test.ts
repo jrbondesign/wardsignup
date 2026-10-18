@@ -15,10 +15,10 @@ describe("New Wards Metric", () => {
   });
 
   it("should count new wards this week (Phoenix time, Monday-start)", () => {
-    // Mock current time: Sunday Oct 19, 2026 at 3:00 AM UTC
-    // In Phoenix (UTC-7): Saturday Oct 18, 2026 at 8:00 PM
-    // Current week in Phoenix starts: Monday Oct 13, 2026 at 7:00 AM UTC (midnight Phoenix)
-    const nowDate = new Date("2026-10-19T03:00:00Z");
+    // Test scenario: Thursday Oct 15, 2026 at 5:00 PM UTC
+    // In Phoenix (UTC-7): Thursday Oct 15, 2026 at 10:00 AM
+    // Current week in Phoenix starts: Monday Oct 12, 2026 at 7:00 AM UTC (midnight Phoenix)
+    const nowDate = new Date("2026-10-15T17:00:00Z");
     const phoenixOffset = -7 * 60; // minutes
     const nowPhoenix = new Date(nowDate.getTime() + phoenixOffset * 60 * 1000);
     
@@ -31,12 +31,16 @@ describe("New Wards Metric", () => {
     const weekStartUTC = new Date(phoenixWeekStart.getTime() - phoenixOffset * 60 * 1000);
     const weekStartISO = weekStartUTC.toISOString();
 
+    // Verify week start calculation (Monday Oct 12 at midnight Phoenix = 7am UTC)
+    expect(weekStartISO).toBe("2026-10-12T07:00:00.000Z");
+
     const orgFirstEvents = [
-      { orgId: "org1", date: "2026-10-14T10:00:00Z" }, // Tuesday this week - YES
-      { orgId: "org2", date: "2026-10-18T22:00:00Z" }, // Saturday this week - YES
-      { orgId: "org3", date: "2026-10-12T10:00:00Z" }, // Sunday last week - NO
-      { orgId: "org4", date: "2026-10-13T06:00:00Z" }, // Before week start in UTC - NO
-      { orgId: "org5", date: "2026-10-13T08:00:00Z" }, // After week start in UTC - YES
+      { orgId: "org1", date: "2026-10-14T10:00:00Z" }, // Wednesday this week - YES
+      { orgId: "org2", date: "2026-10-15T15:00:00Z" }, // Thursday this week - YES
+      { orgId: "org3", date: "2026-10-11T10:00:00Z" }, // Saturday last week - NO
+      { orgId: "org4", date: "2026-10-12T06:00:00Z" }, // Monday before week start (6am UTC = 11pm Sun Phoenix) - NO
+      { orgId: "org5", date: "2026-10-12T08:00:00Z" }, // Monday after week start (8am UTC = 1am Mon Phoenix) - YES
+      { orgId: "org6", date: "2026-10-06T10:00:00Z" }, // Previous week - NO
     ];
 
     let newThisWeek = 0;
@@ -46,8 +50,7 @@ describe("New Wards Metric", () => {
       }
     }
 
-    expect(newThisWeek).toBe(3);
-    expect(weekStartISO).toBe("2026-10-13T07:00:00.000Z");
+    expect(newThisWeek).toBe(3); // org1, org2, org5
   });
 
   it("should exclude test accounts from both total and weekly counts", () => {
