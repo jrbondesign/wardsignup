@@ -5,7 +5,9 @@
 import {
   applyCapacityDrafts,
   cardLocation,
+  dayMenuLabel,
   duplicateSessionAfter,
+  formatDayHeading,
   removeDayConfirmBody,
   removeSlotConfirmBody,
   sharedLocations,
@@ -145,5 +147,23 @@ describe("remove confirmation copy", () => {
     [removeSlotConfirmBody(1), removeSlotConfirmBody(4), removeDayConfirmBody(2, 3), removeDayConfirmBody(2, 0)].forEach((t) =>
       expect(t).not.toMatch(/[-–—]/),
     );
+  });
+});
+
+describe("day heading and its three dots label", () => {
+  it("labels the day menu with the formatted heading date, not the ISO date", () => {
+    const group = { sessionDate: "2026-10-22", dayOfWeek: 4 };
+    expect(dayMenuLabel(group)).toBe("Options for Thursday, Oct 22, 2026");
+    expect(dayMenuLabel(group)).not.toContain("2026-10-22");
+  });
+
+  it("uses the same text as the heading, with a short weekday for narrow phones", () => {
+    const group = { sessionDate: "2026-10-22", dayOfWeek: 4 };
+    expect(formatDayHeading(group)).toBe("Thursday, Oct 22, 2026");
+    expect(formatDayHeading(group, "short")).toBe("Thu, Oct 22, 2026");
+  });
+
+  it("labels a recurring weekday group by its weekday", () => {
+    expect(dayMenuLabel({ sessionDate: null, dayOfWeek: 0 })).toBe("Options for Sunday");
   });
 });

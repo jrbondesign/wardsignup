@@ -3,6 +3,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+/** Desktop popover width. The menu is rendered at exactly this width (items
+ *  wrap rather than widen it) so the position math below stays correct. */
+const MENU_WIDTH = 280;
+
 export interface ActionMenuItem {
   label: string;
   onSelect: () => void;
@@ -30,6 +34,21 @@ export default function ActionMenu({
   const menuRef = useRef<HTMLDivElement>(null);
   const firstButtonRef = useRef<HTMLButtonElement>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const triggerRef = useRef<HTMLElement | null>(buttonElement);
+
+  useEffect(() => {
+    triggerRef.current = buttonElement;
+  }, [buttonElement]);
+
+  // When the menu closes (Escape, an item, a click outside: the parent
+  // unmounts it), give focus back to the three dots button that opened it.
+  // A dialog opened by the item (ConfirmDialog) focuses itself afterwards.
+  useEffect(() => {
+    return () => {
+      const trigger = triggerRef.current;
+      if (trigger && trigger.isConnected) trigger.focus();
+    };
+  }, []);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number; flipUp: boolean } | null>(null);
 
   useEffect(() => {
@@ -41,7 +60,7 @@ export default function ActionMenu({
       const buttonRect = buttonElement.getBoundingClientRect();
       const viewportHeight = window.innerHeight;
       const viewportWidth = window.innerWidth;
-      const menuWidth = 280;
+      const menuWidth = MENU_WIDTH;
       const menuHeight = items.length * 44 + 8;
       const gap = 4;
 
@@ -193,7 +212,7 @@ export default function ActionMenu({
         style={{
           top: `${menuPosition.top}px`,
           left: `${menuPosition.left}px`,
-          minWidth: '280px',
+          width: `${MENU_WIDTH}px`,
         }}
         role="menu"
         aria-label={title}
@@ -205,7 +224,7 @@ export default function ActionMenu({
               ref={idx === 0 ? firstButtonRef : undefined}
               type="button"
               onClick={() => selectItem(item)}
-              className={`w-full min-h-[44px] px-3 py-2.5 text-left rounded-md transition-colors text-sm font-medium whitespace-nowrap ${
+              className={`block w-full min-h-[44px] px-3 py-2.5 text-left rounded-md transition-colors text-sm font-medium whitespace-normal break-words ${
                 item.tone === "danger"
                   ? "text-red-600 hover:bg-red-50"
                   : "text-[#0D2B35] hover:bg-gray-50"

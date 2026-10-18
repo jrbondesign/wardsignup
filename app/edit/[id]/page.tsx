@@ -45,7 +45,9 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import {
   applyCapacityDrafts,
   cardLocation,
+  dayMenuLabel,
   duplicateSessionAfter,
+  formatDayHeading,
   removeDayConfirmBody,
   removeSlotConfirmBody,
   sharedLocations,
@@ -2677,27 +2679,16 @@ export default function EditEventPage() {
                         <div className="pl-0.5 pr-[17px] md:pr-[21px]">
                           <div className="flex items-center gap-2">
                             <div className="font-serif text-[17px] text-[#0D2B35] whitespace-nowrap leading-tight flex-1 min-w-0">
-                              {group.sessionDate
-                                ? (() => {
-                                    const [year, month, day] = group.sessionDate.split("-").map(Number);
-                                    const date = new Date(year, month - 1, day);
-                                    const fmt = (weekday: "long" | "short") =>
-                                      date.toLocaleDateString("en-US", {
-                                        weekday,
-                                        month: "short",
-                                        day: "numeric",
-                                        year: "numeric",
-                                      });
-                                    // Narrow phones get the short weekday so the date never wraps;
-                                    // swapped in CSS so server and client render the same markup.
-                                    return (
-                                      <>
-                                        <span className="min-[360px]:hidden">{fmt("short")}</span>
-                                        <span className="hidden min-[360px]:inline">{fmt("long")}</span>
-                                      </>
-                                    );
-                                  })()
-                                : DAYS[group.dayOfWeek]}
+                              {group.sessionDate ? (
+                                // Narrow phones get the short weekday so the date never wraps;
+                                // swapped in CSS so server and client render the same markup.
+                                <>
+                                  <span className="min-[360px]:hidden">{formatDayHeading(group, "short")}</span>
+                                  <span className="hidden min-[360px]:inline">{formatDayHeading(group)}</span>
+                                </>
+                              ) : (
+                                DAYS[group.dayOfWeek]
+                              )}
                             </div>
                             <button
                               type="button"
@@ -2707,7 +2698,7 @@ export default function EditEventPage() {
                                 setDayMenuGroupKey(group.key);
                                 setDayMenuButtonEl(e.currentTarget);
                               }}
-                              aria-label={`Options for ${group.sessionDate ?? DAYS[group.dayOfWeek]}`}
+                              aria-label={dayMenuLabel(group)}
                               className="w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors flex-shrink-0"
                             >
                               <svg viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5" aria-hidden="true">
