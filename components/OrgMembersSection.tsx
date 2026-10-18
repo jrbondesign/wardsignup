@@ -204,7 +204,7 @@ export default function OrgMembersSection({ organizationId, isOwner }: Props) {
     <section className="mt-8 bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">
       <h2 className="font-serif text-[20px] text-[#0D2B35] mb-1">Co-admins</h2>
       <p className="text-[13px] text-[#5A8399] mb-5">
-        Co-admins can edit and delete events, manage signups, and view analytics. Only the owner can invite or remove co-admins.
+        Co-admins can edit and delete events, manage signups, and view analytics. The owner handles inviting others and organization settings.
       </p>
 
       {isOwner && (

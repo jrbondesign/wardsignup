@@ -80,7 +80,7 @@ export default async function FAQPage() {
         "name": "Can counselors, clerks, or other leaders help manage a signup?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. The organization owner can invite other leaders (for example counselors or clerks) as admins. Admins can edit and delete events, manage signups, and view analytics. Only the owner can invite more admins, delete the organization, rename the organization, or transfer ownership. Ward members signing up still need no account."
+          "text": "Yes. The organization owner can invite other leaders (for example counselors or clerks) as Co-admins. Co-admins can edit and delete events, manage signups, and view analytics. The owner handles inviting others, renaming the organization, and transferring ownership. Ward members signing up still need no account."
         }
       },
       {
@@ -144,7 +144,7 @@ export default async function FAQPage() {
                   Can counselors, clerks, or other leaders help manage a signup?
                 </h3>
                 <p className="text-[17px] leading-[1.7] text-[#2E5566]">
-                  Yes. The organization owner can invite other leaders (for example counselors or clerks) as admins. Admins can edit and delete events, manage signups, and view analytics. Only the owner can invite more admins, delete the organization, rename the organization, or transfer ownership. Ward members signing up still need no account.
+                  Yes. The organization owner can invite other leaders (for example counselors or clerks) as Co-admins. Co-admins can edit and delete events, manage signups, and view analytics. The owner handles inviting others, renaming the organization, and transferring ownership. Ward members signing up still need no account.
                 </p>
               </div>
             </div>
