@@ -10,14 +10,17 @@ import { resolveCronBrandId } from "@/lib/cron-brand";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const WINDOW_START_H = 23;
+const WINDOW_START_H = 0;
 const WINDOW_END_H = 25;
+const MIN_SIGNUP_TO_SLOT_H = 48;
 const MAX_PER_RUN = 300;
 
 /**
  * ~24h before dated sessions only (sessions.session_date set). Recurring slots without a date are skipped.
  * Secured with Authorization: Bearer CRON_SECRET.
- * On Vercel Hobby, schedule hourly via an external ping (see organizer-faster) so the 23–25h window is reliable.
+ * Runs hourly (GitHub Actions + Vercel cron). Catches up any un-reminded eligible signup whose slot
+ * starts within the next ~25 hours and is still in the future, skipping signups created less than
+ * 48 hours before their slot (they just got a confirmation email).
  */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET?.trim();
@@ -84,6 +87,7 @@ export async function GET(request: NextRequest) {
       member_name,
       member_email,
       cancel_token,
+      signed_up_at,
       sessions!inner (
         session_date,
         time,
@@ -118,6 +122,7 @@ export async function GET(request: NextRequest) {
 
   let sent = 0;
   let skipped = 0;
+  let tooRecent = 0;
   const errors: string[] = [];
 
   for (const row of rows || []) {
@@ -126,6 +131,7 @@ export async function GET(request: NextRequest) {
       member_name: string;
       member_email: string;
       cancel_token: string | null;
+      signed_up_at: string | null;
       sessions:
         | {
             session_date: string | null;
@@ -167,9 +173,30 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
-    if (t < winStart || t > winEnd) {
+    // Catch-up window: slot starts within ~25 hours and is still in the future
+    if (t < now || t > winEnd) {
       skipped += 1;
       continue;
+    }
+
+    // Skip reminder when signup was created less than 48h before the slot start
+    // (they just received a confirmation email). Mark it handled so it's not retried.
+    const signedUpMs = r.signed_up_at ? new Date(r.signed_up_at).getTime() : 0;
+    if (Number.isFinite(signedUpMs) && signedUpMs > 0) {
+      const hoursBeforeSlot = (t - signedUpMs) / (60 * 60 * 1000);
+      if (hoursBeforeSlot < MIN_SIGNUP_TO_SLOT_H) {
+        const { error: markErr } = await admin
+          .from("signups")
+          .update({ reminder_sent_at: new Date().toISOString() } as never)
+          .eq("id", r.id)
+          .is("reminder_sent_at", null);
+        if (markErr) {
+          errors.push(`${r.id}: mark too-recent failed: ${markErr.message}`);
+        } else {
+          tooRecent += 1;
+        }
+        continue;
+      }
     }
 
     const { siteOrigin: reminderSiteOrigin } = publicSiteOriginAndBrandForCampaign(campaign as Parameters<typeof publicSiteOriginAndBrandForCampaign>[0]);
@@ -223,7 +250,9 @@ export async function GET(request: NextRequest) {
     brandId,
     sent,
     skipped,
+    tooRecent,
     errors: errors.length ? errors : undefined,
     windowHours: [WINDOW_START_H, WINDOW_END_H],
+    minSignupToSlotHours: MIN_SIGNUP_TO_SLOT_H,
   });
 }

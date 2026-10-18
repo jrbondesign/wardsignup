@@ -29,7 +29,19 @@ beforeEach(() => {
   send.mockClear();
 });
 
-it("skips the leader email when organizer alerts already cover the leader", async () => {
+it("skips all per-signup leader emails (now covered by digest)", async () => {
+  const r = await sendLeaderSignupNotification({
+    campaign,
+    sessions: [],
+    memberName: "Pat",
+  });
+  expect(r.ok).toBe(false);
+  expect(r.error).toContain("digest");
+  expect(consume).not.toHaveBeenCalled();
+  expect(send).not.toHaveBeenCalled();
+});
+
+it("skips even when organizer alerts cover the leader", async () => {
   const r = await sendLeaderSignupNotification({
     campaign: {
       ...(campaign as object),
@@ -40,33 +52,20 @@ it("skips the leader email when organizer alerts already cover the leader", asyn
     memberName: "Pat",
   });
   expect(r.ok).toBe(false);
+  expect(r.error).toContain("digest");
   expect(consume).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
 });
 
-it("sends the first leader email of the hour with a cap of 1", async () => {
-  consume.mockResolvedValue(true);
-  const r = await sendLeaderSignupNotification({ campaign, sessions: [], memberName: "Pat" });
-  expect(r.ok).toBe(true);
-  expect(consume).toHaveBeenCalledWith("leader_notify", "leader:c1", 1);
-  expect(send).toHaveBeenCalledTimes(1);
-});
-
-it("does not send once the hourly cap is used", async () => {
-  consume.mockResolvedValue(false);
-  const r = await sendLeaderSignupNotification({ campaign, sessions: [], memberName: "Pat" });
-  expect(r.ok).toBe(false);
-  expect(send).not.toHaveBeenCalled();
-});
-
-it("sends nothing per signup when the leader has not opted in", async () => {
+it("skips even with leader_signup_email_enabled true", async () => {
   consume.mockResolvedValue(true);
   const r = await sendLeaderSignupNotification({
-    campaign: { ...(campaign as object), leader_signup_email_enabled: false } as never,
+    campaign: { ...(campaign as object), leader_signup_email_enabled: true } as never,
     sessions: [],
     memberName: "Pat",
   });
   expect(r.ok).toBe(false);
+  expect(r.error).toContain("digest");
   expect(consume).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
 });
