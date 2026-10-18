@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { fasterAlertMinHours, isFasterAlertThrottled } from "@/lib/email-throttle";
 import {
   organizerEmailFrom,
   publicSiteOriginAndBrandForCampaign,
@@ -14,11 +15,12 @@ import {
   resolveEffectiveEventTimezone,
   sessionStartUtc,
 } from "@/lib/event-timezone";
+import { withUtm } from "@/lib/utm";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-
+/** Shown in UI copy; a GitHub Actions pinger hits `/api/cron/organizer-faster` hourly (route claims one run per hour). */
 /** Shown in UI copy; Vercel cron runs `/api/cron/organizer-faster` every 30 minutes. */
-export const FASTER_ALERT_SCHEDULE_LABEL = "about every 30 minutes";
+export const FASTER_ALERT_SCHEDULE_LABEL = "at most every 3 hours";
 
 export async function resolveOrganizerEmail(
   admin: SupabaseClient,
@@ -343,7 +345,7 @@ type CustomItemSignupRow = {
   quantity: number;
 };
 
-/** Items-type events don't have sessions — render the items list instead. */
+/** Organizer digest/faster/manual report emails. */
 function buildOrganizerItemsEmailHtml(params: {
   brand: PublicBrand;
   campaignName: string;
@@ -352,8 +354,21 @@ function buildOrganizerItemsEmailHtml(params: {
   items: ItemRow[];
   customSignups: CustomItemSignupRow[];
   headline: string;
+  emailKind: "digest" | "manual" | "faster";
 }): string {
-  const { brand, campaignName, eventUrl, adminUrl, items, customSignups, headline } = params;
+  const { brand, campaignName, eventUrl, adminUrl, items, customSignups, headline, emailKind } = params;
+  
+  const eventUrlWithUtm = withUtm(eventUrl, {
+    utm_source: "organizer_email",
+    utm_medium: "email",
+    utm_campaign: emailKind === "digest" ? "daily_summary" : emailKind === "faster" ? "faster_alert" : "manual_report"
+  });
+  const adminUrlWithUtm = withUtm(adminUrl, {
+    utm_source: "organizer_email",
+    utm_medium: "email",
+    utm_campaign: emailKind === "digest" ? "daily_summary" : emailKind === "faster" ? "faster_alert" : "manual_report"
+  });
+  
   const itemClaimed = (it: ItemRow) =>
     (it.item_signups ?? []).reduce((s, r) => s + (r.quantity ?? 1), 0);
 
@@ -399,9 +414,9 @@ function buildOrganizerItemsEmailHtml(params: {
     <p style="font-size:16px;line-height:1.6;margin:0 0 12px;">${escapeHtml(headline)}</p>
     <h1 style="font-size:22px;margin:0 0 16px;color:#054F64;">${escapeHtml(campaignName)}</h1>
     <p style="font-size:14px;margin:0 0 20px;">
-      <a href="${eventUrl}" style="color:#0E96B0;font-weight:600;text-decoration:none;">Open signup page</a>
+      <a href="${eventUrlWithUtm}" style="color:#0E96B0;font-weight:600;text-decoration:none;">Open signup page</a>
       &nbsp;·&nbsp;
-      <a href="${adminUrl}" style="color:#0E96B0;font-weight:600;text-decoration:none;">Manage event</a>
+      <a href="${adminUrlWithUtm}" style="color:#0E96B0;font-weight:600;text-decoration:none;">Manage event</a>
     </p>
 
     <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:24px;background:#E6F7FB;border-radius:12px;overflow:hidden;">
@@ -461,6 +476,17 @@ export function buildOrganizerMetricsEmailHtml(params: {
     eventTimezone = null,
   } = params;
 
+  const eventUrlWithUtm = withUtm(eventUrl, {
+    utm_source: "organizer_email",
+    utm_medium: "email",
+    utm_campaign: kind === "digest" ? "daily_summary" : kind === "faster" ? "faster_alert" : "manual_report"
+  });
+  const adminUrlWithUtm = withUtm(adminUrl, {
+    utm_source: "organizer_email",
+    utm_medium: "email",
+    utm_campaign: kind === "digest" ? "daily_summary" : kind === "faster" ? "faster_alert" : "manual_report"
+  });
+
   const isFaster = kind === "faster";
   const fasterBanner =
     isFaster && fasterNewSignups.length > 0
@@ -472,9 +498,9 @@ export function buildOrganizerMetricsEmailHtml(params: {
     <p style="font-size:16px;line-height:1.6;margin:0 0 12px;">${escapeHtml(headline)}</p>
     <h1 style="font-size:22px;margin:0 0 16px;color:#054F64;">${escapeHtml(campaignName)}</h1>
     <p style="font-size:14px;margin:0 0 20px;">
-      <a href="${eventUrl}" style="color:#0E96B0;font-weight:600;text-decoration:none;">Open signup page</a>
+      <a href="${eventUrlWithUtm}" style="color:#0E96B0;font-weight:600;text-decoration:none;">Open signup page</a>
       &nbsp;·&nbsp;
-      <a href="${adminUrl}" style="color:#0E96B0;font-weight:600;text-decoration:none;">Manage event</a>
+      <a href="${adminUrlWithUtm}" style="color:#0E96B0;font-weight:600;text-decoration:none;">Manage event</a>
     </p>
 
     <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin-bottom:24px;background:#E6F7FB;border-radius:12px;overflow:hidden;">
@@ -532,6 +558,8 @@ export async function sendOrganizerMetricsEmail(
   admin: SupabaseClient,
   campaignId: string,
   kind: "digest" | "manual",
+  /** Send to this address instead of the organizer (used for the event leader). */
+  opts?: { to?: string },
 ): Promise<{
   ok: boolean;
   skipped?: string;
@@ -560,10 +588,12 @@ export async function sendOrganizerMetricsEmail(
     return { ok: false, error: "Resend API key not configured for this brand" };
   }
 
-  const to = await resolveOrganizerEmail(admin, {
-    user_email: (c.user_email as string | null) ?? null,
-    created_by: (c.created_by as string | null) ?? null,
-  });
+  const to =
+    opts?.to?.trim() ||
+    (await resolveOrganizerEmail(admin, {
+      user_email: (c.user_email as string | null) ?? null,
+      created_by: (c.created_by as string | null) ?? null,
+    }));
   if (!to) {
     return { ok: false, skipped: "no_organizer_email" };
   }
@@ -603,6 +633,7 @@ export async function sendOrganizerMetricsEmail(
       items: (itemRows ?? []) as unknown as ItemRow[],
       customSignups: (customRows ?? []) as unknown as CustomItemSignupRow[],
       headline: headlineForKind(kind),
+      emailKind: kind,
     });
   } else {
     const { data: sessionRows, error: sErr } = await admin
@@ -650,6 +681,10 @@ export async function sendOrganizerMetricsEmail(
       to,
       subject: subjectForKind(brand, kind, name),
       html,
+      // Daily digests wait for the UTC reset; a report the organizer asks
+      // for with "Send report now" goes right away.
+      deferrable: kind === "digest",
+      kind: kind === "digest" ? "digest" : "report",
     });
     if (!send.ok) {
       console.error("organizer email send blocked/failed:", send.error || send.skipped);
@@ -695,7 +730,7 @@ export async function sendOrganizerFasterAlertEmail(
   campaignId: string,
 ): Promise<{
   ok: boolean;
-  skipped?: "disabled" | "no_new_signups" | "no_organizer_email";
+  skipped?: "disabled" | "no_new_signups" | "no_organizer_email" | "throttled";
   error?: string;
   resendId?: string;
   sentTo?: string;
@@ -735,6 +770,12 @@ export async function sendOrganizerFasterAlertEmail(
       .update({ organizer_last_instant_notify_at: new Date().toISOString() } as never)
       .eq("id", campaignId);
     return { ok: false, skipped: "no_new_signups" };
+  }
+
+  // At most one faster alert per event per window (ORGANIZER_FASTER_ALERT_MIN_HOURS,
+  // default 3). The watermark is untouched, so the next alert lists everyone.
+  if (isFasterAlertThrottled(since, new Date(), fasterAlertMinHours())) {
+    return { ok: false, skipped: "throttled" };
   }
 
   let newQuery = admin

@@ -81,7 +81,11 @@ export async function GET(request: NextRequest) {
     try {
       const result = await sendOrganizerFasterAlertEmail(admin, c.id);
       if (!result.ok) {
-        if (result.skipped === "no_new_signups" || result.skipped === "disabled") {
+        if (
+          result.skipped === "no_new_signups" ||
+          result.skipped === "disabled" ||
+          result.skipped === "throttled"
+        ) {
           skipped += 1;
           continue;
         }

@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { usePostHog } from "posthog-js/react";
+import { withUtm } from "@/lib/utm";
 
 type SignupInfo = {
   member_name: string;
@@ -109,9 +111,41 @@ type PageState =
 export default function SignupSuccessPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const posthog = usePostHog();
   const token = typeof params.token === "string" ? params.token : "";
   const eventId = searchParams.get("event") ?? "";
   const [state, setState] = useState<PageState>({ status: "loading" });
+
+  useEffect(() => {
+    if (!token) {
+      setState({ status: "error" });
+      return;
+    }
+    fetch(`/api/signups/cancel/lookup?token=${encodeURIComponent(token)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.error) {
+          setState({ status: "error" });
+        } else {
+          setState({ status: "ready", info: data });
+        }
+      })
+      .catch(() => setState({ status: "error" }));
+  }, [token]);
+
+  const createPageUrl = withUtm("/create", {
+    utm_source: "signup_confirmation",
+    utm_medium: "referral",
+    utm_campaign: "run_your_own",
+  });
+
+  const handleRunYourOwnClick = () => {
+    posthog?.capture("run_your_own_clicked", {
+      source: "signup_confirmation_page",
+      token,
+      event_id: eventId,
+    });
+  };
 
   useEffect(() => {
     if (!token) {
@@ -214,6 +248,17 @@ export default function SignupSuccessPage() {
             >
               Need to cancel? Remove my signup
             </Link>
+
+            {/* Run your own CTA */}
+            <div className="mt-6 pt-6 border-t border-[#0E96B0]/10">
+              <Link
+                href={createPageUrl}
+                onClick={handleRunYourOwnClick}
+                className="text-[13px] text-[#0E96B0] hover:text-[#08647E] font-semibold transition-colors"
+              >
+                Run your own ward signup, free
+              </Link>
+            </div>
           </>
         )}
 

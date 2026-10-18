@@ -7,6 +7,8 @@ import { isValidIanaTimezone } from "@/lib/event-timezone";
 import { getCurrentOrganization, listUserOrganizations } from "@/lib/organizations";
 import type { Database } from "@/lib/types";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { notifyFounderIfFirstEvent } from "@/lib/founder-notify";
+import { locationFromVercelHeaders } from "@/lib/request-geo";
 
 type CampaignInsert = Database["public"]["Tables"]["campaigns"]["Insert"];
 
@@ -58,12 +60,31 @@ export async function POST(request: Request) {
     const host =
       request.headers.get("x-forwarded-host") ?? request.headers.get("host");
     const brand = getBrandFromHost(host);
-    const brandGate = await ensureOrganizerBrandMatchesHost(supabase, user.id, brand);
+    
+    const body = await request.json();
+    const attribution = body?.attribution;
+    const heardAbout = body?.heard_about;
+    const brandGate = await ensureOrganizerBrandMatchesHost(supabase, user.id, brand, attribution, heardAbout);
     if (!brandGate.ok) {
       return NextResponse.json({ error: brandGate.message }, { status: 403 });
     }
+    
+    // Fire PostHog event if heard_about was answered
+    if (heardAbout?.choice) {
+      const posthog = getPostHogClient();
+      if (posthog) {
+        posthog.capture({
+          distinctId: user.id,
+          event: "heard_about_answered",
+          properties: {
+            choice: heardAbout.choice,
+            other_text: heardAbout.other_text || null,
+            brand_id: brand.id,
+          },
+        });
+      }
+    }
 
-    const body = await request.json();
     const { name, description, event_timezone, event_type, allow_guests, show_capacity_publicly, list_on_directory, event_date, event_end_date } = body;
 
     if (!name || typeof name !== "string") {
@@ -187,6 +208,19 @@ export async function POST(request: Request) {
         has_timezone: Boolean(eventTimezone),
       },
     });
+
+    const created = data as { id?: string; name?: string };
+    if (created?.id) {
+      await notifyFounderIfFirstEvent({
+        user,
+        orgId: org.id,
+        orgName: org.name,
+        eventId: created.id,
+        eventName: created.name ?? "",
+        brand,
+        location: locationFromVercelHeaders(request.headers),
+      });
+    }
 
     return NextResponse.json({ event: data });
   } catch (error) {

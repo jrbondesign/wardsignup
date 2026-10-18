@@ -4,11 +4,12 @@ import { use, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import QRCode from "qrcode";
-import { supabase, getPublicCampaignById } from "@/lib/supabase";
+import { supabase, getPublicCampaignById, getPublicDirectorySlugForCampaign } from "@/lib/supabase";
 import type { Session, CampaignItemWithSignups } from "@/lib/types";
 import { formatTime } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
+import { usePublicCover } from "@/lib/use-public-cover";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -19,6 +20,7 @@ interface SessionWithSignups extends Session {
 export default function FlyerPage({ params }: { params: Promise<{ id: string }> }) {
   const brand = useBrand();
   const { id: eventId } = use(params);
+  const publicCover = usePublicCover(eventId);
   const [event, setEvent] = useState<any>(null);
   const [eventType, setEventType] = useState<"spots" | "items" | "rsvp">("spots");
   const [showCapacityPublicly, setShowCapacityPublicly] = useState(true);
@@ -27,6 +29,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
   const [qrDataUrl, setQrDataUrl] = useState<string>("");
   const [qrPngDataUrl, setQrPngDataUrl] = useState<string>("");
   const [signupUrl, setSignupUrl] = useState("");
+  const [directorySlug, setDirectorySlug] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,7 +40,14 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
       try {
         // Visibility flags + cover/logo come from the public RPC now (SECURITY DEFINER);
         // direct table read against `campaigns` is blocked for anon by org-scoped RLS.
-        const pubResult = await getPublicCampaignById(eventId);
+        const [pubResult, slugResult] = await Promise.all([
+          getPublicCampaignById(eventId),
+          // Directory off or RPC missing (migration not applied) → falls back to the bare host.
+          getPublicDirectorySlugForCampaign(eventId),
+        ]);
+        const slugData = (slugResult as { data: unknown }).data;
+        const slug = typeof slugData === "string" && slugData ? slugData : null;
+        setDirectorySlug(slug);
 
         const { data: pubRows, error: eventError } = pubResult;
         const rows = Array.isArray(pubRows) ? pubRows : pubRows ? [pubRows] : [];
@@ -166,6 +176,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
   }
 
   const displayHost = brand.siteHost.replace(/^www\./, "");
+  const visitLabel = directorySlug ? `${displayHost}/w/${directorySlug}` : displayHost;
   const sessionHeadcount = (s: SessionWithSignups) => (s.signups ?? []).length;
 
   // Sort/filter sessions for display: keep future dates first, then fall back to day-of-week recurring
@@ -237,13 +248,24 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
               Point your phone camera at the code — no app needed.
             </div>
             <div className="flyer-hero-or">— or visit —</div>
-            <div className="flyer-hero-host">{displayHost}</div>
+            <div className="flyer-hero-host">{visitLabel}</div>
             <div className="flyer-hero-url">{signupUrl}</div>
           </div>
         </div>
 
         {/* Event card */}
         <div className="flyer-event-card">
+          {publicCover && (
+            <div className="flyer-cover-wrap">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={publicCover.url}
+                alt={event.name}
+                className="flyer-cover"
+                style={{ objectPosition: publicCover.position }}
+              />
+            </div>
+          )}
           <div className="flyer-event-card-band" />
           <div className="flyer-event-card-inner">
             {/* Future: Org logo support */}
@@ -372,6 +394,18 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
           border-radius: 16px;
           overflow: hidden;
           margin-bottom: 20px;
+        }
+        .flyer-cover-wrap {
+          width: 100%;
+          aspect-ratio: 2 / 1;
+          overflow: hidden;
+          background: #F4FAFB;
+        }
+        .flyer-cover {
+          width: 100%;
+          height: 100%;
+          display: block;
+          object-fit: cover;
         }
         .flyer-event-card-band {
           height: 6px;

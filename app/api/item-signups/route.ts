@@ -106,7 +106,7 @@ export async function POST(request: Request) {
           const admin = createClient(supabaseUrl, serviceKey);
           const { data: campaign, error: cErr } = await admin
             .from("campaigns")
-            .select("id, name, brand_id, public_host, event_timezone, event_end_date, leader_name, leader_email")
+            .select("id, name, brand_id, public_host, event_timezone, event_end_date, leader_name, leader_email, user_email, organizer_instant_notify_enabled, leader_signup_email_enabled")
             .eq("id", campaign_id)
             .single();
           if (cErr || !campaign) {

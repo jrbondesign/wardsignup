@@ -1,54 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { sendOrganizerMetricsEmail } from "@/lib/organizer-email";
+import { campaignNeedsDigest, leaderDigestRecipient } from "@/lib/digest-recipients";
 import { claimCronRun, dayBucketDate } from "@/lib/rate-limit";
-import { runFeedbackAskPass, runFeedbackDigestPass } from "@/lib/feedback-ask";
+import { runFeedbackAskPass } from "@/lib/feedback-ask";
 import { resolveCronBrandId } from "@/lib/cron-brand";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-async function campaignNeedsDigest(
-  admin: ReturnType<typeof createServiceRoleClient>,
-  campaign: {
-    id: string;
-    organizer_last_digest_sent_at: string | null;
-  },
-): Promise<boolean> {
-  const last = campaign.organizer_last_digest_sent_at;
-  const id = campaign.id;
-
-  if (!last) {
-    // First digest after enabling: always send once so organizers aren't blocked
-    // when there are sessions but zero signups yet (previously required count > 0).
-    return true;
-  }
-
-  const { count: newSignups } = await admin
-    .from("signups")
-    .select("id", { count: "exact", head: true })
-    .eq("campaign_id", id)
-    .gt("signed_up_at", last);
-
-  if ((newSignups ?? 0) > 0) return true;
-
-  const { data: touched } = await admin
-    .from("sessions")
-    .select("id")
-    .eq("campaign_id", id)
-    .gt("updated_at", last)
-    .limit(1);
-
-  return (touched?.length ?? 0) > 0;
-}
-
 /**
- * Vercel Cron / GH Actions pinger: daily digest for organizers who opted in,
- * plus independent creator feedback ask + Monday founder digest.
+ * Vercel Cron / GH Actions pinger: daily digest for organizers who opted in
+ * and ALL assigned event leaders (regardless of organizer_digest_enabled),
+ * plus independent creator feedback ask.
  * Secured with Authorization: Bearer CRON_SECRET.
  *
- * Feedback passes MUST run even when the organizer-digest day-claim is already
- * taken (or the digest path errors after claiming) — each feedback pass has its
+ * Feedback ask MUST run even when the organizer-digest day-claim is already
+ * taken (or the digest path errors after claiming) — feedback ask has its
  * own brand-scoped claimCronRun.
  */
 export async function GET(request: NextRequest) {
@@ -92,7 +60,7 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // P0: feedback ask/digest run independently of the organizer-digest claim and
+  // P0: feedback ask runs independently of the organizer-digest claim and
   // of digest early exits / list failures. Same UTC-day claim inside each pass.
   let feedbackAsk: Awaited<ReturnType<typeof runFeedbackAskPass>> | { error: string };
   try {
@@ -100,13 +68,6 @@ export async function GET(request: NextRequest) {
   } catch (e) {
     console.error("feedback-ask pass:", e);
     feedbackAsk = { error: e instanceof Error ? e.message : String(e) };
-  }
-  let feedbackDigest: Awaited<ReturnType<typeof runFeedbackDigestPass>> | { error: string };
-  try {
-    feedbackDigest = await runFeedbackDigestPass(admin, brandId);
-  } catch (e) {
-    console.error("feedback-digest pass:", e);
-    feedbackDigest = { error: e instanceof Error ? e.message : String(e) };
   }
 
   // Idempotency: at most one organizer-digest run per UTC day bucket.
@@ -118,14 +79,15 @@ export async function GET(request: NextRequest) {
       brandId,
       skipped: "already_ran_today",
       feedbackAsk,
-      feedbackDigest,
     });
   }
 
+  // Select campaigns where EITHER the organizer opted in to digests OR there's an assigned leader.
+  // Leaders receive digests regardless of organizer_digest_enabled (that flag only controls the organizer's own digest).
   const { data: campaigns, error } = await admin
     .from("campaigns")
-    .select("id, user_email, organizer_digest_enabled, organizer_last_digest_sent_at")
-    .eq("organizer_digest_enabled", true)
+    .select("id, user_email, organizer_digest_enabled, organizer_last_digest_sent_at, leader_email")
+    .or("organizer_digest_enabled.eq.true,leader_email.not.is.null")
     .eq("brand_id", brandId);
 
   if (error) {
@@ -137,7 +99,6 @@ export async function GET(request: NextRequest) {
         brandId,
         error: "Failed to list campaigns",
         feedbackAsk,
-        feedbackDigest,
       },
       { status: 500 },
     );
@@ -177,7 +138,9 @@ export async function GET(request: NextRequest) {
     const c = row as {
       id: string;
       user_email: string | null;
+      organizer_digest_enabled: boolean | null;
       organizer_last_digest_sent_at: string | null;
+      leader_email: string | null;
     };
     const organizerEmail = (c.user_email ?? "").trim().toLowerCase();
     try {
@@ -185,33 +148,58 @@ export async function GET(request: NextRequest) {
         skipped += 1;
         continue;
       }
-      if (organizerEmail && emailedOrganizers.has(organizerEmail)) {
+      const leaderTo = leaderDigestRecipient(c, organizerEmail);
+      // Organizer gets digest only when they opted in AND haven't been emailed yet this run
+      const organizerDue = Boolean(
+        c.organizer_digest_enabled && 
+        organizerEmail && 
+        !emailedOrganizers.has(organizerEmail)
+      );
+      // Leader always gets digest (when present, not the organizer, and not emailed yet this run)
+      const leaderDue = Boolean(leaderTo && !emailedOrganizers.has(leaderTo));
+      if (!organizerDue && !leaderDue) {
         skipped += 1;
         continue;
       }
+      // Nothing new since the last digest: no email for anyone on this event.
       const needs = await campaignNeedsDigest(admin, c);
       if (!needs) {
         skipped += 1;
         continue;
       }
 
-      const result = await sendOrganizerMetricsEmail(admin, c.id, "digest");
-      if (!result.ok) {
-        if (result.skipped === "no_organizer_email") {
+      let delivered = false;
+      if (organizerDue) {
+        const result = await sendOrganizerMetricsEmail(admin, c.id, "digest");
+        if (result.ok) {
+          delivered = true;
+          sent += 1;
+          if (organizerEmail) emailedOrganizers.add(organizerEmail);
+          if (result.sentTo) emailedOrganizers.add(result.sentTo.trim().toLowerCase());
+        } else if (result.skipped === "no_organizer_email") {
           skipped += 1;
-          continue;
+        } else {
+          errors.push(`${c.id}: ${result.error || "send failed"}`);
         }
-        errors.push(`${c.id}: ${result.error || "send failed"}`);
-        continue;
       }
 
-      await admin
-        .from("campaigns")
-        .update({ organizer_last_digest_sent_at: new Date().toISOString() } as never)
-        .eq("id", c.id);
+      if (leaderTo && !emailedOrganizers.has(leaderTo)) {
+        const lr = await sendOrganizerMetricsEmail(admin, c.id, "digest", { to: leaderTo });
+        if (lr.ok) {
+          delivered = true;
+          sent += 1;
+          emailedOrganizers.add(leaderTo);
+        } else {
+          errors.push(`${c.id} leader: ${lr.error || lr.skipped || "send failed"}`);
+        }
+      }
 
-      if (organizerEmail) emailedOrganizers.add(organizerEmail);
-      sent += 1;
+      if (delivered) {
+        await admin
+          .from("campaigns")
+          .update({ organizer_last_digest_sent_at: new Date().toISOString() } as never)
+          .eq("id", c.id);
+      }
     } catch (e: unknown) {
       errors.push(`${c.id}: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -224,6 +212,5 @@ export async function GET(request: NextRequest) {
     skipped,
     errors: errors.length ? errors : undefined,
     feedbackAsk,
-    feedbackDigest,
   });
 }

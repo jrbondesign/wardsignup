@@ -5,6 +5,11 @@
 import { getAuthFromRequest } from "@/lib/auth";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 
+jest.mock("@/lib/claude-mcp", () => ({
+  ...jest.requireActual("@/lib/claude-mcp"),
+  CLAUDE_MCP_ENABLED: true,
+}));
+
 jest.mock("@/lib/supabase-admin", () => ({
   createServiceRoleClient: jest.fn(),
 }));

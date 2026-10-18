@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
+import { posthogWeeklyEventCounts } from "@/lib/posthog-query";
 import { isMetricsAdminEmail } from "@/lib/metrics-admin";
+import { founderNotifySkipEmails } from "@/lib/founder-notify";
 
 function toWeekKey(dateStr: string): string {
   const d = new Date(dateStr);
@@ -12,6 +14,15 @@ function toWeekKey(dateStr: string): string {
 }
 
 const MS_DAY = 24 * 60 * 60 * 1000;
+
+/**
+ * When a creator actually joined: first confirmed sign-in, not auth row creation.
+ * Magic-link requests create the auth row immediately, so an account requested weeks
+ * ago and first clicked today must count today (matches the founder notify email).
+ */
+function joinedAt(u: User): string {
+  return u.email_confirmed_at ?? u.confirmed_at ?? u.created_at;
+}
 
 function median(nums: number[]): number | null {
   if (nums.length === 0) return null;
@@ -28,6 +39,7 @@ type RecentSignupJoined = {
 
 type SlimCampaign = {
   id: string;
+  created_at: string;
   created_by: string | null;
   user_email: string | null;
 };
@@ -111,11 +123,22 @@ export async function GET(request: NextRequest) {
     process.env.SUPABASE_SERVICE_ROLE_KEY,
   );
 
+  // History runs from launch (week of the first event ever created) to the current week.
+  const { data: firstCampaign } = await admin
+    .from("campaigns")
+    .select("created_at")
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  const launchIso =
+    (firstCampaign as { created_at: string } | null)?.created_at ?? new Date().toISOString();
   const weeks: string[] = [];
-  for (let i = 7; i >= 0; i--) {
-    const d = new Date();
-    d.setUTCDate(d.getUTCDate() - i * 7);
-    weeks.push(toWeekKey(d.toISOString()));
+  const currentWeek = toWeekKey(new Date().toISOString());
+  for (let w = toWeekKey(launchIso); w <= currentWeek; ) {
+    weeks.push(w);
+    const d = new Date(`${w}T00:00:00.000Z`);
+    d.setUTCDate(d.getUTCDate() + 7);
+    w = d.toISOString().slice(0, 10);
   }
   const oldestWeekStart = weeks[0]!;
   const oldestIso = `${oldestWeekStart}T00:00:00.000Z`;
@@ -143,6 +166,31 @@ export async function GET(request: NextRequest) {
     // Keep brandUserIds as a de-duped array of all profiled user IDs
     brandUserIds = [...profileUserIdSet];
   }
+
+  // Creators = organization owners. Co-admins (invited into someone else's org) and
+  // signed-in users who never set up an org are reported separately, not as creators.
+  const { data: memberRows } = await admin
+    .from("organization_members")
+    .select("user_id, role, status, organizations!inner(brand_id)")
+    .eq("status", "accepted");
+  const ownerIds = new Set<string>();
+  const memberIds = new Set<string>();
+  for (const r of (memberRows ?? []) as unknown as {
+    user_id: string;
+    role: string;
+    organizations: { brand_id: string } | { brand_id: string }[];
+  }[]) {
+    const org = Array.isArray(r.organizations) ? r.organizations[0] : r.organizations;
+    if (brandFilter && org?.brand_id !== brandFilter) continue;
+    memberIds.add(r.user_id);
+    if (r.role === "owner") ownerIds.add(r.user_id);
+  }
+  const profiledUserIds = brandUserIds!;
+  const coAdminOnlyIds = new Set(
+    profiledUserIds.filter((id) => memberIds.has(id) && !ownerIds.has(id)),
+  );
+  const noOrgIds = new Set(profiledUserIds.filter((id) => !memberIds.has(id)));
+  brandUserIds = profiledUserIds.filter((id) => ownerIds.has(id));
 
   const [
     { count: totalEvents },
@@ -201,8 +249,8 @@ export async function GET(request: NextRequest) {
       ? admin.from("signups").select("member_email").in("campaign_id", brandCampaignIds).not("member_email", "is", null)
       : admin.from("signups").select("member_email").not("member_email", "is", null),
     brandCampaignIds !== null
-      ? admin.from("campaigns").select("id, created_by, user_email").in("id", brandCampaignIds)
-      : admin.from("campaigns").select("id, created_by, user_email"),
+      ? admin.from("campaigns").select("id, created_at, created_by, user_email").in("id", brandCampaignIds)
+      : admin.from("campaigns").select("id, created_at, created_by, user_email"),
     brandCampaignIds !== null
       ? admin.from("sessions").select("campaign_id").in("campaign_id", brandCampaignIds)
       : admin.from("sessions").select("campaign_id"),
@@ -248,9 +296,40 @@ export async function GET(request: NextRequest) {
     signupWeekMap[w] = (signupWeekMap[w] ?? 0) + 1;
   }
 
+  // Events created / member signups come from PostHog server-side events: the DB only
+  // holds rows that still exist, so deleted events and cancelled signups vanish from
+  // their week. Falls back to DB counts when PostHog isn't reachable.
+  const phCounts = await posthogWeeklyEventCounts(
+    ["event_created", "signup_batch_created"],
+    oldestIso,
+  );
+  const growthCountsSource: "posthog" | "database" = phCounts ? "posthog" : "database";
+  if (phCounts) {
+    for (const k of Object.keys(campaignWeekMap)) delete campaignWeekMap[k];
+    for (const k of Object.keys(signupWeekMap)) delete signupWeekMap[k];
+    Object.assign(campaignWeekMap, phCounts["event_created"] ?? {});
+    Object.assign(signupWeekMap, phCounts["signup_batch_created"] ?? {});
+  }
+
+  // Creator = org owner who has created at least one event (others can sign up).
+  // Counted in the week of their first event. Owners with no event yet are
+  // "lookie-loos" and reported separately.
+  const firstEventAt = new Map<string, string>();
+  for (const row of (campaignsSlim ?? []) as SlimCampaign[]) {
+    if (!row.created_by) continue;
+    const prev = firstEventAt.get(row.created_by);
+    if (!prev || row.created_at < prev) firstEventAt.set(row.created_by, row.created_at);
+  }
+  const skipEmails = founderNotifySkipEmails();
+  const activatedCreators = authUserList.filter(
+    (u) => firstEventAt.has(u.id) && !skipEmails.has(u.email?.toLowerCase() ?? ""),
+  );
+  const ownerNoEventIds = new Set(
+    authUserList.filter((u) => !firstEventAt.has(u.id)).map((u) => u.id),
+  );
   const accountWeekMap: Record<string, number> = {};
-  for (const u of authUserList) {
-    const w = toWeekKey(u.created_at);
+  for (const u of activatedCreators) {
+    const w = toWeekKey(firstEventAt.get(u.id)!);
     accountWeekMap[w] = (accountWeekMap[w] ?? 0) + 1;
   }
 
@@ -284,7 +363,7 @@ export async function GET(request: NextRequest) {
   const sevenDaysAgo = new Date(now - 7 * MS_DAY).toISOString();
   const thirtyDaysAgo = new Date(now - 30 * MS_DAY).toISOString();
   const totalUsers = authUserList.length;
-  const newUsersThisWeek = authUserList.filter((u) => u.created_at >= sevenDaysAgo).length;
+  const newUsersThisWeek = authUserList.filter((u) => joinedAt(u) >= sevenDaysAgo).length;
   const activeUsersThisWeek = authUserList.filter(
     (u) => u.last_sign_in_at && u.last_sign_in_at >= sevenDaysAgo,
   ).length;
@@ -402,7 +481,7 @@ export async function GET(request: NextRequest) {
     (inviteInviterRows ?? []).map((r: { inviter_id: string }) => r.inviter_id).filter(Boolean),
   );
 
-  const newUsersWeek = authUserList.filter((u) => u.created_at >= sevenDaysAgo);
+  const newUsersWeek = authUserList.filter((u) => joinedAt(u) >= sevenDaysAgo);
   const newAccountsByProviderThisWeek = {
     google: newUsersWeek.filter((u) => u.app_metadata?.provider === "google").length,
     email: newUsersWeek.filter((u) => u.app_metadata?.provider !== "google").length,
@@ -441,14 +520,14 @@ export async function GET(request: NextRequest) {
     if (hasInAppInvite) usersWithInAppInvite += 1;
     if (hasMemberSignup) usersWithMemberSignup += 1;
 
-    if (u.created_at >= sevenDaysAgo) {
+    if (joinedAt(u) >= sevenDaysAgo) {
       cohort7d.newUsers += 1;
       if (hasEvent) cohort7d.withEvent += 1;
       if (hasSession) cohort7d.withSession += 1;
       if (hasInAppInvite) cohort7d.withInAppInvite += 1;
       if (hasMemberSignup) cohort7d.withMemberSignup += 1;
     }
-    if (u.created_at >= thirtyDaysAgo) {
+    if (joinedAt(u) >= thirtyDaysAgo) {
       cohort30d.newUsers += 1;
       if (hasEvent) cohort30d.withEvent += 1;
       if (hasSession) cohort30d.withSession += 1;
@@ -476,8 +555,25 @@ export async function GET(request: NextRequest) {
       : last4Weeks.reduce((s, x) => s + x.newCreatorAccounts, 0) / last4Weeks.length;
 
   const currentWeekKey = weeks[weeks.length - 1]!;
+  const profiledById = new Map(allAuthUsers.map((u) => [u.id, u]));
+  const countSet = (ids: Set<string>) => {
+    let total = 0;
+    let thisWeek = 0;
+    for (const id of ids) {
+      const u = profiledById.get(id);
+      if (!u) continue;
+      total += 1;
+      if (toWeekKey(joinedAt(u)) === currentWeekKey) thisWeek += 1;
+    }
+    return { total, thisWeek };
+  };
+  const nonCreatorAccounts = {
+    ownersNoEvent: countSet(ownerNoEventIds),
+    coAdmins: countSet(coAdminOnlyIds),
+    noOrgYet: countSet(noOrgIds),
+  };
   const thisCalendarWeekUsers = authUserList.filter(
-    (u) => toWeekKey(u.created_at) === currentWeekKey,
+    (u) => toWeekKey(joinedAt(u)) === currentWeekKey,
   );
   const newAccountsByProviderThisCalendarWeek = {
     google: thisCalendarWeekUsers.filter((u) => u.app_metadata?.provider === "google")
@@ -486,6 +582,143 @@ export async function GET(request: NextRequest) {
       .length,
     total: thisCalendarWeekUsers.length,
   };
+
+  // Calculate New Wards metric (wards = organizations with first published event)
+  // A ward's first published event is the earliest campaign with at least one session.
+  const { data: orgsWithCampaigns } = await admin
+    .from("organizations")
+    .select("id, first_touch_utm_source, first_touch_utm_medium, first_touch_utm_campaign, first_touch_ref, created_by");
+  
+  const { data: campaignsWithSessions } = await admin
+    .from("campaigns")
+    .select("id, organization_id, created_at")
+    .not("organization_id", "is", null);
+
+  const { data: sessionsData } = await admin
+    .from("sessions")
+    .select("campaign_id");
+
+  const campaignsWithSessionsSet = new Set(
+    (sessionsData ?? []).map((s: { campaign_id: string }) => s.campaign_id)
+  );
+
+  type OrgWithAttribution = {
+    id: string;
+    first_touch_utm_source: string | null;
+    first_touch_utm_medium: string | null;
+    first_touch_utm_campaign: string | null;
+    first_touch_ref: string | null;
+    created_by: string;
+  };
+
+  const orgFirstEventMap = new Map<string, { date: string; orgData: OrgWithAttribution }>();
+  
+  for (const campaign of (campaignsWithSessions ?? []) as { id: string; organization_id: string; created_at: string }[]) {
+    if (!campaignsWithSessionsSet.has(campaign.id)) continue;
+    const orgId = campaign.organization_id;
+    if (!orgId) continue;
+
+    const existing = orgFirstEventMap.get(orgId);
+    if (!existing || campaign.created_at < existing.date) {
+      const orgData = (orgsWithCampaigns ?? []).find((o: OrgWithAttribution) => o.id === orgId);
+      if (!orgData) continue;
+
+      const skipEmails = founderNotifySkipEmails();
+      const ownerUser = allAuthUsers.find((u) => u.id === orgData.created_by);
+      const ownerEmail = ownerUser?.email?.toLowerCase();
+      if (ownerEmail && skipEmails.has(ownerEmail)) continue;
+
+      orgFirstEventMap.set(orgId, { 
+        date: campaign.created_at,
+        orgData: orgData as OrgWithAttribution
+      });
+    }
+  }
+
+  function toMonthKey(dateStr: string): string {
+    return dateStr.slice(0, 7); // YYYY-MM
+  }
+
+  const nowDate = new Date();
+  const currentMonth = toMonthKey(nowDate.toISOString());
+  const lastMonth = toMonthKey(new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1).toISOString());
+
+  const monthlyWardsMap = new Map<string, { count: number; bySource: Map<string, number> }>();
+
+  for (const { date, orgData } of orgFirstEventMap.values()) {
+    const month = toMonthKey(date);
+    
+    if (!monthlyWardsMap.has(month)) {
+      monthlyWardsMap.set(month, { count: 0, bySource: new Map() });
+    }
+    
+    const monthData = monthlyWardsMap.get(month)!;
+    monthData.count += 1;
+
+    const source = orgData.first_touch_utm_source ||
+      orgData.first_touch_ref ||
+      (orgData.first_touch_utm_medium ? `${orgData.first_touch_utm_medium}` : null) ||
+      "Unknown";
+    
+    monthData.bySource.set(source, (monthData.bySource.get(source) || 0) + 1);
+  }
+
+  const months: string[] = [];
+  const startDate = new Date(nowDate.getFullYear(), nowDate.getMonth() - 11, 1);
+  for (let d = new Date(startDate); d <= nowDate; d.setMonth(d.getMonth() + 1)) {
+    months.push(toMonthKey(d.toISOString()));
+  }
+
+  const monthlyTrend = months.map((month) => {
+    const data = monthlyWardsMap.get(month);
+    const bySource: Record<string, number> = {};
+    if (data) {
+      for (const [src, cnt] of data.bySource.entries()) {
+        bySource[src] = cnt;
+      }
+    }
+    return {
+      month,
+      count: data?.count || 0,
+      bySource,
+    };
+  });
+
+  const thisMonthData = monthlyWardsMap.get(currentMonth);
+  const lastMonthData = monthlyWardsMap.get(lastMonth);
+  
+  const thisMonthBySource: Record<string, number> = {};
+  if (thisMonthData) {
+    for (const [src, cnt] of thisMonthData.bySource.entries()) {
+      thisMonthBySource[src] = cnt;
+    }
+  }
+
+  // Total wards (all-time count of distinct orgs with at least one published sheet)
+  const totalWards = orgFirstEventMap.size;
+
+  // New wards this week (Phoenix time, Monday-start week)
+  // Phoenix is America/Phoenix (UTC-7, no DST)
+  const phoenixOffset = -7 * 60; // minutes
+  const nowPhoenix = new Date(nowDate.getTime() + phoenixOffset * 60 * 1000);
+  
+  // Get the Monday of the current week in Phoenix time
+  const phoenixDay = nowPhoenix.getUTCDay();
+  const phoenixDaysSinceMonday = phoenixDay === 0 ? 6 : phoenixDay - 1; // 0 = Sunday, treat as day 6
+  const phoenixWeekStart = new Date(nowPhoenix);
+  phoenixWeekStart.setUTCDate(phoenixWeekStart.getUTCDate() - phoenixDaysSinceMonday);
+  phoenixWeekStart.setUTCHours(0, 0, 0, 0);
+  
+  // Convert back to UTC for comparison
+  const weekStartUTC = new Date(phoenixWeekStart.getTime() - phoenixOffset * 60 * 1000);
+  const weekStartISO = weekStartUTC.toISOString();
+
+  let newWardsThisWeek = 0;
+  for (const { date } of orgFirstEventMap.values()) {
+    if (date >= weekStartISO) {
+      newWardsThisWeek += 1;
+    }
+  }
 
   return NextResponse.json({
     totalEvents: totalEvents ?? 0,
@@ -514,6 +747,14 @@ export async function GET(request: NextRequest) {
       newCreatorsLastCompletedWeek,
       wowLastCompletedWeekPct: wowNewCreatorsLastCompletedWeekPct,
       fourWeekAvgNewCreators,
+    },
+    newWards: {
+      total: totalWards,
+      newThisWeek: newWardsThisWeek,
+      thisMonth: thisMonthData?.count || 0,
+      lastMonth: lastMonthData?.count || 0,
+      monthlyTrend,
+      bySource: thisMonthBySource,
     },
     totalUsers,
     newUsersThisWeek,
@@ -572,5 +813,8 @@ export async function GET(request: NextRequest) {
     authUsersListCap: null as number | null,
     authUsersListed: totalUsers,
     authUsersFetchComplete,
+    nonCreatorAccounts,
+    growthCountsSource,
+    totalCreators: activatedCreators.length,
   });
 }

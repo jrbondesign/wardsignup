@@ -1,20 +1,94 @@
-import { isLocalDevelopment } from "@/lib/runtime-env";
+import { sendGuardedEmail } from "@/lib/email-send";
+import type { User } from "@supabase/supabase-js";
+import { creatorNotifyEmailFrom, type PublicBrand } from "@/lib/brand";
+import { escapeHtml } from "@/lib/html-escape";
+import { formatLocationLine } from "@/lib/request-geo";
+import { getResendForBrand } from "@/lib/resend-for-brand";
+import { createServiceRoleClient } from "@/lib/supabase-admin";
 
-const DEV_NOTIFY_FALLBACK = "jon@jrbond.com";
-const DEV_REPLY_FALLBACK = "jonathan@wardsignup.com";
+/** Every founder-facing message (new creator, feedback digest) goes here. */
+export const FOUNDER_NOTIFY_TO = "jonathan@wardsignup.com";
 
-/** Founder/ops inbox. Production requires CREATOR_NOTIFY_TO; no personal default. */
-export function creatorNotifyAddress(): string | null {
-  const fromEnv = process.env.CREATOR_NOTIFY_TO?.trim();
-  if (fromEnv) return fromEnv;
-  if (isLocalDevelopment()) return DEV_NOTIFY_FALLBACK;
-  return null;
+/** Founder/internal/test inboxes that never count as a new creator. */
+export function founderNotifySkipEmails(): Set<string> {
+  const set = new Set<string>([FOUNDER_NOTIFY_TO, "jon@jrbond.com", "bondesign@gmail.com"]);
+  const raw = process.env.CREATOR_NOTIFY_SKIP_EMAILS?.trim();
+  if (raw) {
+    for (const part of raw.split(",")) {
+      const e = part.trim().toLowerCase();
+      if (e) set.add(e);
+    }
+  }
+  return set;
 }
 
-/** Welcome Reply-To. Production requires WELCOME_REPLY_TO. */
-export function welcomeReplyAddress(): string | null {
-  const fromEnv = process.env.WELCOME_REPLY_TO?.trim();
-  if (fromEnv) return fromEnv;
-  if (isLocalDevelopment()) return DEV_REPLY_FALLBACK;
-  return null;
+/**
+ * A creator is an organization owner who has created their first event (members can
+ * now sign up). Called after an event is created; notifies the founder once per user.
+ * Best-effort: never throws.
+ */
+export async function notifyFounderIfFirstEvent(opts: {
+  user: Pick<User, "id" | "email" | "user_metadata">;
+  orgId: string;
+  orgName: string;
+  eventId: string;
+  eventName: string;
+  brand: PublicBrand;
+  /** Approximate creator location from the request's IP (see lib/request-geo). */
+  location?: string | null;
+}): Promise<void> {
+  const { user, orgId, orgName, eventId, eventName, brand } = opts;
+  const locationLine = formatLocationLine(opts.location);
+  try {
+    const email = user.email?.trim().toLowerCase();
+    if (!email || founderNotifySkipEmails().has(email)) return;
+
+    const admin = createServiceRoleClient();
+    const { data: org } = await admin
+      .from("organizations")
+      .select("owner_id")
+      .eq("id", orgId)
+      .maybeSingle();
+    if ((org as { owner_id?: string } | null)?.owner_id !== user.id) return;
+
+    const { count } = await admin
+      .from("campaigns")
+      .select("id", { count: "exact", head: true })
+      .eq("created_by", user.id);
+    if ((count ?? 0) !== 1) return;
+
+    // Dedupe via the existing notification log, keyed per user (not per email, which
+    // already holds every sign-in from the old definition).
+    const { data: first } = await admin.rpc("try_insert_creator_signup_notification", {
+      p_email: `activated:${user.id}`,
+    } as never);
+    if (first !== true) return;
+
+    const resend = getResendForBrand(brand);
+    if (!resend) return;
+    const name = String(user.user_metadata?.full_name ?? user.user_metadata?.name ?? "(none)");
+    const sent = await sendGuardedEmail({
+      brand,
+      category: "transactional",
+      deferrable: true,
+      kind: "new_creator",
+      from: creatorNotifyEmailFrom(brand),
+      to: FOUNDER_NOTIFY_TO,
+      subject: `New ${brand.name} creator`,
+      html: `
+          <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; max-width: 640px; margin: 0 auto; padding: 24px; color: #111827;">
+            <h2 style="margin: 0 0 12px; font-size: 18px;">New creator published their first event</h2>
+            <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;"><strong>Email:</strong> ${escapeHtml(email)}</p>
+            <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;"><strong>Name:</strong> ${escapeHtml(name)}</p>
+            <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;"><strong>Organization:</strong> ${escapeHtml(orgName)}</p>
+            <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;"><strong>Event:</strong> ${escapeHtml(eventName)}</p>
+            <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;">${escapeHtml(locationLine)}${opts.location ? ' <span style="color: #6b7280;">(approximate, based on IP)</span>' : ""}</p>
+            <p style="margin: 0; font-size: 12px; color: #6b7280;">User ID: ${escapeHtml(user.id)} · Event ID: ${escapeHtml(eventId)}</p>
+          </div>
+        `,
+    });
+    if (!sent.ok) console.error("Founder notify send error:", sent.error || sent.skipped);
+  } catch (e) {
+    console.error("Founder notify error:", e);
+  }
 }

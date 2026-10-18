@@ -2,12 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userIsAcceptedOrgMember } from "@/lib/campaign-access";
 import { getBrandFromHost, inviteEmailFrom, trustedAuthOriginFromRequest } from "@/lib/brand";
-import { generateInviteToken, hashInviteToken } from "@/lib/invite-token";
 import { escapeHtml } from "@/lib/html-escape";
 import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { buildBrandSignatureFooterHtml } from "@/lib/site-footer";
 import { getPostHogClient } from "@/lib/posthog-server";
+import crypto from "crypto";
 
 const TOKEN_TTL_DAYS = 14;
 
@@ -117,7 +117,8 @@ export async function POST(
       );
     }
 
-    const token = generateInviteToken();
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
     const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
     // Re-invite cooldown: refreshing the token is fine, but re-emailing the
@@ -138,6 +139,7 @@ export async function POST(
     }
 
     // Upsert by (organization_id, invited_email) — re-inviting refreshes the token + status.
+    // Store hashed token in accept_token_hash, clear plaintext accept_token for new invites.
     const { data: memberRow, error: insertErr } = await supabase
       .from("organization_members")
       .upsert(
@@ -147,7 +149,8 @@ export async function POST(
           invited_by: user.id,
           role: "admin",
           status: "pending",
-          accept_token: hashInviteToken(token),
+          accept_token: null,
+          accept_token_hash: tokenHash,
           token_expires_at: expiresAt,
           user_id: null,
           accepted_at: null,
@@ -183,12 +186,13 @@ export async function POST(
       : `${inviterEsc} invited you to help manage events for <strong style="color:#054F64;">${orgNameEsc}</strong> on ${escapeHtml(hostBrand.name)}.`;
     const roleLine = transferOwnership
       ? `As the owner you can manage events and signups, invite co-admins, rename the organization, and transfer ownership again later.`
-      : `As a co-admin you can edit events, manage signups, send invites, and view analytics. Only the owner can delete the organization or its events.`;
+      : `As a co-admin you can edit and delete events, manage signups, and view analytics. Only the owner can invite or remove co-admins and manage the organization.`;
 
     try {
       const send = await sendGuardedEmail({
         brand: hostBrand,
-        category: "notification",
+        urgent: true,
+      category: "notification",
         from: inviteEmailFrom(hostBrand),
         to: rawEmail,
         subject,

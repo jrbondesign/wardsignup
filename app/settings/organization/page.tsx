@@ -9,6 +9,7 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
 import OrgMembersSection from "@/components/OrgMembersSection";
 import OrgSwitcher from "@/components/OrgSwitcher";
+import GoogleCalendarIntegrations from "@/components/GoogleCalendarIntegrations";
 import { getCurrentOrganization } from "@/lib/organizations";
 
 type OrgRow = { 
@@ -385,6 +386,8 @@ export default function OrganizationSettingsPage() {
               </form>
             </section>
           )}
+
+          <GoogleCalendarIntegrations organizationId={org.id} />
 
           <OrgMembersSection organizationId={org.id} isOwner={isOwner} />
 

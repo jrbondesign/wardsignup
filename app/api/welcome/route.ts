@@ -1,30 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import {
-  creatorNotifyEmailFrom,
   getBrandFromHost,
   welcomeEmailFrom,
 } from "@/lib/brand";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { escapeHtml } from "@/lib/html-escape";
 import { getResendForBrand } from "@/lib/resend-for-brand";
+import { sendGuardedEmail } from "@/lib/email-send";
 import { withUtm } from "@/lib/utm";
-import { creatorNotifyAddress, welcomeReplyAddress } from "@/lib/founder-notify";
 
-/** Comma-separated emails that never trigger “new creator” founder email (lowercased). */
-function creatorNotifySkipEmails(): Set<string> {
-  const raw = process.env.CREATOR_NOTIFY_SKIP_EMAILS?.trim();
-  const set = new Set<string>();
-  const notifyTo = creatorNotifyAddress();
-  if (notifyTo) set.add(notifyTo.trim().toLowerCase());
-  if (raw) {
-    for (const part of raw.split(",")) {
-      const e = part.trim().toLowerCase();
-      if (e) set.add(e);
-    }
-  }
-  return set;
-}
+/** Welcome replies: must be an address that receives mail (e.g. Cloudflare Email Routing → your inbox). */
+const welcomeReplyTo =
+  process.env.WELCOME_REPLY_TO?.trim() || "jonathan@wardsignup.com";
 
 function alreadyWelcomedForBrand(
   meta: { welcome_sent_by_brand?: Record<string, unknown> } | undefined,
@@ -39,6 +27,9 @@ export async function POST(request: NextRequest) {
     const host =
       request.headers.get("x-forwarded-host") ?? request.headers.get("host");
     const brand = getBrandFromHost(host);
+    
+    // Parse body early to access attribution if needed
+    const body = await request.json().catch(() => ({}));
 
     // Extract JWT token from Authorization header
     const authHeader = request.headers.get("authorization");
@@ -151,18 +142,53 @@ export async function POST(request: NextRequest) {
     if (adminForWelcome) {
       const { data: existingProfile } = await adminForWelcome
         .from("organizer_profiles")
-        .select("brand_id")
+        .select("brand_id, first_touch_utm_source")
         .eq("user_id", user.id)
         .eq("brand_id", brand.id)
         .maybeSingle();
-      const prof = existingProfile as { brand_id: string } | null;
+      const prof = existingProfile as { brand_id: string; first_touch_utm_source: string | null } | null;
       if (!prof) {
-        const { error: profErr } = await adminForWelcome.from("organizer_profiles").insert({
+        // Get attribution from body if provided
+        const attribution = body?.attribution;
+        
+        const insertData: Record<string, unknown> = {
           user_id: user.id,
           brand_id: brand.id,
-        } as never);
+        };
+        
+        if (attribution && typeof attribution === 'object') {
+          if (attribution.first_touch_utm_source) insertData.first_touch_utm_source = attribution.first_touch_utm_source;
+          if (attribution.first_touch_utm_medium) insertData.first_touch_utm_medium = attribution.first_touch_utm_medium;
+          if (attribution.first_touch_utm_campaign) insertData.first_touch_utm_campaign = attribution.first_touch_utm_campaign;
+          if (attribution.first_touch_ref) insertData.first_touch_ref = attribution.first_touch_ref;
+          if (Object.keys(insertData).length > 2) {
+            insertData.first_touch_captured_at = new Date().toISOString();
+          }
+        }
+        
+        const { error: profErr } = await adminForWelcome.from("organizer_profiles").insert(insertData as never);
         if (profErr) {
           console.error("organizer_profiles insert (welcome):", profErr);
+        }
+      } else if (prof.first_touch_utm_source === null) {
+        // Profile exists but has no attribution - update it
+        const attribution = body?.attribution;
+        
+        if (attribution && typeof attribution === 'object') {
+          const updateData: Record<string, unknown> = {};
+          if (attribution.first_touch_utm_source) updateData.first_touch_utm_source = attribution.first_touch_utm_source;
+          if (attribution.first_touch_utm_medium) updateData.first_touch_utm_medium = attribution.first_touch_utm_medium;
+          if (attribution.first_touch_utm_campaign) updateData.first_touch_utm_campaign = attribution.first_touch_utm_campaign;
+          if (attribution.first_touch_ref) updateData.first_touch_ref = attribution.first_touch_ref;
+          if (Object.keys(updateData).length > 0) {
+            updateData.first_touch_captured_at = new Date().toISOString();
+            await adminForWelcome
+              .from("organizer_profiles")
+              .update(updateData as never)
+              .eq("user_id", user.id)
+              .eq("brand_id", brand.id)
+              .is("first_touch_utm_source", null);
+          }
         }
       }
     }
@@ -204,8 +230,12 @@ ${brand.name} · ${siteUrlWithUtm}
 Made with ❤️ in Arizona`;
 
     // Send welcome email (must succeed before we mark welcome_sent)
-    const welcomeReplyTo = welcomeReplyAddress();
-    const welcomeSend = await resend.emails.send({
+    // Non urgent: queued until just after the UTC quota reset when sent late in the UTC day.
+    const welcomeSend = await sendGuardedEmail({
+      brand,
+      category: "transactional",
+      deferrable: true,
+      kind: "welcome",
       from: welcomeEmailFrom(brand),
       ...(welcomeReplyTo ? { replyTo: welcomeReplyTo } : {}),
       to: canonicalUser.email!,
@@ -252,8 +282,8 @@ Made with ❤️ in Arizona`;
       `,
     });
 
-    if (welcomeSend.error) {
-      console.error("Welcome email Resend error:", welcomeSend.error);
+    if (!welcomeSend.ok) {
+      console.error("Welcome email send error:", welcomeSend.error || welcomeSend.skipped);
       if (adminForWelcome) {
         await adminForWelcome
           .from("welcome_email_sent")
@@ -262,64 +292,12 @@ Made with ❤️ in Arizona`;
           .eq("brand_id", brand.id);
       }
       return NextResponse.json(
-        { error: welcomeSend.error.message || "Could not send welcome email" },
+        { error: welcomeSend.error || "Could not send welcome email" },
         { status: 502 },
       );
     }
 
-    // Founder notify: atomic slot per email (RPC); never for founder / internal inboxes
-    const skipFounderFor = creatorNotifySkipEmails();
-    let shouldNotifyFounder = false;
-    if (
-      normalizedEmail &&
-      !skipFounderFor.has(normalizedEmail) &&
-      adminForWelcome
-    ) {
-      try {
-        const { data: notifyFirst, error: notifyRpcErr } =
-          await adminForWelcome.rpc("try_insert_creator_signup_notification", {
-            p_email: normalizedEmail,
-          } as never);
-        if (notifyRpcErr) {
-          console.error("try_insert_creator_signup_notification:", notifyRpcErr);
-        } else if (notifyFirst === true) {
-          shouldNotifyFounder = true;
-        }
-      } catch (e) {
-        console.error("Creator notify dedupe:", e);
-      }
-    }
-
-    // Notify founder of a new creator (best-effort; do not block login)
-    const creatorNotifyTo = creatorNotifyAddress();
-    if (shouldNotifyFounder && creatorNotifyTo) {
-      try {
-        const notifySend = await resend.emails.send({
-          from: creatorNotifyEmailFrom(brand),
-          to: creatorNotifyTo,
-          subject: `New ${brand.name} creator`,
-          html: `
-          <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; max-width: 640px; margin: 0 auto; padding: 24px; color: #111827;">
-            <h2 style="margin: 0 0 12px; font-size: 18px;">New creator signed in</h2>
-            <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;">
-              <strong>Email:</strong> ${escapeHtml(canonicalUser.email ?? "(none)")}
-            </p>
-            <p style="margin: 0 0 8px; font-size: 14px; line-height: 1.6;">
-              <strong>Name:</strong> ${escapeHtml(String(canonicalUser.user_metadata?.full_name ?? canonicalUser.user_metadata?.name ?? "(none)"))}
-            </p>
-            <p style="margin: 0; font-size: 12px; color: #6b7280;">
-              User ID: ${escapeHtml(canonicalUser.id)}
-            </p>
-          </div>
-        `,
-        });
-        if (notifySend.error) {
-          console.error("Creator notify Resend error:", notifySend.error);
-        }
-      } catch (notifyErr) {
-        console.error("Creator notify email error:", notifyErr);
-      }
-    }
+    // Founder "new creator" email now fires on first event creation (lib/founder-notify.ts).
 
     // Persist per-brand welcome flags so future JWTs skip duplicate sends on this brand only
     const prevMeta = (canonicalUser.user_metadata as Record<string, unknown>) ?? {};

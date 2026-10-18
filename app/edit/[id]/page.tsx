@@ -30,15 +30,16 @@ import {
   inferTithingDeclarationConfig,
 } from "@/lib/tithing-reschedule";
 import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
-import VisibilitySection from "@/components/create/sections/VisibilitySection";
-import NotificationsSection from "@/components/create/sections/NotificationsSection";
-import EventSettingsSection from "@/components/create/sections/EventSettingsSection";
+import EventOptionalSettings from "@/components/event/EventOptionalSettings";
 import ItemsSection from "@/components/create/sections/ItemsSection";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
 import { groupSessionsForDisplay } from "@/lib/edit-session-classes";
 import { isMissingSortOrderError, stripSortOrder } from "@/lib/session-sort-order";
 import { INITIAL_FORM_STATE, type CreateFormState, type ItemDraft } from "@/lib/create-form-state";
 import { formatTime, formatTimeRange } from "@/lib/utils";
+import { coverFileError, prepareCoverUpload } from "@/lib/cover-upload";
+import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
+import { COVER_SIZE_HINT, coverObjectPosition } from "@/lib/cover-position";
 
 interface SessionData {
   id?: string;
@@ -152,6 +153,7 @@ export default function EditEventPage() {
   const [eventName, setEventName] = useState("");
   const [eventDescription, setEventDescription] = useState("");
   const [eventTimezone, setEventTimezone] = useState("America/Phoenix");
+  const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionData[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -167,12 +169,26 @@ export default function EditEventPage() {
   const [visibilityOpen, setVisibilityOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [registrationOpen, setRegistrationOpen] = useState(false);
+  const [allowGuests, setAllowGuests] = useState(true);
+  const [showCapacityPublicly, setShowCapacityPublicly] = useState(true);
   const [leaderName, setLeaderName] = useState("");
   const [leaderEmail, setLeaderEmail] = useState("");
   // Debounce leader-field auto-save so we don't PATCH on every keystroke.
   const leaderSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  
+  // Calendar sync state
+  const [calendarSyncEnabled, setCalendarSyncEnabled] = useState(false);
+  const [calendarId, setCalendarId] = useState("");
+  const [calendarName, setCalendarName] = useState("");
+  const [inviteLeader, setInviteLeader] = useState(false);
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarLastSyncedAt, setCalendarLastSyncedAt] = useState<string | null>(null);
+  const [calendarLastError, setCalendarLastError] = useState<string | null>(null);
+  
   const [sendingReport, setSendingReport] = useState(false);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
+  const [coverPosition, setCoverPosition] = useState<string | null>(null);
   const [coverPreview, setCoverPreview] = useState<string | null>(null);
   const [coverUploading, setCoverUploading] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
@@ -272,6 +288,23 @@ export default function EditEventPage() {
     };
   }, [showAddSessionsMenu]);
 
+  // Admin page date headers link here with #edit-date-YYYY-MM-DD; once the
+  // sessions render, scroll that date into view and briefly highlight it.
+  const scrolledToHashRef = useRef(false);
+  const [highlightDate, setHighlightDate] = useState<string | null>(null);
+  useEffect(() => {
+    if (scrolledToHashRef.current || loading || sessions.length === 0) return;
+    const hash = window.location.hash.slice(1);
+    if (!hash.startsWith("edit-date-")) return;
+    const el = document.getElementById(hash);
+    if (!el) return;
+    scrolledToHashRef.current = true;
+    // Defer so the router's own post-navigation scroll doesn't override ours.
+    setTimeout(() => el.scrollIntoView({ block: "start" }), 150);
+    setHighlightDate(hash.slice("edit-date-".length));
+    setTimeout(() => setHighlightDate(null), 2500);
+  }, [loading, sessions]);
+
   const toggleTithingDay = (d: number) => {
     setTithingDays((prev) =>
       prev.includes(d) ? prev.filter((x) => x !== d) : [...prev, d].sort(),
@@ -306,18 +339,50 @@ export default function EditEventPage() {
           return;
         }
 
+        // Store organization ID for feature gating
+        setOrganizationId((event as any).organization_id ?? null);
+
         // Future: Load org logo if Ward Signup supports custom logos
         const profileLogoUrl = null;
         setLogoUrl(profileLogoUrl);
 
         setLeaderName((event as any).leader_name ?? "");
         setLeaderEmail((event as any).leader_email ?? "");
+        setDigestEnabled(Boolean((event as any).organizer_digest_enabled));
+        setInstantEnabled(Boolean((event as any).organizer_instant_notify_enabled));
+        setShowSignupsPublicly(Boolean((event as any).show_signups_publicly));
+        setListOnDirectory(typeof (event as any).list_on_directory === "boolean" ? (event as any).list_on_directory : true);
+        const loadedTzRawEarly = (event as any).event_timezone;
+        if (typeof loadedTzRawEarly === "string" && loadedTzRawEarly.trim()) {
+          setEventTimezone(loadedTzRawEarly.trim());
+        }
+        const ag = (event as any).allow_guests;
+        setAllowGuests(ag == null ? true : Boolean(ag));
+        const scp = (event as any).show_capacity_publicly;
+        setShowCapacityPublicly(scp == null ? true : Boolean(scp));
+        
+        // Load calendar sync settings
+        const { data: calSyncData } = await supabase
+          .from("campaign_calendar_sync")
+          .select("*")
+          .eq("campaign_id", eventId)
+          .maybeSingle();
+        
+        if (calSyncData) {
+          setCalendarSyncEnabled(Boolean((calSyncData as any).enabled));
+          setCalendarId((calSyncData as any).calendar_id || "");
+          setCalendarName((calSyncData as any).calendar_name || "");
+          setInviteLeader(Boolean((calSyncData as any).invite_leader));
+          setCalendarLastSyncedAt((calSyncData as any).last_synced_at);
+          setCalendarLastError((calSyncData as any).last_error);
+        }
 
         // Items events: load items and render the items editor
         if ((event as any).event_type === "items") {
           setEventName((event as any).name || "");
           setEventDescription((event as any).description || "");
           setCoverUrl((event as any).cover_image_url ?? null);
+          setCoverPosition((event as any).cover_position ?? null);
           // Prefer the multi-date list; fall back to the legacy single event_date
           // so older items events still show their date in the editor (and migrate
           // to event_dates on the next save).
@@ -376,11 +441,8 @@ export default function EditEventPage() {
         setEventName(loadedName);
         setEventDescription(loadedDesc);
         setEventTimezone(loadedTz);
-        setDigestEnabled(Boolean((event as any).organizer_digest_enabled));
-        setInstantEnabled(Boolean((event as any).organizer_instant_notify_enabled));
-        setShowSignupsPublicly(Boolean((event as any).show_signups_publicly));
-        setListOnDirectory(typeof (event as any).list_on_directory === "boolean" ? (event as any).list_on_directory : true);
         setCoverUrl((event as any).cover_image_url ?? null);
+          setCoverPosition((event as any).cover_position ?? null);
 
         // Load sessions
         const { data: sessionData, error: sessionError } = await supabase
@@ -480,6 +542,8 @@ export default function EditEventPage() {
     event_timezone?: string;
     leader_name?: string | null;
     leader_email?: string | null;
+    allow_guests?: boolean;
+    show_capacity_publicly?: boolean;
   }) => {
     const supabase = createClientComponentClient();
     const {
@@ -523,15 +587,112 @@ export default function EditEventPage() {
       });
     }, 800);
   };
+  
+  const applyCalendarFormPatch = (patch: Partial<CreateFormState>) => {
+    if ("expanded" in patch && patch.expanded && "googleCalendar" in patch.expanded) {
+      setCalendarOpen(Boolean(patch.expanded.googleCalendar));
+    }
+    if ("calendarSyncEnabled" in patch && typeof patch.calendarSyncEnabled === "boolean") {
+      setCalendarSyncEnabled(patch.calendarSyncEnabled);
+    }
+    if ("calendarId" in patch && typeof patch.calendarId === "string") {
+      setCalendarId(patch.calendarId);
+    }
+    if ("calendarName" in patch && typeof patch.calendarName === "string") {
+      setCalendarName(patch.calendarName);
+    }
+    if ("inviteLeader" in patch && typeof patch.inviteLeader === "boolean") {
+      setInviteLeader(patch.inviteLeader);
+    }
+  };
+
+  const applyOptionalSettingsPatch = (patch: Partial<CreateFormState>) => {
+    if ("expanded" in patch && patch.expanded) {
+      if ("visibility" in patch.expanded) setVisibilityOpen(Boolean(patch.expanded.visibility));
+      if ("notifications" in patch.expanded) setNotificationsOpen(Boolean(patch.expanded.notifications));
+      if ("settings" in patch.expanded) setSettingsOpen(Boolean(patch.expanded.settings));
+      if ("registration" in patch.expanded) setRegistrationOpen(Boolean(patch.expanded.registration));
+    }
+    applyCalendarFormPatch(patch);
+
+    const saveBool = (
+      key: keyof CreateFormState,
+      apiKey: "show_signups_publicly" | "list_on_directory" | "organizer_digest_enabled" | "organizer_instant_notify_enabled" | "allow_guests" | "show_capacity_publicly",
+      current: boolean,
+      setter: (v: boolean) => void,
+    ) => {
+      if (!(key in patch) || typeof patch[key] !== "boolean") return;
+      const next = patch[key] as boolean;
+      setter(next);
+      patchCampaignFields({ [apiKey]: next }).catch((err: unknown) => {
+        setter(current);
+        alert(err instanceof Error ? err.message : "Could not save");
+      });
+    };
+
+    saveBool("showSignupsPublicly", "show_signups_publicly", showSignupsPublicly, setShowSignupsPublicly);
+    saveBool("listOnDirectory", "list_on_directory", listOnDirectory, setListOnDirectory);
+    saveBool("organizerDigestEnabled", "organizer_digest_enabled", digestEnabled, setDigestEnabled);
+    saveBool("organizerInstantNotifyEnabled", "organizer_instant_notify_enabled", instantEnabled, setInstantEnabled);
+    saveBool("allowGuests", "allow_guests", allowGuests, setAllowGuests);
+    saveBool("showCapacityPublicly", "show_capacity_publicly", showCapacityPublicly, setShowCapacityPublicly);
+
+    if ("eventTimezone" in patch && typeof patch.eventTimezone === "string") {
+      const next = patch.eventTimezone;
+      const prev = eventTimezone;
+      setEventTimezone(next);
+      patchCampaignFields({ event_timezone: next }).catch((err: unknown) => {
+        setEventTimezone(prev);
+        alert(err instanceof Error ? err.message : "Could not save");
+      });
+    }
+    handleLeaderPatch(patch);
+  };
+
+  const optionalSettingsState = (eventType: CreateFormState["eventType"]): CreateFormState => ({
+    ...INITIAL_FORM_STATE,
+    eventType,
+    showSignupsPublicly,
+    listOnDirectory,
+    organizerDigestEnabled: digestEnabled,
+    organizerInstantNotifyEnabled: instantEnabled,
+    calendarSyncEnabled,
+    calendarId,
+    calendarName,
+    inviteLeader,
+    eventTimezone,
+    leaderName,
+    leaderEmail,
+    allowGuests,
+    showCapacityPublicly,
+    expanded: {
+      ...INITIAL_FORM_STATE.expanded,
+      visibility: visibilityOpen,
+      notifications: notificationsOpen,
+      settings: settingsOpen,
+      googleCalendar: calendarOpen,
+      registration: registrationOpen,
+    },
+  });
 
   const handleCoverChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    const fileError = coverFileError(file);
+    if (fileError) {
+      alert(fileError);
+      e.target.value = "";
+      return;
+    }
     const objectUrl = URL.createObjectURL(file);
     const img = new window.Image();
+    img.onerror = () => {
+      alert("We couldn't read that image. Please try a different JPEG, PNG, or WebP file.");
+      URL.revokeObjectURL(objectUrl);
+    };
     img.onload = async () => {
       if (img.width / img.height < 0.9) {
-        alert("Please upload a landscape image (wider than tall). A 2:1 ratio is ideal, e.g. 800×400 px.");
+        alert("Please upload a landscape image (wider than tall). Recommended 1600 × 800 px (2:1), at least 1200 × 600.");
         URL.revokeObjectURL(objectUrl);
         return;
       }
@@ -541,7 +702,7 @@ export default function EditEventPage() {
         const supabase = createClientComponentClient();
         const { data: { session } } = await supabase.auth.getSession();
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", await prepareCoverUpload(file));
         form.append("type", "cover");
         form.append("eventId", eventId);
         const res = await fetch("/api/upload", {
@@ -552,6 +713,7 @@ export default function EditEventPage() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Upload failed");
         setCoverUrl(data.url);
+        setCoverPosition(null);
         setCoverPreview(null);
         URL.revokeObjectURL(objectUrl);
       } catch (err: unknown) {
@@ -578,6 +740,7 @@ export default function EditEventPage() {
         body: JSON.stringify({ type: "cover", eventId }),
       });
       setCoverUrl(null);
+      setCoverPosition(null);
       setCoverPreview(null);
     } finally {
       setCoverUploading(false);
@@ -626,6 +789,23 @@ export default function EditEventPage() {
       setSendingReport(false);
     }
   };
+
+  const optionalSettingsEl = (eventType: CreateFormState["eventType"], includeRegistration: boolean) => (
+    <EventOptionalSettings
+      state={optionalSettingsState(eventType)}
+      set={applyOptionalSettingsPatch}
+      organizationId={organizationId}
+      eventId={eventId}
+      includeRegistration={includeRegistration}
+      lastSyncedAt={calendarLastSyncedAt}
+      lastError={calendarLastError}
+      onSyncResult={({ lastSyncedAt, lastError }) => {
+        if (lastSyncedAt !== undefined) setCalendarLastSyncedAt(lastSyncedAt);
+        if (lastError !== undefined) setCalendarLastError(lastError);
+      }}
+      reportAction={{ sending: sendingReport, onSend: sendOrganizerReportNow }}
+    />
+  );
 
   const toggleBulkDay = (day: number) => {
     if (bulkDays.includes(day)) {
@@ -870,6 +1050,14 @@ export default function EditEventPage() {
 
   const removeSession = (index: number) => {
     setSessions(sessions.filter((_, i) => i !== index));
+  };
+
+  /** Remove every session on one date (takes effect on Save). */
+  const removeDateGroup = (group: { items: { index: number }[] }) => {
+    const n = group.items.length;
+    if (!confirm(`Remove this date${n > 1 ? ` and its ${n} sessions` : ""}? Changes apply when you save.`)) return;
+    const drop = new Set(group.items.map((it) => it.index));
+    setSessions(sessions.filter((_, i) => !drop.has(i)));
   };
 
   /** Add another class slot to an existing date, copying that date's time/location
@@ -1331,8 +1519,8 @@ export default function EditEventPage() {
             {itemsError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm">{itemsError}</div>}
             {/* Event details */}
             <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-4">
-              {/* Future: Cover image support */}
               <div className="p-4 md:p-8">
+                {isCoverImageEnabledForOrg(organizationId) && (
                 <div className="relative">
                   <label className="cursor-pointer group block">
                     <div className="w-full aspect-[2/1] relative overflow-hidden bg-[#F4FAFB] flex items-center justify-center">
@@ -1340,7 +1528,7 @@ export default function EditEventPage() {
                         <LoadingSpinner size="lg" />
                       ) : (coverPreview || coverUrl) ? (
                         // eslint-disable-next-line @next/next/no-img-element
-                        <img src={coverPreview ?? coverUrl!} alt="Event cover" className="w-full h-full object-cover" />
+                        <img src={coverPreview ?? coverUrl!} alt="Event cover" className="w-full h-full object-cover" style={{ objectPosition: coverPreview ? undefined : coverObjectPosition(coverPosition) }} />
                       ) : (
                         <div className="text-center text-[#5A8399] px-4">
                           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="w-8 h-8 mx-auto mb-2 opacity-30">
@@ -1348,7 +1536,7 @@ export default function EditEventPage() {
                             <polyline points="21 15 16 10 5 21"/>
                           </svg>
                           <p className="text-sm font-medium opacity-50">Add a cover image</p>
-                          <p className="text-xs opacity-40 mt-1">2:1 landscape · 800×400 px min · JPEG, PNG, or WebP</p>
+                          <p className="text-xs opacity-40 mt-1">1600 × 800 px recommended (2:1) · JPEG, PNG, or WebP · max 20 MB</p>
                         </div>
                       )}
                       <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center">
@@ -1377,7 +1565,11 @@ export default function EditEventPage() {
                       </svg>
                     </button>
                 )}
+                <p className="mt-2 text-[11px] text-[#7A9BAE] leading-relaxed">
+                  {COVER_SIZE_HINT.replace("Drag to reposition", "Reposition it from the event page")}
+                </p>
               </div>
+                )}
               <div className="flex items-center gap-3 mb-6">
                 {/* Future: Org logo support */}
                 <h1 className="font-serif text-[28px] text-[#0D2B35]">Edit Event</h1>
@@ -1479,100 +1671,7 @@ export default function EditEventPage() {
               <div className="bg-[#E6F7FB] border border-[rgba(14,150,176,0.18)] rounded-xl px-[18px] py-[14px] text-sm leading-relaxed text-[#2E5566] mb-6">
                 <strong className="text-[#0D2B35] font-semibold">Tip:</strong>{" "}Press <kbd className="bg-white border border-[rgba(14,150,176,0.22)] rounded px-1 py-0.5 text-xs font-mono">Enter</kbd> in any item field to quickly add the next row.
               </div>
-              <VisibilitySection
-                state={{
-                  ...INITIAL_FORM_STATE,
-                  showSignupsPublicly,
-                  listOnDirectory,
-                  expanded: { ...INITIAL_FORM_STATE.expanded, visibility: visibilityOpen },
-                }}
-                set={(patch: Partial<CreateFormState>) => {
-                  if ("expanded" in patch && patch.expanded) {
-                    if ("visibility" in patch.expanded) {
-                      setVisibilityOpen(patch.expanded.visibility);
-                    }
-                  }
-                  if ("showSignupsPublicly" in patch && typeof patch.showSignupsPublicly === "boolean") {
-                    const next = patch.showSignupsPublicly;
-                    setShowSignupsPublicly(next);
-                    patchCampaignFields({ show_signups_publicly: next }).catch((err: unknown) => {
-                      setShowSignupsPublicly(!next);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    });
-                  }
-                  if ("listOnDirectory" in patch && typeof patch.listOnDirectory === "boolean") {
-                    const next = patch.listOnDirectory;
-                    setListOnDirectory(next);
-                    patchCampaignFields({ list_on_directory: next }).catch((err: unknown) => {
-                      setListOnDirectory(!next);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    });
-                  }
-                }}
-              />
-              <NotificationsSection
-                state={{
-                  ...INITIAL_FORM_STATE,
-                  organizerDigestEnabled: digestEnabled,
-                  organizerInstantNotifyEnabled: instantEnabled,
-                  expanded: { ...INITIAL_FORM_STATE.expanded, notifications: notificationsOpen },
-                }}
-                set={(patch: Partial<CreateFormState>) => {
-                  if ("expanded" in patch && patch.expanded) {
-                    if ("notifications" in patch.expanded) {
-                      setNotificationsOpen(patch.expanded.notifications);
-                    }
-                  }
-                  if (
-                    "organizerDigestEnabled" in patch &&
-                    typeof patch.organizerDigestEnabled === "boolean"
-                  ) {
-                    const next = patch.organizerDigestEnabled;
-                    setDigestEnabled(next);
-                    patchCampaignFields({ organizer_digest_enabled: next }).catch((err: unknown) => {
-                      setDigestEnabled(!next);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    });
-                  }
-                  if (
-                    "organizerInstantNotifyEnabled" in patch &&
-                    typeof patch.organizerInstantNotifyEnabled === "boolean"
-                  ) {
-                    const next = patch.organizerInstantNotifyEnabled;
-                    setInstantEnabled(next);
-                    patchCampaignFields({ organizer_instant_notify_enabled: next }).catch((err: unknown) => {
-                      setInstantEnabled(!next);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    });
-                  }
-                }}
-              />
-              <EventSettingsSection
-                state={{
-                  ...INITIAL_FORM_STATE,
-                  eventTimezone,
-                  leaderName,
-                  leaderEmail,
-                  expanded: { ...INITIAL_FORM_STATE.expanded, settings: settingsOpen },
-                }}
-                set={(patch: Partial<CreateFormState>) => {
-                  if ("expanded" in patch && patch.expanded) {
-                    if ("settings" in patch.expanded) {
-                      setSettingsOpen(patch.expanded.settings);
-                    }
-                  }
-                  if ("eventTimezone" in patch && typeof patch.eventTimezone === "string") {
-                    const next = patch.eventTimezone;
-                    const prev = eventTimezone;
-                    setEventTimezone(next);
-                    patchCampaignFields({ event_timezone: next }).catch((err: unknown) => {
-                      setEventTimezone(prev);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    });
-                  }
-                  handleLeaderPatch(patch);
-                }}
-              />
+              {optionalSettingsEl("items", false)}
             </div>
             </div>{/* end p-4 md:p-8 */}
           </div>
@@ -1648,120 +1747,7 @@ export default function EditEventPage() {
                 />
               </div>
 
-              <VisibilitySection
-                state={{
-                  ...INITIAL_FORM_STATE,
-                  showSignupsPublicly,
-                  listOnDirectory,
-                  expanded: { ...INITIAL_FORM_STATE.expanded, visibility: visibilityOpen },
-                }}
-                set={(patch: Partial<CreateFormState>) => {
-                  if ("expanded" in patch && patch.expanded) {
-                    if ("visibility" in patch.expanded) {
-                      setVisibilityOpen(patch.expanded.visibility);
-                    }
-                  }
-                  if ("showSignupsPublicly" in patch && typeof patch.showSignupsPublicly === "boolean") {
-                    const next = patch.showSignupsPublicly;
-                    setShowSignupsPublicly(next);
-                    patchCampaignFields({ show_signups_publicly: next }).catch((err: unknown) => {
-                      setShowSignupsPublicly(!next);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    });
-                  }
-                  if ("listOnDirectory" in patch && typeof patch.listOnDirectory === "boolean") {
-                    const next = patch.listOnDirectory;
-                    setListOnDirectory(next);
-                    patchCampaignFields({ list_on_directory: next }).catch((err: unknown) => {
-                      setListOnDirectory(!next);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    });
-                  }
-                }}
-              />
-              <NotificationsSection
-                state={{
-                  ...INITIAL_FORM_STATE,
-                  organizerDigestEnabled: digestEnabled,
-                  organizerInstantNotifyEnabled: instantEnabled,
-                  eventTimezone,
-                  leaderName,
-                  leaderEmail,
-                  expanded: { ...INITIAL_FORM_STATE.expanded, notifications: notificationsOpen },
-                }}
-                set={(patch: Partial<CreateFormState>) => {
-                  if ("expanded" in patch && patch.expanded) {
-                    if ("notifications" in patch.expanded) {
-                      setNotificationsOpen(patch.expanded.notifications);
-                    }
-                  }
-                  if (
-                    "organizerDigestEnabled" in patch &&
-                    typeof patch.organizerDigestEnabled === "boolean"
-                  ) {
-                    const next = patch.organizerDigestEnabled;
-                    setDigestEnabled(next);
-                    patchCampaignFields({ organizer_digest_enabled: next }).catch((err: unknown) => {
-                      setDigestEnabled(!next);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    });
-                  }
-                  if (
-                    "organizerInstantNotifyEnabled" in patch &&
-                    typeof patch.organizerInstantNotifyEnabled === "boolean"
-                  ) {
-                    const next = patch.organizerInstantNotifyEnabled;
-                    setInstantEnabled(next);
-                    patchCampaignFields({ organizer_instant_notify_enabled: next }).catch((err: unknown) => {
-                      setInstantEnabled(!next);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    });
-                  }
-                  if ("eventTimezone" in patch && typeof patch.eventTimezone === "string") {
-                    const next = patch.eventTimezone;
-                    const prev = eventTimezone;
-                    setEventTimezone(next);
-                    patchCampaignFields({ event_timezone: next }).catch((err: unknown) => {
-                      setEventTimezone(prev);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    });
-                  }
-                }}
-              />
-              <EventSettingsSection
-                state={{
-                  ...INITIAL_FORM_STATE,
-                  eventTimezone,
-                  leaderName,
-                  leaderEmail,
-                  expanded: { ...INITIAL_FORM_STATE.expanded, settings: settingsOpen },
-                }}
-                set={(patch: Partial<CreateFormState>) => {
-                  if ("expanded" in patch && patch.expanded) {
-                    if ("settings" in patch.expanded) {
-                      setSettingsOpen(patch.expanded.settings);
-                    }
-                  }
-                  if ("eventTimezone" in patch && typeof patch.eventTimezone === "string") {
-                    const next = patch.eventTimezone;
-                    const prev = eventTimezone;
-                    setEventTimezone(next);
-                    patchCampaignFields({ event_timezone: next }).catch((err: unknown) => {
-                      setEventTimezone(prev);
-                      alert(err instanceof Error ? err.message : "Could not save");
-                    });
-                  }
-                  handleLeaderPatch(patch);
-                }}
-              />
-              <button
-                type="button"
-                disabled={sendingReport}
-                onClick={sendOrganizerReportNow}
-                className="text-xs font-semibold text-[#0E96B0] hover:text-[#08647E] disabled:opacity-50 disabled:cursor-not-allowed underline-offset-2 hover:underline"
-              >
-                {sendingReport ? "Sending…" : "Send organizer report now"}
-              </button>
+              {optionalSettingsEl(((event as { event_type?: CreateFormState["eventType"] } | null)?.event_type) || "spots", true)}
 
               {/* Sessions */}
               <div id="sessions-section" className="border-t border-[rgba(14,150,176,0.12)] pt-6">
@@ -2529,7 +2515,15 @@ export default function EditEventPage() {
                 ) : (
                   <div className="space-y-6">
                     {groupSessionsForDisplay(sessions).map((group) => (
-                      <div key={group.key} className="space-y-2">
+                      <div
+                        key={group.key}
+                        id={group.sessionDate ? `edit-date-${group.sessionDate}` : undefined}
+                        className={`space-y-2 scroll-mt-24 rounded-xl transition-shadow duration-700 ${
+                          highlightDate && group.sessionDate === highlightDate
+                            ? "shadow-[0_0_0_3px_rgba(14,150,176,0.35)]"
+                            : ""
+                        }`}
+                      >
                         {/* Date header — mirrors the public preview's per-date grouping */}
                         <div className="flex items-center gap-2 px-0.5">
                           <div className="font-serif text-[17px] text-[#0D2B35]">
@@ -2644,6 +2638,20 @@ export default function EditEventPage() {
                               </button>
                             )
                           )}
+                          <button
+                            type="button"
+                            onClick={() => removeDateGroup(group)}
+                            title="Remove every class on this day"
+                            className="ml-auto inline-flex items-center gap-1 text-[11px] font-semibold text-red-500 hover:text-red-700 transition-colors"
+                          >
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                              <polyline points="3 6 5 6 21 6" />
+                              <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                              <path d="M10 11v6M14 11v6" />
+                              <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+                            </svg>
+                            Remove
+                          </button>
                         </div>
                         {group.items.map(({ session, index }, itemIdx, itemArr) => {
                           const sectionKey = (session.section ?? "").trim();

@@ -2,10 +2,29 @@ import { createClient } from "@supabase/supabase-js";
 import { createServiceRoleClient } from "./supabase-admin";
 import type { Database } from "./types";
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+function getSupabaseUrl(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+}
 
-export const supabase = createClient<Database>(supabaseUrl, supabaseAnonKey);
+function getSupabaseAnonKey(): string {
+  return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+}
+
+let _supabaseClient: ReturnType<typeof createClient<Database>> | null = null;
+
+export function getSupabase() {
+  if (!_supabaseClient) {
+    _supabaseClient = createClient<Database>(getSupabaseUrl(), getSupabaseAnonKey());
+  }
+  return _supabaseClient;
+}
+
+// Legacy export - lazily initialized
+export const supabase = new Proxy({} as ReturnType<typeof createClient<Database>>, {
+  get(_target, prop) {
+    return (getSupabase() as any)[prop];
+  }
+});
 
 type RpcGetPublicArgs = Database["public"]["Functions"]["get_public_campaign"]["Args"];
 type RpcSignupArgs = Database["public"]["Functions"]["create_signup_if_capacity"]["Args"];
@@ -14,12 +33,17 @@ type RpcSignupArgs = Database["public"]["Functions"]["create_signup_if_capacity"
 export function getPublicCampaignById(campaignId: string) {
   const args: RpcGetPublicArgs = { campaign_id: campaignId };
   // postgrest-js RPC inference does not pick up manual Database.Functions for this client; args are typed above.
-  return supabase.rpc("get_public_campaign", args as never);
+  return getSupabase().rpc("get_public_campaign", args as never);
+}
+
+/** Org directory slug for a campaign, or null when the org's public directory is off. */
+export function getPublicDirectorySlugForCampaign(campaignId: string) {
+  return getSupabase().rpc("get_public_directory_slug_for_campaign", { p_campaign_id: campaignId } as never);
 }
 
 /** SECURITY DEFINER RPC for public org directory; returns open/accepting-signups events with no PII. */
 export function getPublicOrgCampaigns(slug: string) {
-  return supabase.rpc("get_public_org_campaigns", { p_slug: slug } as never);
+  return getSupabase().rpc("get_public_org_campaigns", { p_slug: slug } as never);
 }
 
 export function createSignupIfCapacityRpc(args: RpcSignupArgs) {

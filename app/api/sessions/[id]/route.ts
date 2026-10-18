@@ -1,6 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextResponse, after } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
+import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
+import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
 /** PATCH /api/sessions/[id] — update a session's time, capacity, location, or notes */
 export async function PATCH(
@@ -82,10 +84,10 @@ export async function DELETE(
     }
     const { supabase, user } = auth;
 
-    // Verify ownership
+    // Any accepted org member (owner or co-admin) may delete sessions
     const { data: session, error: fetchError } = await supabase
       .from("sessions")
-      .select("id, campaign_id, campaigns(created_by, user_email)")
+      .select("id, campaign_id, campaigns(organization_id)")
       .eq("id", sessionId)
       .single();
 
@@ -93,12 +95,8 @@ export async function DELETE(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const campaign = (session as { campaigns?: { created_by?: string; user_email?: string } }).campaigns;
-    const ownedByUser =
-      campaign?.created_by === user.id ||
-      (user.email && campaign?.user_email === user.email);
-
-    if (!ownedByUser) {
+    const campaign = (session as { campaigns?: { organization_id?: string | null } }).campaigns;
+    if (!campaign || !(await userCanAdminCampaign(supabase, user, { organization_id: campaign.organization_id ?? null }))) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
 
@@ -115,6 +113,7 @@ export async function DELETE(
       );
     }
 
+    const campaignId = (session as { campaign_id: string }).campaign_id;
     const { error: deleteError } = await supabase
       .from("sessions")
       .delete()
@@ -123,6 +122,17 @@ export async function DELETE(
     if (deleteError) {
       console.error("DELETE /api/sessions/[id] error:", deleteError);
       return NextResponse.json({ error: "Failed to delete session" }, { status: 500 });
+    }
+
+    // Sync to Google Calendar (fire-and-forget; never fails the delete)
+    if (isGcalSyncFeatureEnabled()) {
+      after(async () => {
+        try {
+          await syncCampaignCalendar(campaignId);
+        } catch (e) {
+          console.error("Calendar sync after session delete:", e);
+        }
+      });
     }
 
     return NextResponse.json({ success: true });

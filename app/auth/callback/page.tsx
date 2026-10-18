@@ -15,6 +15,7 @@ import {
 } from "@/lib/auth-return-path";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { usePostHog } from "posthog-js/react";
+import { getStoredAttribution } from "@/lib/attribution";
 
 /** Remove ?code=, hash fragments (#access_token), etc. from the address bar after auth. */
 function stripSensitiveUrlParams() {
@@ -49,6 +50,8 @@ function AuthCallbackContent() {
   const posthog = usePostHog();
   const [error, setError] = useState<string | null>(null);
   const welcomeFiredForSubRef = useRef<string | null>(null);
+  const handleCallbackRunRef = useRef(false);
+  const capturedNextRef = useRef<string | null>(null);
 
   const sendWelcomeEmail = (accessToken: string) => {
     const sub = jwtSub(accessToken);
@@ -72,18 +75,31 @@ function AuthCallbackContent() {
     }
     welcomeFiredForSubRef.current = guardId;
 
+    // Send attribution from localStorage with welcome email
+    const attribution = getStoredAttribution();
+
     void fetch("/api/welcome", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
+      body: JSON.stringify({ attribution }),
     }).catch((err) => {
       console.error("Welcome email error:", err);
     });
   };
 
   useEffect(() => {
-    const savedNext = safeReturnPath(searchParams.get("next"));
+    // Guard: run handleCallback exactly once to prevent reruns after stripSensitiveUrlParams
+    if (handleCallbackRunRef.current) return;
+    handleCallbackRunRef.current = true;
+    
+    // Capture next once at mount (before stripSensitiveUrlParams removes it)
+    if (capturedNextRef.current === null) {
+      capturedNextRef.current = safeReturnPath(searchParams.get("next"));
+    }
+    const savedNext = capturedNextRef.current;
 
     const resolveDestination = async (accessToken: string, fallback: string): Promise<string> => {
       // Multi-org users with no saved selection get the chooser inserted before their
@@ -205,7 +221,7 @@ function AuthCallbackContent() {
             });
             const clientPkce = await exchangePkceClientDeduped(code);
             if (clientPkce.ok && clientPkce.accessToken) {
-              stripSensitiveUrlParams();
+              // goToAfterAuth strips sensitive params at :120
               void goToAfterAuth(clientPkce.accessToken);
               return;
             }
@@ -225,7 +241,7 @@ function AuthCallbackContent() {
           return;
         }
 
-        stripSensitiveUrlParams();
+        // goToAfterAuth strips sensitive params at :120
 
         const supabase = createClientComponentClient();
         const {

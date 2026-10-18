@@ -15,6 +15,7 @@ import OrgNameModal from "@/components/OrgNameModal";
 import OrgSwitcher from "@/components/OrgSwitcher";
 import { getCurrentOrganization } from "@/lib/organizations";
 import ConnectToClaudeCard from "@/components/ConnectToClaudeCard";
+import { CLAUDE_MCP_ENABLED } from "@/lib/claude-mcp";
 import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } from "@/lib/limits";
 import { EVENT_TEMPLATES, TEMPLATES_INITIAL_VISIBLE } from "@/lib/event-template-data";
 import { downloadEventQr } from "@/lib/download-qr";
@@ -652,10 +653,11 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Connect to Claude */}
-          <div className="mt-8 max-w-sm">
-            <ConnectToClaudeCard />
-          </div>
+          {CLAUDE_MCP_ENABLED && (
+            <div className="mt-8 max-w-sm">
+              <ConnectToClaudeCard />
+            </div>
+          )}
 
           {isTipJarEnabled(brand) && (
             <p className="mt-6 text-sm text-[#5A8399] leading-relaxed max-w-md">

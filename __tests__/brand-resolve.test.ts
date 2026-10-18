@@ -22,15 +22,10 @@ describe("brand resolve", () => {
     expect(getBrandFromHost("wardsignup.com").id).toBe("wardsignup");
   });
 
-  it("maps orgsignup hosts (prod + dev)", () => {
-    expect(getBrandFromHost("orgsignup.com").id).toBe("orgsignup");
-    expect(getBrandFromHost("orgsignup.localhost").id).toBe("orgsignup");
-  });
-
-  it("maps ministrysignup hosts", () => {
-    expect(getBrandFromHost("ministrysignup.com").id).toBe("ministrysignup");
-    expect(getBrandFromHost("www.ministrysignup.com").id).toBe("ministrysignup");
-    expect(getBrandFromHost("ministrysignup.localhost").id).toBe("ministrysignup");
+  it("maps retired ministry/org hosts to wardsignup", () => {
+    expect(getBrandFromHost("orgsignup.com").id).toBe("wardsignup");
+    expect(getBrandFromHost("ministrysignup.com").id).toBe("wardsignup");
+    expect(getBrandFromHost("www.ministrysignup.com").id).toBe("wardsignup");
   });
 
   it("defaults unknown production-like host to wardsignup", () => {
@@ -39,32 +34,30 @@ describe("brand resolve", () => {
 
   it("isKnownBrandHost", () => {
     expect(isKnownBrandHost("www.wardsignup.com")).toBe(true);
-    expect(isKnownBrandHost("ministrysignup.com")).toBe(true);
+    expect(isKnownBrandHost("ministrysignup.com")).toBe(false);
+    expect(isKnownBrandHost("orgsignup.com")).toBe(false);
     expect(isKnownBrandHost("evil.com")).toBe(false);
   });
 
-  it("NEXT_PUBLIC_ACTIVE_BRAND overrides on localhost only", () => {
+  it("ignores NEXT_PUBLIC_ACTIVE_BRAND set to a retired brand", () => {
     process.env.NEXT_PUBLIC_ACTIVE_BRAND = "orgsignup";
-    expect(getBrandFromHost("localhost").id).toBe("orgsignup");
-    process.env.NEXT_PUBLIC_ACTIVE_BRAND = "orgsignup";
+    expect(getBrandFromHost("localhost").id).toBe("wardsignup");
     expect(getBrandFromHost("wardsignup.com").id).toBe("wardsignup");
     process.env.NEXT_PUBLIC_ACTIVE_BRAND = "ministrysignup";
-    expect(getBrandFromHost("localhost").id).toBe("ministrysignup");
+    expect(getBrandFromHost("localhost").id).toBe("wardsignup");
   });
 
   it("getBrandForSiteOrigin matches pack siteUrl", () => {
-    expect(getBrandForSiteOrigin("https://orgsignup.com/").id).toBe("orgsignup");
-    expect(getBrandForSiteOrigin("https://ministrysignup.com").id).toBe("ministrysignup");
-    expect(getBrandForSiteOrigin("https://wardsignup.com").id).toBe("wardsignup");
+    expect(getBrandForSiteOrigin("https://wardsignup.com/").id).toBe("wardsignup");
+    expect(getBrandForSiteOrigin("https://orgsignup.com/").id).toBe("wardsignup");
+    expect(getBrandForSiteOrigin("https://ministrysignup.com").id).toBe("wardsignup");
     expect(getBrandForSiteOrigin("https://unknown.example").id).toBe("wardsignup");
   });
 
   it("preferredBrandApexHost redirects www to apex", () => {
     expect(preferredBrandApexHost("www.wardsignup.com")).toBe("wardsignup.com");
     expect(preferredBrandApexHost("wardsignup.com")).toBeNull();
-    expect(preferredBrandApexHost("www.ministrysignup.com")).toBe(
-      "ministrysignup.com",
-    );
+    expect(preferredBrandApexHost("www.ministrysignup.com")).toBeNull();
     expect(preferredBrandApexHost("localhost")).toBeNull();
     expect(preferredBrandApexHost("evil.com")).toBeNull();
   });

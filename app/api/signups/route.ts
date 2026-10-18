@@ -8,7 +8,8 @@ import { sendParticipantSignupConfirmation } from "@/lib/participant-email";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { getPostHogClient } from "@/lib/posthog-server";
-import { isHostedProduction } from "@/lib/runtime-env";
+import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
+import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
 function hashIp(ip: string): string {
   const salt = process.env.RATE_LIMIT_IP_SALT || "wardsignup_signup_rate";
@@ -18,7 +19,20 @@ function hashIp(ip: string): string {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const { session_id, campaign_id, member_name, member_email, member_phone, guest_names: rawGuests, signup_note: rawNote } = body;
+    const { 
+      session_id, 
+      campaign_id, 
+      member_name, 
+      member_email, 
+      member_phone, 
+      guest_names: rawGuests, 
+      signup_note: rawNote,
+      // Attribution tracking (optional, from client localStorage)
+      first_touch_utm_source,
+      first_touch_utm_medium,
+      first_touch_utm_campaign,
+      first_touch_ref,
+    } = body;
 
     if (!session_id || !campaign_id || !member_name) {
       return NextResponse.json(
@@ -59,12 +73,10 @@ export async function POST(request: Request) {
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     let admin: ReturnType<typeof createClient> | null = null;
     if (!serviceKey || !url) {
-      if (isHostedProduction()) {
-        return NextResponse.json(
-          { error: "Signup is temporarily unavailable" },
-          { status: 503 }
-        );
-      }
+      return NextResponse.json(
+        { error: "Signup is temporarily unavailable" },
+        { status: 503 }
+      );
     } else {
       admin = createClient(url, serviceKey);
       const ip = getClientIp(request);
@@ -144,6 +156,23 @@ export async function POST(request: Request) {
       }
     }
 
+    // Update signup with attribution data if provided (non-critical)
+    if (admin && (first_touch_utm_source || first_touch_utm_medium || first_touch_utm_campaign || first_touch_ref)) {
+      const signupId = (data as Record<string, unknown>).id as string | undefined;
+      if (signupId) {
+        const attributionUpdate: Record<string, string> = {};
+        if (first_touch_utm_source) attributionUpdate.first_touch_utm_source = first_touch_utm_source;
+        if (first_touch_utm_medium) attributionUpdate.first_touch_utm_medium = first_touch_utm_medium;
+        if (first_touch_utm_campaign) attributionUpdate.first_touch_utm_campaign = first_touch_utm_campaign;
+        if (first_touch_ref) attributionUpdate.first_touch_ref = first_touch_ref;
+        
+        await admin
+          .from("signups")
+          .update(attributionUpdate as never)
+          .eq("id", signupId);
+      }
+    }
+
     const emailTrim =
       typeof member_email === "string" ? member_email.trim() : "";
     if (admin) {
@@ -155,7 +184,7 @@ export async function POST(request: Request) {
         try {
           const { data: campaign, error: cErr } = await admin!
             .from("campaigns")
-            .select("id, name, brand_id, public_host, event_timezone, event_end_date, leader_name, leader_email")
+            .select("id, name, brand_id, public_host, event_timezone, event_end_date, leader_name, leader_email, user_email, organizer_instant_notify_enabled, leader_signup_email_enabled")
             .eq("id", campaign_id)
             .single();
           const { data: session, error: sErr } = await admin!
@@ -205,6 +234,17 @@ export async function POST(request: Request) {
           console.error("Signup notification email:", e);
         }
       });
+
+      // Sync to Google Calendar (fire-and-forget; never fails the signup)
+      if (isGcalSyncFeatureEnabled()) {
+        after(async () => {
+          try {
+            await syncCampaignCalendar(campaign_id);
+          } catch (e) {
+            console.error("Calendar sync after signup:", e);
+          }
+        });
+      }
     }
 
     const distinctId = request.headers.get("x-posthog-distinct-id") ?? `anon_signup_${crypto.randomUUID()}`;

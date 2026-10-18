@@ -350,6 +350,10 @@ export default async function WardSecretarySignupPage() {
                     vs SignUpGenius
                   </Link>
                   {" · "}
+                  <Link href="/compare/calendly" className="text-[#0E96B0] hover:text-[#08647E]">
+                    vs Calendly
+                  </Link>
+                  {" · "}
                   <Link href="/privacy" className="text-[#0E96B0] hover:text-[#08647E]">
                     Privacy
                   </Link>

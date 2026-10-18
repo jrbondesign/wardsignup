@@ -1,5 +1,6 @@
 "use client";
 
+import EmailTypoHint from "@/components/EmailTypoHint";
 import { Fragment, use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -10,8 +11,10 @@ import { formatTime } from "@/lib/utils";
 import { compareBySortOrder } from "@/lib/session-sort-order";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
+import MadeWithFooter from "@/components/MadeWithFooter";
 import { usePostHog } from "posthog-js/react";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
+import { usePublicCover } from "@/lib/use-public-cover";
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -68,6 +71,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const posthog = usePostHog();
   const router = useRouter();
   const { id: eventId } = use(params);
+  const publicCover = usePublicCover(eventId);
   const [event, setEvent] = useState<any>(null);
   const [sessions, setSessions] = useState<SessionWithSignups[]>([]);
   const [loading, setLoading] = useState(true);
@@ -308,6 +312,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setItemSubmitting(true);
     setItemError("");
     try {
+      const { getAttributionForSubmission } = await import("@/lib/attribution");
       const res = await fetch("/api/item-signups", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
@@ -318,6 +323,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           member_email: itemFormData.email,
           signup_note: itemFormData.note,
           quantity: itemFormData.quantity,
+          ...(getAttributionForSubmission() || {}),
         }),
       });
       if (!res.ok) {
@@ -344,6 +350,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setCustomSubmitting(true);
     setCustomError("");
     try {
+      const { getAttributionForSubmission } = await import("@/lib/attribution");
       const res = await fetch("/api/item-signups", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
@@ -353,6 +360,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           member_name: customItem.name.trim(),
           signup_note: customItem.note.trim() || null,
           quantity: 1,
+          ...(getAttributionForSubmission() || {}),
         }),
       });
       if (!res.ok) {
@@ -385,6 +393,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       const cleanGuests = guestNames.map((n) => n.trim()).filter(Boolean);
 
       // Single bulk request → single confirmation email covering every slot.
+      const { getAttributionForSubmission } = await import("@/lib/attribution");
       const r = await fetch("/api/signups/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
@@ -396,6 +405,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           member_phone: formData.phone,
           signup_note: formData.note || undefined,
           guest_names: cleanGuests,
+          ...(getAttributionForSubmission() || {}),
         }),
       });
       const json = await r.json().catch(() => ({}));
@@ -593,6 +603,19 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
         {/* Event card */}
         <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-6">
+          {publicCover && (
+            <div className="relative w-full aspect-[2/1] bg-[#F4FAFB]">
+              <Image
+                src={publicCover.url}
+                alt=""
+                fill
+                priority
+                sizes="(max-width: 896px) 100vw, 896px"
+                className="object-cover"
+                style={{ objectPosition: publicCover.position }}
+              />
+            </div>
+          )}
           {/* Gradient strip */}
           <div className="h-1.5 bg-gradient-to-r from-[#22C8D8] via-[#0E96B0] to-[#08647E]" />
           <div className="p-7">
@@ -835,6 +858,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       placeholder="you@example.com"
                       className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70"
                       disabled={submitting} />
+                    <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />
                     <p className="mt-1.5 text-[11px] text-[#5A8399] leading-snug">
                       {sessions.some((s: any) => s.session_date)
                         ? "Add your email to get a reminder the day before — we never share or sell your info."
@@ -1030,6 +1054,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                               className="w-full text-sm text-[#0D2B35] px-[14px] py-[11px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
                               disabled={itemSubmitting}
                             />
+                            <EmailTypoHint email={itemFormData.email} onAccept={(fixed) => setItemFormData((prev) => ({ ...prev, email: fixed }))} />
                           </div>
                           <div>
                             <label className="block text-[12px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1">
@@ -1480,6 +1505,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   placeholder="john@example.com"
                   className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70" />
+                <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />
                 <p className="mt-1.5 text-[11px] text-[#5A8399] leading-snug">
                   {sessions.some((s: any) => s.session_date)
                     ? "Add your email to get a reminder the day before — we never share or sell your info."
@@ -1531,18 +1557,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
       <footer className="mt-auto flex-shrink-0 border-t border-[#0E96B0]/10 bg-white/90 backdrop-blur-sm">
         <div className="max-w-4xl mx-auto px-6 py-6 flex flex-col items-center justify-center gap-4 text-center">
-          <p className="text-sm text-[#5A8399] leading-relaxed text-center">
-            Know someone who could use this? Share{" "}
-            <a
-              href={brand.siteUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="font-semibold text-[#0E96B0] hover:text-[#08647E] underline decoration-[#0E96B0]/35 underline-offset-2"
-            >
-              {brand.siteHost}
-            </a>{" "}
-            with a friend.
-          </p>
+          <MadeWithFooter brandName={brand.name} siteUrl={brand.siteUrl} />
           <Link
             href="/"
             aria-label={`${brand.name} home`}

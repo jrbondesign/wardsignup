@@ -11,10 +11,11 @@ import { feedbackEmailFrom } from "@/lib/brand/email-from";
 import { parseMetricsAdminEmails } from "@/lib/metrics-admin";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { isFeedbackAskPaused } from "@/lib/feedback-ask-pause";
-import { creatorNotifyAddress } from "@/lib/founder-notify";
+import { FOUNDER_NOTIFY_TO } from "@/lib/founder-notify";
 
 type Admin = ReturnType<typeof createServiceRoleClient>;
 
+const creatorNotifyTo = FOUNDER_NOTIFY_TO;
 
 function askDelayDays(): number {
   const n = Number(process.env.FEEDBACK_ASK_DELAY_DAYS);
@@ -29,13 +30,13 @@ function askDelayDays(): number {
 const DEFAULT_SKIP_EMAILS = [
   "bondesign@gmail.com",
   "bondesign+test@gmail.com",
+  "jon@jrbond.com",
 ];
 
 /** Founder/internal/test inboxes that should never receive the feedback ask. */
 function feedbackSkipEmails(): Set<string> {
   const set = new Set<string>(parseMetricsAdminEmails());
-  const notifyTo = creatorNotifyAddress();
-  if (notifyTo) set.add(notifyTo.trim().toLowerCase());
+  if (creatorNotifyTo) set.add(creatorNotifyTo.trim().toLowerCase());
   for (const e of DEFAULT_SKIP_EMAILS) set.add(e);
   const raw = process.env.CREATOR_NOTIFY_SKIP_EMAILS?.trim();
   if (raw) {
@@ -283,7 +284,11 @@ export type FeedbackDigestSummary = {
 };
 
 /**
- * Weekly pass (Mondays UTC): email the founder all new responses for this
+ * DEPRECATED: Monday digest is no longer sent. Feedback now sends immediately
+ * to bondesign@gmail.com when submitted. This function remains for backwards
+ * compatibility but is not called from any active cron.
+ *
+ * Historical: Weekly pass (Mondays UTC): email the founder all new responses for this
  * brand, then mark them triaged so next week's digest only shows new ones.
  * A failed send leaves rows as 'responded' and retries next Monday.
  */
@@ -318,13 +323,15 @@ export async function runFeedbackDigestPass(
 
   // Founder-only internal mail: transactional category (no unsubscribe needed)
   // but still under the global ceiling.
-  const digestTo = creatorNotifyAddress();
+  const digestTo = creatorNotifyTo;
   if (!digestTo) {
-    return { ran: true, responses: 0, error: "CREATOR_NOTIFY_TO is not set" };
+    return { ran: true, responses: 0, error: "FOUNDER_NOTIFY_TO is not set" };
   }
   const send = await sendGuardedEmail({
     brand,
-    category: "transactional",
+    deferrable: true,
+      kind: "feedback_summary",
+      category: "transactional",
     from: feedbackEmailFrom(brand),
     to: digestTo,
     subject: `${brand.name}: ${rows.length} creator feedback response${rows.length === 1 ? "" : "s"} this week`,

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { createClientComponentClient } from "@/lib/auth";
 
+/** Hidden while CLAUDE_MCP_ENABLED is false. Keep this file to restore later. */
+
 const SETUP_STEPS = [
   {
     step: "1",

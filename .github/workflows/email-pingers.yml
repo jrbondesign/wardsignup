@@ -1,0 +1,29 @@
+name: Email Pingers
+
+# Hourly pings for the hour bucketed email crons. Vercel Hobby only allows
+# daily crons, so these live here. Both routes claim one run per UTC hour
+# (claimCronRun + hourBucketDate), so overlapping pings from another
+# scheduler are harmless no-ops.
+
+on:
+  schedule:
+    # :35 past the hour, offset from other pingers that fire on the hour
+    - cron: '35 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Participant reminders (24 hours before dated sessions)
+        run: |
+          curl -X GET "${{ secrets.CRON_ENDPOINT_URL }}/api/cron/participant-reminders" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --max-time 120 -f
+
+      - name: Organizer faster alerts
+        if: always()
+        run: |
+          curl -X GET "${{ secrets.CRON_ENDPOINT_URL }}/api/cron/organizer-faster" \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            --max-time 120 -f

@@ -34,6 +34,8 @@ export interface Database {
           created_at: string;
           organizer_digest_enabled: boolean;
           organizer_instant_notify_enabled: boolean;
+          /** @deprecated Per-signup leader emails disabled Oct 2026 (PR #81). Leaders now receive daily digest only. Column kept for backward compatibility. */
+          leader_signup_email_enabled: boolean;
           organizer_last_digest_sent_at: string | null;
           organizer_last_instant_notify_at: string | null;
           brand_id: string;
@@ -70,6 +72,8 @@ export interface Database {
           created_at?: string;
           organizer_digest_enabled?: boolean;
           organizer_instant_notify_enabled?: boolean;
+          /** @deprecated Per-signup leader emails disabled Oct 2026 (PR #81). Leaders now receive daily digest only. Column kept for backward compatibility. */
+          leader_signup_email_enabled?: boolean;
           organizer_last_digest_sent_at?: string | null;
           organizer_last_instant_notify_at?: string | null;
           brand_id?: string;
@@ -101,6 +105,8 @@ export interface Database {
           created_at?: string;
           organizer_digest_enabled?: boolean;
           organizer_instant_notify_enabled?: boolean;
+          /** @deprecated Per-signup leader emails disabled Oct 2026 (PR #81). Leaders now receive daily digest only. Column kept for backward compatibility. */
+          leader_signup_email_enabled?: boolean;
           organizer_last_digest_sent_at?: string | null;
           organizer_last_instant_notify_at?: string | null;
           brand_id?: string;
@@ -422,6 +428,105 @@ export interface Database {
         };
         Relationships: TableRelationship[];
       };
+      google_calendar_connections: {
+        Row: {
+          id: string;
+          user_id: string;
+          organization_id: string;
+          google_email: string;
+          refresh_token_enc: string;
+          scopes: string;
+          created_at: string;
+          revoked_at: string | null;
+          last_error: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          organization_id: string;
+          google_email: string;
+          refresh_token_enc: string;
+          scopes: string;
+          created_at?: string;
+          revoked_at?: string | null;
+          last_error?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          organization_id?: string;
+          google_email?: string;
+          refresh_token_enc?: string;
+          scopes?: string;
+          created_at?: string;
+          revoked_at?: string | null;
+          last_error?: string | null;
+        };
+        Relationships: TableRelationship[];
+      };
+      campaign_calendar_sync: {
+        Row: {
+          campaign_id: string;
+          connection_id: string;
+          calendar_id: string;
+          calendar_name: string;
+          enabled: boolean;
+          invite_leader: boolean;
+          last_synced_at: string | null;
+          last_error: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          campaign_id: string;
+          connection_id: string;
+          calendar_id: string;
+          calendar_name: string;
+          enabled?: boolean;
+          invite_leader?: boolean;
+          last_synced_at?: string | null;
+          last_error?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          campaign_id?: string;
+          connection_id?: string;
+          calendar_id?: string;
+          calendar_name?: string;
+          enabled?: boolean;
+          invite_leader?: boolean;
+          last_synced_at?: string | null;
+          last_error?: string | null;
+          updated_at?: string;
+        };
+        Relationships: TableRelationship[];
+      };
+      calendar_event_links: {
+        Row: {
+          session_id: string;
+          campaign_id: string;
+          google_event_id: string;
+          calendar_id: string;
+          content_hash: string;
+          synced_at: string;
+        };
+        Insert: {
+          session_id: string;
+          campaign_id: string;
+          google_event_id: string;
+          calendar_id: string;
+          content_hash: string;
+          synced_at?: string;
+        };
+        Update: {
+          session_id?: string;
+          campaign_id?: string;
+          google_event_id?: string;
+          calendar_id?: string;
+          content_hash?: string;
+          synced_at?: string;
+        };
+        Relationships: TableRelationship[];
+      };
     };
     Views: {
       sessions_public: {
@@ -441,6 +546,18 @@ export interface Database {
           updated_at: string;
         };
         Relationships: TableRelationship[];
+      };
+      google_calendar_connections_safe: {
+        Row: {
+          id: string;
+          user_id: string;
+          organization_id: string;
+          google_email: string;
+          scopes: string;
+          created_at: string;
+          revoked_at: string | null;
+          last_error: string | null;
+        };
       };
     };
     Functions: {

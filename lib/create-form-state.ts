@@ -27,8 +27,15 @@ export type ItemDraft = {
  *  its own start/end time so an organizer can run e.g.
  *    Apr 26  5:00 PM – 6:00 PM
  *    Apr 28  6:00 PM – 7:00 PM
- *  with different windows per date, edited individually. */
-export type PickedDate = { date: string; start: string; end: string };
+ *  with different windows per date, edited individually.
+ *  
+ *  Multiple windows can exist for the same date, each with a unique id. */
+export type PickedDate = { 
+  id: string;
+  date: string; 
+  start: string; 
+  end: string;
+};
 
 /** spots: pick dates by range (with weekday filter) or by individual calendar picks. */
 export type SpotsDateMode = "range" | "specific";
@@ -112,10 +119,15 @@ export interface CreateFormState {
   // ── Notifications ────────────────────────────────────────────────────────
   organizerDigestEnabled: boolean;
   organizerInstantNotifyEnabled: boolean;
-  /** Optional assigned leader — gets an email with an .ics attachment on every
-   *  signup when leaderEmail is set. */
+  /** Optional assigned leader. Gets the daily digest when they are not the organizer. */
   leaderName: string;
   leaderEmail: string;
+
+  // ── Google Calendar sync ─────────────────────────────────────────────────
+  calendarSyncEnabled: boolean;
+  calendarId: string;
+  calendarName: string;
+  inviteLeader: boolean;
 
   // ── Misc ─────────────────────────────────────────────────────────────────
   eventTimezone: string;
@@ -128,6 +140,8 @@ export interface CreateFormState {
     visibility: boolean;
     notifications: boolean;
     settings: boolean;
+    googleCalendar: boolean;
+    registration: boolean;
   };
 
   /** Per-type "user has edited something" flags. Set when the user touches a
@@ -191,9 +205,14 @@ export const INITIAL_FORM_STATE: CreateFormState = {
   listOnDirectory: true,
 
   organizerDigestEnabled: true,
-  organizerInstantNotifyEnabled: true,
+  organizerInstantNotifyEnabled: false,
   leaderName: "",
   leaderEmail: "",
+
+  calendarSyncEnabled: false,
+  calendarId: "",
+  calendarName: "",
+  inviteLeader: false,
 
   eventTimezone: DEFAULT_TIMEZONE,
 
@@ -203,6 +222,8 @@ export const INITIAL_FORM_STATE: CreateFormState = {
     visibility: false,
     notifications: false,
     settings: false,
+    googleCalendar: false,
+    registration: false,
   },
 
   dirty: {

@@ -5,10 +5,12 @@ import { userCanAdminCampaign } from "@/lib/campaign-access";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { extensionForImageMime, sniffImageMime } from "@/lib/image-magic";
 import type { Campaign } from "@/lib/types";
+import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
+import { EVENT_MEDIA_BUCKET, eventMediaPath, removeCoverIfUnreferenced } from "@/lib/event-media";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
-const BUCKET = "event-media";
+const BUCKET = EVENT_MEDIA_BUCKET;
 
 export async function POST(request: NextRequest) {
   try {
@@ -62,19 +64,24 @@ export async function POST(request: NextRequest) {
     }
 
     const admin = createServiceRoleClient();
+    let previousCoverUrl: string | null = null;
 
     // 4. Ownership check for cover uploads
     if (uploadType === "cover" && eventId) {
       const { data: event, error: evErr } = await admin
         .from("campaigns")
-        .select("organization_id")
+        .select("organization_id, cover_image_url")
         .eq("id", eventId)
         .single();
       if (evErr || !event) {
         return NextResponse.json({ error: "Event not found" }, { status: 404 });
       }
+      previousCoverUrl = (event as { cover_image_url: string | null }).cover_image_url;
       if (!(await userCanAdminCampaign(supabase, user, event as Pick<Campaign, "organization_id">))) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+      }
+      if (!isCoverImageEnabledForOrg((event as { organization_id: string | null }).organization_id)) {
+        return NextResponse.json({ error: "Cover images aren't available yet" }, { status: 403 });
       }
     }
 
@@ -101,7 +108,8 @@ export async function POST(request: NextRequest) {
       .upload(storagePath, bytes, {
         contentType: sniffed,
         upsert: true,
-        cacheControl: "public, max-age=31536000, immutable",
+        // Seconds only; supabase-js builds the header. URLs carry ?v= so a year is safe.
+        cacheControl: "31536000",
       });
     if (uploadErr) {
       console.error("Storage upload error:", uploadErr);
@@ -138,7 +146,7 @@ export async function POST(request: NextRequest) {
       // Update campaigns.cover_image_url
       const { error: patchErr } = await admin
         .from("campaigns")
-        .update({ cover_image_url: urlWithVersion } as never)
+        .update({ cover_image_url: urlWithVersion, cover_position: null } as never)
         .eq("id", eventId!);
       if (patchErr) {
         console.error("campaigns cover_image_url update error:", patchErr);
@@ -146,6 +154,11 @@ export async function POST(request: NextRequest) {
           { error: "Failed to save cover image URL" },
           { status: 500 }
         );
+      }
+      // Clean up the old object if it lived at a different path (other
+      // format, other uploader, or a file shared from a duplicated event).
+      if (eventMediaPath(previousCoverUrl) !== storagePath) {
+        await removeCoverIfUnreferenced(admin, previousCoverUrl);
       }
     }
 
@@ -181,17 +194,19 @@ export async function DELETE(request: NextRequest) {
     }
 
     const admin = createServiceRoleClient();
+    let previousCoverUrl: string | null = null;
 
     // Ownership check for cover
     if (type === "cover" && eventId) {
       const { data: event, error: evErr } = await admin
         .from("campaigns")
-        .select("organization_id")
+        .select("organization_id, cover_image_url")
         .eq("id", eventId)
         .single();
       if (evErr || !event) {
         return NextResponse.json({ error: "Event not found" }, { status: 404 });
       }
+      previousCoverUrl = (event as { cover_image_url: string | null }).cover_image_url;
       if (!(await userCanAdminCampaign(supabase, user, event as Pick<Campaign, "organization_id">))) {
         return NextResponse.json({ error: "Forbidden" }, { status: 403 });
       }
@@ -211,13 +226,11 @@ export async function DELETE(request: NextRequest) {
     } else {
       await admin
         .from("campaigns")
-        .update({ cover_image_url: null } as never)
+        .update({ cover_image_url: null, cover_position: null } as never)
         .eq("id", eventId!);
-      const prefix = `${user.id}/events/${eventId}`;
-      const { data: listed } = await admin.storage.from(BUCKET).list(prefix);
-      const hashed = (listed ?? []).map((f) => `${prefix}/${f.name}`);
-      const legacy = ["jpg", "png", "webp"].map((ext) => `${prefix}/cover.${ext}`);
-      await admin.storage.from(BUCKET).remove([...hashed, ...legacy]);
+      // Remove the actual stored object (may belong to another admin's folder
+      // or be shared with a duplicated event — the helper checks references).
+      await removeCoverIfUnreferenced(admin, previousCoverUrl);
     }
 
     return NextResponse.json({ ok: true });
