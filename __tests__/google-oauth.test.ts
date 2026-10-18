@@ -40,7 +40,15 @@ describe("OAuth state signing", () => {
     };
 
     const signed = signState(state);
-    const tampered = signed.replace("user-123", "user-999");
+    const parts = signed.split('.');
+    
+    // Properly tamper with the payload by decoding, modifying, and re-encoding
+    const payloadB64 = parts[0];
+    const payload = Buffer.from(payloadB64, 'base64url').toString('utf-8');
+    const payloadObj = JSON.parse(payload);
+    payloadObj.userId = "user-999"; // Modify the userId
+    const tamperedPayload = Buffer.from(JSON.stringify(payloadObj)).toString('base64url');
+    const tampered = `${tamperedPayload}.${parts[1]}`; // Keep original signature with modified payload
 
     const verified = verifyState(tampered);
     expect(verified).toBeNull();
@@ -111,9 +119,11 @@ describe("Token encryption", () => {
     const plaintext = "ya29.a0AfH6SMBxxx-refresh-token-here-xxx";
     const encrypted = encryptToken(plaintext);
 
-    // Tamper with the ciphertext
+    // Tamper with the ciphertext - modify multiple characters in the middle for more reliable tampering
     const parts = encrypted.split(".");
-    parts[2] = parts[2].slice(0, -1) + "X"; // Change last character
+    const ciphertext = parts[2];
+    const midpoint = Math.floor(ciphertext.length / 2);
+    parts[2] = ciphertext.substring(0, midpoint) + "XXXX" + ciphertext.substring(midpoint + 4);
     const tampered = parts.join(".");
 
     expect(() => decryptToken(tampered)).toThrow();

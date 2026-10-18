@@ -6,7 +6,7 @@
  * Idempotent and safe to call any number of times. Never throws into callers.
  */
 
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { refreshAccessToken } from './google-oauth';
 import { createHash } from 'crypto';
 import { getPostHogClient } from './posthog-server';
@@ -20,10 +20,20 @@ import {
   markConnectionBroken,
 } from './google-calendar-health';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+let _serviceRoleClient: SupabaseClient | null = null;
+
+function getSupabaseClient(): SupabaseClient {
+  if (!_serviceRoleClient) {
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      throw new Error('Supabase configuration is missing');
+    }
+    _serviceRoleClient = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.SUPABASE_SERVICE_ROLE_KEY
+    );
+  }
+  return _serviceRoleClient;
+}
 
 export interface SyncResult {
   success: boolean;
@@ -73,7 +83,9 @@ interface SessionWithSignups {
  * Safe to call from any context — never throws, returns error in result.
  */
 export async function syncCampaignCalendar(campaignId: string): Promise<SyncResult> {
+  let supabase: SupabaseClient | null = null;
   try {
+    supabase = getSupabaseClient();
     // 1. Load sync config
     const { data: syncConfig, error: syncError } = await supabase
       .from('campaign_calendar_sync')
@@ -84,12 +96,14 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
     if (syncError || !syncConfig) {
       return { success: false, error: 'No sync config found' };
     }
+    
+    const config = syncConfig as any;
 
-    if (!syncConfig.enabled) {
+    if (!config.enabled) {
       return { success: false, error: 'Sync disabled' };
     }
 
-    const connection = syncConfig.connection as any;
+    const connection = config.connection as any;
     if (!connection || connection.revoked_at) {
       // Legacy invalid_grant rows (revoked before health tracking existed) that are
       // not yet flagged broken: flag now so the creator and founder hear about it.
@@ -230,7 +244,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
           try {
             await deleteGoogleEvent(
               accessToken,
-              syncConfig.calendar_id,
+              config.calendar_id,
               existingLink.google_event_id
             );
             await supabase
@@ -252,7 +266,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
       const event = buildGoogleEvent(
         campaign,
         session,
-        syncConfig.invite_leader,
+        config.invite_leader,
         timezone
       );
       const contentHash = computeContentHash(event);
@@ -262,7 +276,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
         try {
           const createdEvent = await createGoogleEvent(
             accessToken,
-            syncConfig.calendar_id,
+            config.calendar_id,
             event
           );
           await supabase
@@ -271,7 +285,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
               session_id: session.id,
               campaign_id: campaignId,
               google_event_id: createdEvent.id,
-              calendar_id: syncConfig.calendar_id,
+              calendar_id: config.calendar_id,
               content_hash: contentHash,
             });
           eventsCreated++;
@@ -284,7 +298,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
         try {
           await updateGoogleEvent(
             accessToken,
-            syncConfig.calendar_id,
+            config.calendar_id,
             existingLink.google_event_id,
             event
           );
@@ -308,7 +322,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
         try {
           await deleteGoogleEvent(
             accessToken,
-            syncConfig.calendar_id,
+            config.calendar_id,
             link.google_event_id
           );
           await supabase
@@ -344,25 +358,27 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
   } catch (err: any) {
     // 401 from the Calendar API right after a fresh token refresh: grant is dead.
     if (isGoogleAuthFailure(err)) {
-      try {
-        const { data: cfg } = await supabase
-          .from('campaign_calendar_sync')
-          .select('connection_id')
-          .eq('campaign_id', campaignId)
-          .maybeSingle();
-        if (cfg?.connection_id) {
-          await markConnectionBroken(supabase, {
-            connectionId: cfg.connection_id,
-            campaignId,
-            reason: err.message || String(err),
-          });
+      if (supabase) {
+        try {
+          const { data: cfg } = await supabase
+            .from('campaign_calendar_sync')
+            .select('connection_id')
+            .eq('campaign_id', campaignId)
+            .maybeSingle();
+          if (cfg?.connection_id) {
+            await markConnectionBroken(supabase, {
+              connectionId: cfg.connection_id,
+              campaignId,
+              reason: err.message || String(err),
+            });
+          }
+          await supabase
+            .from('campaign_calendar_sync')
+            .update({ last_error: CONNECTION_BROKEN_ERROR, last_synced_at: new Date().toISOString() })
+            .eq('campaign_id', campaignId);
+        } catch {
+          // best effort
         }
-        await supabase
-          .from('campaign_calendar_sync')
-          .update({ last_error: CONNECTION_BROKEN_ERROR, last_synced_at: new Date().toISOString() })
-          .eq('campaign_id', campaignId);
-      } catch {
-        // best effort
       }
       return { success: false, error: CONNECTION_BROKEN_ERROR };
     }
@@ -370,16 +386,18 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
     const errorMsg = userFacingCalendarSyncError(err.message || String(err));
     
     // Try to record error (best effort)
-    try {
-      await supabase
-        .from('campaign_calendar_sync')
-        .update({
-          last_error: errorMsg,
-          last_synced_at: new Date().toISOString(),
-        })
-        .eq('campaign_id', campaignId);
-    } catch {
-      // Ignore — already in error state
+    if (supabase) {
+      try {
+        await supabase
+          .from('campaign_calendar_sync')
+          .update({
+            last_error: errorMsg,
+            last_synced_at: new Date().toISOString(),
+          })
+          .eq('campaign_id', campaignId);
+      } catch {
+        // Ignore — already in error state
+      }
     }
 
     return { success: false, error: errorMsg };

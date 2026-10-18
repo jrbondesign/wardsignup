@@ -135,10 +135,12 @@ describe("isGcalSyncUIEnabled", () => {
     expect(isGcalSyncUIEnabled("org-1")).toBe(false);
   });
 
-  it("returns true when client flag is on and no org provided", () => {
+  it("returns false when client flag is on but no org provided (fail closed)", () => {
     process.env.NEXT_PUBLIC_FEATURE_GCAL_SYNC = "1";
+    process.env.NEXT_PUBLIC_FEATURE_GCAL_SYNC_ORG_IDS = "org-1,org-2";
     
-    expect(isGcalSyncUIEnabled()).toBe(true);
+    expect(isGcalSyncUIEnabled()).toBe(false);
+    expect(isGcalSyncUIEnabled(undefined)).toBe(false);
   });
 
   it("returns false when client flag is on, org provided, but allowlist is empty", () => {

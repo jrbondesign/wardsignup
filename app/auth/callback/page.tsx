@@ -50,6 +50,8 @@ function AuthCallbackContent() {
   const posthog = usePostHog();
   const [error, setError] = useState<string | null>(null);
   const welcomeFiredForSubRef = useRef<string | null>(null);
+  const handleCallbackRunRef = useRef(false);
+  const capturedNextRef = useRef<string | null>(null);
 
   const sendWelcomeEmail = (accessToken: string) => {
     const sub = jwtSub(accessToken);
@@ -89,7 +91,15 @@ function AuthCallbackContent() {
   };
 
   useEffect(() => {
-    const savedNext = safeReturnPath(searchParams.get("next"));
+    // Guard: run handleCallback exactly once to prevent reruns after stripSensitiveUrlParams
+    if (handleCallbackRunRef.current) return;
+    handleCallbackRunRef.current = true;
+    
+    // Capture next once at mount (before stripSensitiveUrlParams removes it)
+    if (capturedNextRef.current === null) {
+      capturedNextRef.current = safeReturnPath(searchParams.get("next"));
+    }
+    const savedNext = capturedNextRef.current;
 
     const resolveDestination = async (accessToken: string, fallback: string): Promise<string> => {
       // Multi-org users with no saved selection get the chooser inserted before their
@@ -211,7 +221,7 @@ function AuthCallbackContent() {
             });
             const clientPkce = await exchangePkceClientDeduped(code);
             if (clientPkce.ok && clientPkce.accessToken) {
-              stripSensitiveUrlParams();
+              // goToAfterAuth strips sensitive params at :120
               void goToAfterAuth(clientPkce.accessToken);
               return;
             }
@@ -231,7 +241,7 @@ function AuthCallbackContent() {
           return;
         }
 
-        stripSensitiveUrlParams();
+        // goToAfterAuth strips sensitive params at :120
 
         const supabase = createClientComponentClient();
         const {
