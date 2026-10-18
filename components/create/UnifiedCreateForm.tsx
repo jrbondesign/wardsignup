@@ -400,7 +400,6 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
           organizer_instant_notify_enabled: state.organizerInstantNotifyEnabled,
           leader_name: state.leaderName.trim() || null,
           leader_email: state.leaderEmail.trim() || null,
-          leader_signup_email_enabled: state.leaderSignupEmailEnabled,
         }),
       });
 
