@@ -4,6 +4,11 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { posthogWeeklyEventCounts } from "@/lib/posthog-query";
 import { isMetricsAdminEmail } from "@/lib/metrics-admin";
 import { founderNotifySkipEmails } from "@/lib/founder-notify";
+import {
+  computeEmailCaptureRate,
+  emailCaptureWindowStart,
+  type CaptureSignupRow,
+} from "@/lib/email-capture-rate";
 
 function toWeekKey(dateStr: string): string {
   const d = new Date(dateStr);
@@ -720,6 +725,29 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Email capture rate (Phoenix Mon to Sun weeks): signups with a non empty
+  // member_email / all signups. Paged so the 1000 row API cap never truncates it.
+  const captureWindowIso = emailCaptureWindowStart(nowDate, 8).toISOString();
+  const captureRows: CaptureSignupRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    let q = admin
+      .from("signups")
+      .select("signed_up_at, member_email")
+      .gte("signed_up_at", captureWindowIso);
+    if (brandCampaignIds !== null) q = q.in("campaign_id", brandCampaignIds);
+    const { data: page, error: pageErr } = await q
+      .order("signed_up_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (pageErr) {
+      console.error("metrics email capture:", pageErr);
+      break;
+    }
+    captureRows.push(...((page ?? []) as CaptureSignupRow[]));
+    if (!page || page.length < 1000) break;
+  }
+  const emailCapture = computeEmailCaptureRate(captureRows, nowDate, 8);
+
   return NextResponse.json({
     totalEvents: totalEvents ?? 0,
     totalSessions: totalSessions ?? 0,
@@ -756,6 +784,7 @@ export async function GET(request: NextRequest) {
       monthlyTrend,
       bySource: thisMonthBySource,
     },
+    emailCapture,
     totalUsers,
     newUsersThisWeek,
     activeUsersThisWeek,

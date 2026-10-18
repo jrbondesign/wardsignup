@@ -9,6 +9,7 @@ import { escapeHtml } from "@/lib/html-escape";
 import { getResendForBrand } from "@/lib/resend-for-brand";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { withUtm } from "@/lib/utm";
+import { buildWelcomeEmail } from "@/lib/welcome-email";
 
 /** Welcome replies: must be an address that receives mail (e.g. Cloudflare Email Routing → your inbox). */
 const welcomeReplyTo =
@@ -201,7 +202,6 @@ export async function POST(request: NextRequest) {
       "there";
 
     const welcomeSubject = brand.email.welcomeSubject;
-    const safeFirst = escapeHtml(firstName);
     const quickPlain = brand.email.welcomeQuickStartBold;
     
     // Add UTM tracking to welcome email CTA
@@ -211,23 +211,13 @@ export async function POST(request: NextRequest) {
       utm_campaign: 'creator_welcome'
     });
     
-    const welcomeText = `Hi ${firstName},
-
-Thanks for signing up — you're one of our very first users!
-
-Quick start: ${quickPlain}
-
-✨ Members don't need an account. They just open your link, pick a slot, and enter their name.
-
-This is free to use — if anything feels off, just reply. I read every message.
-
-One quick question: What's the first event you plan to use it for?
-
-Thanks again,
-Jonathan
-
-${brand.name} · ${siteUrlWithUtm}
-Made with ❤️ in Arizona`;
+    const { text: welcomeText, html: welcomeHtml } = buildWelcomeEmail({
+      firstName,
+      quickPlain,
+      brandName: brand.name,
+      siteHost: brand.siteHost,
+      siteUrlWithUtm,
+    });
 
     // Send welcome email (must succeed before we mark welcome_sent)
     // Non urgent: queued until just after the UTC quota reset when sent late in the UTC day.
@@ -241,45 +231,7 @@ Made with ❤️ in Arizona`;
       to: canonicalUser.email!,
       subject: welcomeSubject,
       text: welcomeText,
-      html: `
-        <div style="font-family: Georgia, 'Times New Roman', serif; max-width: 560px; margin: 0 auto; padding: 40px 20px; color: #0D2B35;">
-
-          <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">Hi ${safeFirst},</p>
-
-          <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
-            Thanks for signing up — you're one of our very first users!
-          </p>
-
-          <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
-            <strong>Quick start:</strong> ${escapeHtml(quickPlain)}
-          </p>
-
-          <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
-            ✨ Members don't need an account. They just open your link, pick a slot, and enter their name.
-          </p>
-
-          <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
-            This is free to use — if anything feels off, just reply. I read every message.
-          </p>
-
-          <p style="font-size: 16px; line-height: 1.7; margin: 0 0 24px;">
-            One quick question: What's the first event you plan to use it for?
-          </p>
-
-          <p style="font-size: 16px; line-height: 1.7; margin: 0 0 4px;">Thanks again,</p>
-          <p style="font-size: 16px; line-height: 1.7; margin: 0 0 24px;">Jonathan</p>
-
-          <div style="margin: 0; padding: 0; color: #5A8399;">
-            <div style="margin: 0; padding: 0; font-size: 14px; line-height: 1.45;">
-              ${escapeHtml(brand.name)} · <a href="${escapeHtml(siteUrlWithUtm)}" style="color: #0E96B0; text-decoration: none;">${escapeHtml(brand.siteHost)}</a>
-            </div>
-            <div style="margin: 0; padding: 0; font-size: 13px; line-height: 1.45;">
-              Made with ❤️ in Arizona
-            </div>
-          </div>
-
-        </div>
-      `,
+      html: welcomeHtml,
     });
 
     if (!welcomeSend.ok) {

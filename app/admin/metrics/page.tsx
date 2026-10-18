@@ -8,6 +8,12 @@ import Navigation from "@/components/Navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 
+type EmailCaptureWeekRow = { weekStart: string; total: number; withEmail: number; ratePct: number | null };
+
+function formatCaptureRate(w: EmailCaptureWeekRow): string {
+  return w.ratePct === null ? "n/a" : `${w.ratePct.toFixed(1)}%`;
+}
+
 const GeographyMap = dynamic(() => import("@/components/GeographyMap"), {
   ssr: false,
   loading: () => (
@@ -68,6 +74,10 @@ interface MetricsData {
       bySource: Record<string, number>;
     }>;
     bySource: Record<string, number>;
+  };
+  emailCapture?: {
+    thisWeek: EmailCaptureWeekRow;
+    completedWeeks: EmailCaptureWeekRow[];
   };
   totalUsers: number;
   newUsersThisWeek: number;
@@ -402,6 +412,72 @@ export default function MetricsPage() {
                   <strong className="ml-3">Stakes:</strong> Stake data is not tracked in the database, so stakes per month cannot be reported.
                 </p>
               </div>
+
+              {/* Email capture rate */}
+              {data.emailCapture && (() => {
+                const ec = data.emailCapture;
+                const lastDone = ec.completedWeeks[ec.completedWeeks.length - 1];
+                return (
+                  <div className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6" data-testid="email-capture-card">
+                    <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-2">
+                      Email capture rate
+                    </div>
+                    <p className="text-[13px] text-[#5A8399] mb-5 max-w-3xl">
+                      Signups that include an email (and so can get a reminder) divided by all signups, per week, Monday to Sunday in Phoenix time.
+                      Counts signups that still exist; cancelled signups are gone from the database.
+                    </p>
+                    <div className="grid sm:grid-cols-2 gap-6 mb-6">
+                      <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
+                        <div className="text-[13px] text-[#5A8399] mb-2 font-medium">This week so far</div>
+                        <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
+                          {formatCaptureRate(ec.thisWeek)}
+                        </div>
+                        <div className="text-[12px] text-[#5A8399] mt-3 tabular-nums">
+                          {ec.thisWeek.withEmail} of {ec.thisWeek.total} signups
+                        </div>
+                      </div>
+                      {lastDone && (
+                        <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
+                          <div className="text-[13px] text-[#5A8399] mb-2 font-medium">Last completed week</div>
+                          <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
+                            {formatCaptureRate(lastDone)}
+                          </div>
+                          <div className="text-[12px] text-[#5A8399] mt-3 tabular-nums">
+                            {lastDone.withEmail} of {lastDone.total} signups
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                    <div className="border-t border-[rgba(14,150,176,0.10)] pt-5">
+                      <div className="text-[12px] font-semibold text-[#0D2B35] mb-4">Weekly trend (last 8 completed weeks)</div>
+                      <div className="overflow-x-auto">
+                        <table className="w-full">
+                          <thead>
+                            <tr className="text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] border-b border-[rgba(14,150,176,0.10)]">
+                              <th className="text-left pb-3 pr-4 font-semibold">Week of</th>
+                              <th className="text-right pb-3 px-3 font-semibold">Signups</th>
+                              <th className="text-right pb-3 px-3 font-semibold">With email</th>
+                              <th className="text-right pb-3 pl-3 font-semibold">Rate</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {[...ec.completedWeeks].reverse().map((w) => (
+                              <tr key={w.weekStart} className="border-b border-[rgba(14,150,176,0.06)] last:border-0">
+                                <td className="py-3 pr-4 text-[13px] text-[#5A8399]">
+                                  {new Date(`${w.weekStart}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" })}
+                                </td>
+                                <td className="py-3 px-3 text-right text-[13px] text-[#0D2B35] tabular-nums">{w.total}</td>
+                                <td className="py-3 px-3 text-right text-[13px] text-[#0D2B35] tabular-nums">{w.withEmail}</td>
+                                <td className="py-3 pl-3 text-right text-[14px] font-semibold text-[#0E96B0] tabular-nums">{formatCaptureRate(w)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Distribution — signups & events (this calendar week) */}
               <div className="grid sm:grid-cols-3 gap-4">

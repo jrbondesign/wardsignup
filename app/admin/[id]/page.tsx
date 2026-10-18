@@ -15,6 +15,7 @@ import PostCreateSupportPrompt from "@/components/PostCreateSupportPrompt";
 import { useBrand } from "@/components/BrandProvider";
 import { campaignMatchesHostBrand } from "@/lib/campaign-brand-guard";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
+import CreatorRemindersNote from "@/components/CreatorRemindersNote";
 import { compareBySortOrder } from "@/lib/session-sort-order";
 import OrgLogoButton from "@/components/OrgLogoButton";
 import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
@@ -101,6 +102,8 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
 
   const [event, setEvent] = useState<any>(null);
   const [eventType, setEventType] = useState<"spots" | "items" | "rsvp">("spots");
+  /** Set only after the creator / manager access check passes. */
+  const [viewerCanManage, setViewerCanManage] = useState(false);
   const [sessions, setSessions] = useState<SessionWithSignups[]>([]);
   const [items, setItems] = useState<CampaignItemWithSignups[]>([]);
   const [customSignups, setCustomSignups] = useState<{ id: string; member_name: string; member_email: string | null; custom_label: string | null; signup_note: string | null; quantity: number }[]>([]);
@@ -351,6 +354,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
         return;
       }
 
+      setViewerCanManage(true);
       setEvent(eventData);
       setCoverUrl((eventData as any).cover_image_url ?? null);
       setCoverPosition((eventData as any).cover_position ?? null);
@@ -1170,6 +1174,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                 </button>
               </div>
             </div>
+            <CreatorRemindersNote viewerCanManage={viewerCanManage} eventType={eventType} />
             </div>{/* end p-7 */}
           </div>
 

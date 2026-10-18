@@ -1,6 +1,7 @@
 "use client";
 
 import EmailTypoHint from "@/components/EmailTypoHint";
+import { signerEmailHint } from "@/lib/reminder-copy";
 import { Fragment, use, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
@@ -860,9 +861,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                       disabled={submitting} />
                     <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />
                     <p className="mt-1.5 text-[11px] text-[#5A8399] leading-snug">
-                      {sessions.some((s: any) => s.session_date)
-                        ? "Add your email to get a reminder the day before — we never share or sell your info."
-                        : "Optional — for updates from the organizer. We never share or sell your info."}
+                      {signerEmailHint(sessions)}
                     </p>
                   </div>
                   <div>
@@ -1520,9 +1519,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70" />
                 <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />
                 <p className="mt-1.5 text-[11px] text-[#5A8399] leading-snug">
-                  {sessions.some((s: any) => s.session_date)
-                    ? "Add your email to get a reminder the day before — we never share or sell your info."
-                    : "Optional — for updates from the organizer. We never share or sell your info."}
+                  {signerEmailHint(sessions)}
                 </p>
               </div>
               <div>
