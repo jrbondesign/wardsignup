@@ -694,6 +694,32 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Total wards (all-time count of distinct orgs with at least one published sheet)
+  const totalWards = orgFirstEventMap.size;
+
+  // New wards this week (Phoenix time, Monday-start week)
+  // Phoenix is America/Phoenix (UTC-7, no DST)
+  const phoenixOffset = -7 * 60; // minutes
+  const nowPhoenix = new Date(nowDate.getTime() + phoenixOffset * 60 * 1000);
+  
+  // Get the Monday of the current week in Phoenix time
+  const phoenixDay = nowPhoenix.getUTCDay();
+  const phoenixDaysSinceMonday = phoenixDay === 0 ? 6 : phoenixDay - 1; // 0 = Sunday, treat as day 6
+  const phoenixWeekStart = new Date(nowPhoenix);
+  phoenixWeekStart.setUTCDate(phoenixWeekStart.getUTCDate() - phoenixDaysSinceMonday);
+  phoenixWeekStart.setUTCHours(0, 0, 0, 0);
+  
+  // Convert back to UTC for comparison
+  const weekStartUTC = new Date(phoenixWeekStart.getTime() - phoenixOffset * 60 * 1000);
+  const weekStartISO = weekStartUTC.toISOString();
+
+  let newWardsThisWeek = 0;
+  for (const { date } of orgFirstEventMap.values()) {
+    if (date >= weekStartISO) {
+      newWardsThisWeek += 1;
+    }
+  }
+
   return NextResponse.json({
     totalEvents: totalEvents ?? 0,
     totalSessions: totalSessions ?? 0,
@@ -723,6 +749,8 @@ export async function GET(request: NextRequest) {
       fourWeekAvgNewCreators,
     },
     newWards: {
+      total: totalWards,
+      newThisWeek: newWardsThisWeek,
       thisMonth: thisMonthData?.count || 0,
       lastMonth: lastMonthData?.count || 0,
       monthlyTrend,

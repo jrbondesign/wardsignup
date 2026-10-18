@@ -58,6 +58,8 @@ interface MetricsData {
     fourWeekAvgNewCreators: number;
   };
   newWards: {
+    total: number;
+    newThisWeek: number;
     thisMonth: number;
     lastMonth: number;
     monthlyTrend: Array<{
@@ -295,17 +297,42 @@ export default function MetricsPage() {
               {/* New Wards metric */}
               <div className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6">
                 <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-2">
-                  New wards per month
+                  New wards
                 </div>
                 <p className="text-[13px] text-[#5A8399] mb-5 max-w-3xl">
-                  A <strong className="text-[#2E5566] font-semibold">ward</strong> is an organization whose first published event (with at least one slot) was created in that month.
+                  A <strong className="text-[#2E5566] font-semibold">ward</strong> is an organization whose first published event (with at least one slot) was created.
                   Test and team accounts are excluded. Attribution shows the source of each ward creator&apos;s first touch (Unknown for accounts created before attribution tracking).
                 </p>
                 
+                {/* Total and New This Week - Prominent Cards */}
                 <div className="grid sm:grid-cols-2 gap-6 mb-6">
+                  <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
+                    <div className="text-[13px] text-[#5A8399] mb-2 font-medium">Total wards (all time)</div>
+                    <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
+                      {data.newWards.total}
+                    </div>
+                    <div className="text-[12px] text-[#5A8399] mt-3">
+                      Organizations with at least one published event
+                    </div>
+                  </div>
+                  <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
+                    <div className="text-[13px] text-[#5A8399] mb-2 font-medium">
+                      New this week (since Mon, Phoenix time)
+                    </div>
+                    <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
+                      {data.newWards.newThisWeek}
+                    </div>
+                    <div className="text-[12px] text-[#5A8399] mt-3">
+                      Wards whose first published event falls in current week
+                    </div>
+                  </div>
+                </div>
+
+                {/* Monthly Stats */}
+                <div className="grid sm:grid-cols-2 gap-6 mb-6 pt-4 border-t border-[rgba(14,150,176,0.10)]">
                   <div>
                     <div className="text-[13px] text-[#5A8399] mb-1">This month so far</div>
-                    <div className="text-[48px] font-semibold text-[#0E96B0] leading-none tabular-nums">
+                    <div className="text-[40px] font-semibold text-[#0D2B35] leading-none tabular-nums">
                       {data.newWards.thisMonth}
                     </div>
                   </div>
