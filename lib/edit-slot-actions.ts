@@ -156,5 +156,5 @@ export function removeSectionConfirmBody(slots: number, signups: number): string
   const slotText = `${slots} ${slots === 1 ? "slot" : "slots"}`;
   return signups > 0
     ? `This removes ${slotText} and ${signups} ${signups === 1 ? "signup" : "signups"} in this section. Changes apply when you save.`
-    : `This removes ${slotText}. No one has signed up yet. Changes apply when you save.`;
+    : `This removes the ${slotText} in this section. No one has signed up yet, and nothing changes until you save.`;
 }
