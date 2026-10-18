@@ -12,7 +12,7 @@ import Toast from "@/components/Toast";
 import { useBrand } from "@/components/BrandProvider";
 import OrgLogoButton from "@/components/OrgLogoButton";
 import OrgNameModal from "@/components/OrgNameModal";
-import OrgSwitcher from "@/components/OrgSwitcher";
+import OrgSettingsEntry from "@/components/OrgSettingsEntry";
 import { getCurrentOrganization } from "@/lib/organizations";
 import ConnectToClaudeCard from "@/components/ConnectToClaudeCard";
 import { CLAUDE_MCP_ENABLED } from "@/lib/claude-mcp";
@@ -350,11 +350,8 @@ export default function DashboardPage() {
                   {orgName ?? "My Events"}
                 </h1>
               </div>
-              <p className="text-sm text-[#5A8399] flex items-center gap-2">
-                <span>Manage your ward signups</span>
-                <OrgSwitcher />
-              </p>
-              <p className="text-xs text-[#5A8399] mt-2 max-w-xl leading-relaxed">
+              <OrgSettingsEntry isWardBrand={isWardBrand} />
+              <p className="text-xs text-[#5A8399] mt-3 max-w-xl leading-relaxed">
                 {isUnlimited
                   ? isWardBrand
                     ? "Share links with your ward—people who sign up don’t need an account."
@@ -378,7 +375,7 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
-            {/* "New Event" — secondary action, shown only when events exist */}
+            {/* "New Event": the page's filled primary action, shown only when events exist */}
             {events.length > 0 && (
               atLimit ? (
                 <div className="flex-shrink-0 text-right max-w-xs">
@@ -398,7 +395,7 @@ export default function DashboardPage() {
               ) : (
                 <Link
                   href="/create"
-                  className="flex-shrink-0 inline-flex items-center gap-2 text-sm font-semibold px-5 py-2.5 rounded-full border-[1.5px] border-[#0E96B0]/35 text-[#08647E] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all no-underline"
+                  className="flex-shrink-0 inline-flex items-center justify-center gap-2 text-sm font-semibold px-6 py-3 rounded-full bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:-translate-y-0.5 hover:shadow-[0_6px_20px_rgba(14,150,176,0.45)] transition-all no-underline"
                 >
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
                     <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>

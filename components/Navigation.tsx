@@ -6,10 +6,13 @@ import Link from "next/link";
 import Image from "next/image";
 import { useBrand } from "@/components/BrandProvider";
 import { createClientComponentClient } from "@/lib/auth";
+import { usePostHog } from "posthog-js/react";
+import { GearIcon } from "@/components/OrgSettingsEntry";
 
 export default function Navigation() {
   const brand = useBrand();
   const router = useRouter();
+  const posthog = usePostHog();
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -64,6 +67,17 @@ export default function Navigation() {
           <Link href="/create" className="text-sm font-medium text-[#2E5566] hover:text-[#0D2B35] px-4 py-2 rounded-full hover:bg-[#0E96B0]/8 transition-all no-underline">
             Create Event
           </Link>
+          <Link
+            href="/settings/organization"
+            onClick={() => posthog?.capture("org_settings_opened", { source: "nav" })}
+            aria-label="Organization settings"
+            className="hidden lg:inline-flex items-center gap-1.5 text-sm font-medium text-[#2E5566] hover:text-[#0D2B35] px-4 py-2 rounded-full hover:bg-[#0E96B0]/8 transition-all no-underline whitespace-nowrap"
+          >
+            <GearIcon className="w-4 h-4 text-[#5A8399]" />
+            {/* Short label at lg so the centered links clear the logo and email */}
+            <span className="xl:hidden">Settings</span>
+            <span className="hidden xl:inline">Organization settings</span>
+          </Link>
           {isFounder && (
             <Link href="/admin/metrics" className="text-sm font-medium text-[#2E5566] hover:text-[#0D2B35] px-4 py-2 rounded-full hover:bg-[#0E96B0]/8 transition-all no-underline">
               Metrics
@@ -73,7 +87,7 @@ export default function Navigation() {
 
         {/* Right side */}
         <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
-          <span className="text-sm text-[#5A8399] hidden lg:block truncate max-w-[200px]">
+          <span className="text-sm text-[#5A8399] hidden xl:block truncate max-w-[200px]">
             {user.email}
           </span>
           {/* Desktop sign out */}
@@ -126,6 +140,16 @@ export default function Navigation() {
                   <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
                 </svg>
                 Create Event
+              </Link>
+              <Link
+                href="/settings/organization"
+                onClick={() => {
+                  posthog?.capture("org_settings_opened", { source: "nav" });
+                  setMenuOpen(false);
+                }}
+                className="flex items-center gap-3 px-3 py-3 rounded-xl text-sm font-medium text-[#0D2B35] hover:bg-[#F4FAFB] transition-colors no-underline">
+                <GearIcon className="w-4 h-4 text-[#5A8399]" />
+                Organization settings
               </Link>
               {isFounder && (
                 <Link href="/admin/metrics" onClick={() => setMenuOpen(false)}
