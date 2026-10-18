@@ -1,6 +1,7 @@
 import type { PublicBrand } from "@/lib/brand";
 import { getDefaultPublicBrand } from "@/lib/brand";
 import { isTipJarEnabled, supportPageOutboundUrl } from "@/lib/tip-jar";
+import { withUtm } from "@/lib/utm";
 
 /** Canonical public site URL (no trailing slash). Env override for APIs/crons without request host. */
 export const SITE_URL =
@@ -28,7 +29,11 @@ export const PARTICIPANT_EMAIL_PRIVACY_LINE =
 export function buildOrganizerEmailFooterHtml(
   brand: PublicBrand = getDefaultPublicBrand(),
 ): string {
-  const site = brand.siteUrl;
+  const siteWithUtm = withUtm(brand.siteUrl, {
+    utm_source: "organizer_email",
+    utm_medium: "email",
+    utm_campaign: "footer_share"
+  });
   const host = brand.siteHost;
   const tdStyle = "font-size:12px;color:#5A8399;line-height:1.6;word-break:break-word;overflow-wrap:break-word;";
   const supportUrl = supportPageOutboundUrl(brand, {
@@ -49,12 +54,12 @@ export function buildOrganizerEmailFooterHtml(
       </td></tr>
       <tr><td style="${tdStyle}padding-top:10px;">
         Know someone who could use this?<br>
-        Share <a href="${site}" style="color:#0E96B0;font-weight:600;text-decoration:none;">${host}</a> with a friend.
+        Share <a href="${siteWithUtm}" style="color:#0E96B0;font-weight:600;text-decoration:none;">${host}</a> with a friend.
       </td></tr>
       ${tipLine}
       <tr><td style="${tdStyle}padding-top:12px;">
         Made with <span style="color:#ef4444;">&#9829;</span> from Arizona ·
-        <a href="${site}" style="color:#0E96B0;text-decoration:none;">${brand.name}</a>
+        <a href="${siteWithUtm}" style="color:#0E96B0;text-decoration:none;">${brand.name}</a>
       </td></tr>
     </table>
   `;
@@ -67,10 +72,15 @@ export function buildOrganizerEmailFooterHtml(
 export function buildBrandSignatureFooterHtml(
   brand: PublicBrand = getDefaultPublicBrand(),
 ): string {
+  const siteWithUtm = withUtm(brand.siteUrl, {
+    utm_source: "email",
+    utm_medium: "email",
+    utm_campaign: "signature"
+  });
   return `
     <div style="margin:0;padding:0;color:#5A8399;">
       <div style="font-size:14px;line-height:1.45;">
-        ${brand.name} · <a href="${brand.siteUrl}" style="color:#0E96B0;text-decoration:none;">${brand.siteHost}</a>
+        ${brand.name} · <a href="${siteWithUtm}" style="color:#0E96B0;text-decoration:none;">${brand.siteHost}</a>
       </div>
       <div style="font-size:13px;line-height:1.45;">
         Made with ❤️ in Arizona
@@ -82,7 +92,11 @@ export function buildBrandSignatureFooterHtml(
 export function buildParticipantEmailFooterHtml(
   brand: PublicBrand = getDefaultPublicBrand(),
 ): string {
-  const site = brand.siteUrl;
+  const siteWithUtm = withUtm(brand.siteUrl, {
+    utm_source: "participant_email",
+    utm_medium: "email",
+    utm_campaign: "footer_cta"
+  });
   const tdStyle = "font-size:12px;color:#5A8399;line-height:1.6;word-break:break-word;overflow-wrap:break-word;";
   return `
     <table width="100%" cellpadding="0" cellspacing="0" border="0" style="table-layout:fixed;border-collapse:collapse;">
@@ -91,11 +105,11 @@ export function buildParticipantEmailFooterHtml(
       </td></tr>
       <tr><td style="${tdStyle}padding-top:10px;">
         Need to organize your own event?
-        <a href="${site}" style="color:#0E96B0;font-weight:600;text-decoration:none;word-break:break-all;">Create a free signup at ${brand.name}</a>.
+        <a href="${siteWithUtm}" style="color:#0E96B0;font-weight:600;text-decoration:none;word-break:break-all;">Create a free signup at ${brand.name}</a>.
       </td></tr>
       <tr><td style="${tdStyle}padding-top:12px;">
         Made with <span style="color:#ef4444;">&#9829;</span> from Arizona &nbsp;·&nbsp;
-        <a href="${site}" style="color:#0E96B0;text-decoration:none;">${brand.name}</a>
+        <a href="${siteWithUtm}" style="color:#0E96B0;text-decoration:none;">${brand.name}</a>
       </td></tr>
     </table>
   `;

@@ -312,6 +312,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setItemSubmitting(true);
     setItemError("");
     try {
+      const { getAttributionForSubmission } = await import("@/lib/attribution");
       const res = await fetch("/api/item-signups", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
@@ -322,6 +323,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           member_email: itemFormData.email,
           signup_note: itemFormData.note,
           quantity: itemFormData.quantity,
+          ...(getAttributionForSubmission() || {}),
         }),
       });
       if (!res.ok) {
@@ -348,6 +350,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     setCustomSubmitting(true);
     setCustomError("");
     try {
+      const { getAttributionForSubmission } = await import("@/lib/attribution");
       const res = await fetch("/api/item-signups", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
@@ -357,6 +360,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           member_name: customItem.name.trim(),
           signup_note: customItem.note.trim() || null,
           quantity: 1,
+          ...(getAttributionForSubmission() || {}),
         }),
       });
       if (!res.ok) {
@@ -389,6 +393,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       const cleanGuests = guestNames.map((n) => n.trim()).filter(Boolean);
 
       // Single bulk request → single confirmation email covering every slot.
+      const { getAttributionForSubmission } = await import("@/lib/attribution");
       const r = await fetch("/api/signups/bulk", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
@@ -400,6 +405,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
           member_phone: formData.phone,
           signup_note: formData.note || undefined,
           guest_names: cleanGuests,
+          ...(getAttributionForSubmission() || {}),
         }),
       });
       const json = await r.json().catch(() => ({}));

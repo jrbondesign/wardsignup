@@ -9,6 +9,13 @@ export type UserOrgListItem = CurrentOrg & {
   role: UserOrgRole;
 };
 
+export interface AttributionData {
+  first_touch_utm_source?: string;
+  first_touch_utm_medium?: string;
+  first_touch_utm_campaign?: string;
+  first_touch_ref?: string;
+}
+
 /**
  * Returns every org the user can access on this brand: orgs they own AND orgs where
  * they have an accepted membership row. Owner-orgs win when both apply.
@@ -120,16 +127,36 @@ export async function setSelectedOrganization(
 /**
  * Creates a new organization. The seed_owner_membership trigger inserts the matching
  * accepted owner row in `organization_members`. Caller must validate name and brand.
+ * 
+ * @param attribution - Optional first-touch attribution to capture at org creation
  */
 export async function createOrganization(
   supabase: SupabaseClient,
   user: Pick<User, "id">,
   brandId: string,
   name: string,
+  attribution?: AttributionData | null,
 ): Promise<CurrentOrg> {
+  const insertData: Record<string, unknown> = {
+    brand_id: brandId,
+    name,
+    created_by: user.id,
+    owner_id: user.id,
+    needs_naming: false,
+  };
+  
+  // Capture creator's first-touch attribution at org creation
+  if (attribution) {
+    if (attribution.first_touch_utm_source) insertData.first_touch_utm_source = attribution.first_touch_utm_source;
+    if (attribution.first_touch_utm_medium) insertData.first_touch_utm_medium = attribution.first_touch_utm_medium;
+    if (attribution.first_touch_utm_campaign) insertData.first_touch_utm_campaign = attribution.first_touch_utm_campaign;
+    if (attribution.first_touch_ref) insertData.first_touch_ref = attribution.first_touch_ref;
+    insertData.first_touch_captured_at = new Date().toISOString();
+  }
+  
   const { data, error } = await supabase
     .from("organizations")
-    .insert({ brand_id: brandId, name, created_by: user.id, owner_id: user.id, needs_naming: false } as never)
+    .insert(insertData as never)
     .select("id, name, needs_naming, brand_id")
     .single();
   if (error || !data) throw new Error(error?.message ?? "Failed to create organization");

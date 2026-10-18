@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { consumeActionRate } from "@/lib/rate-limit";
+import { createHash } from "crypto";
+
+function hashToken(token: string): string {
+  return createHash("sha256").update(token).digest("hex");
+}
 
 /** POST /api/organizations/accept { token } — claim a co-admin invitation. */
 export async function POST(request: NextRequest) {
@@ -11,6 +17,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: auth.message }, { status: auth.status });
     }
     const { user } = auth;
+
+    // Rate limit: per IP
+    const rate = await consumeActionRate("accept_invite", request, 10);
+    if (!rate.allowed) {
+      return NextResponse.json(
+        { error: "Too many requests. Please try again later." },
+        { status: 429 },
+      );
+    }
 
     const body = await request.json().catch(() => ({}));
     const token = typeof body?.token === "string" ? body.token : "";
@@ -24,92 +39,89 @@ export async function POST(request: NextRequest) {
         { status: 500 },
       );
     }
-    const admin = createServiceRoleClient();
 
-    const { data: row, error: lookupErr } = await admin
-      .from("organization_members")
-      .select("id, organization_id, invited_email, status, token_expires_at, transfer_on_accept")
-      .eq("accept_token", token)
-      .maybeSingle();
-    if (lookupErr) {
-      console.error("Accept invite: lookup error:", lookupErr);
-      return NextResponse.json({ error: "Failed to look up invitation" }, { status: 500 });
-    }
-    if (!row) {
-      return NextResponse.json({ error: "Invitation not found" }, { status: 404 });
-    }
+    const tokenHash = hashToken(token);
 
-    const member = row as {
-      id: string;
-      organization_id: string;
-      invited_email: string;
-      status: string;
-      token_expires_at: string | null;
-      transfer_on_accept: boolean;
-    };
-    if (member.status !== "pending") {
-      return NextResponse.json({ error: "This invitation has already been used" }, { status: 410 });
-    }
-    if (member.token_expires_at && new Date(member.token_expires_at).getTime() < Date.now()) {
-      return NextResponse.json({ error: "This invitation has expired" }, { status: 410 });
-    }
-    if ((user.email ?? "").toLowerCase() !== member.invited_email.toLowerCase()) {
-      return NextResponse.json(
-        { error: "Sign in with the invited email address to accept this invitation." },
-        { status: 403 },
-      );
-    }
+    // Use the transactional RPC function for secure acceptance
+    // Must use the user's own session client (not service-role) so auth.uid() works
+    const { data: result, error: acceptErr } = await auth.supabase.rpc(
+      "accept_organization_invite",
+      { p_token_hash: tokenHash } as never,
+    );
 
-    const { error: updateErr } = await admin
-      .from("organization_members")
-      .update({
-        user_id: user.id,
-        status: "accepted",
-        accepted_at: new Date().toISOString(),
-        accept_token: null,
-        token_expires_at: null,
-      } as never)
-      .eq("id", member.id);
-    if (updateErr) {
-      console.error("Accept invite: update error:", updateErr);
+    if (acceptErr) {
+      // Log full error details for server diagnostics (not sent to client)
+      console.error("Accept invite RPC error:", {
+        code: acceptErr.code,
+        message: acceptErr.message,
+        details: acceptErr.details,
+        hint: acceptErr.hint,
+      });
+      
+      // Handle specific error codes
+      if (acceptErr.code === "P0002") {
+        return NextResponse.json({ error: "Invitation not found or expired" }, { status: 404 });
+      }
+      if (acceptErr.code === "42501") {
+        return NextResponse.json(
+          { error: "Sign in with the invited email address to accept this invitation." },
+          { status: 403 },
+        );
+      }
+      if (acceptErr.code === "42702") {
+        // Ambiguous column reference - should not happen after migration
+        console.error("CRITICAL: Ambiguous column error in accept_organization_invite - migration not applied?");
+      }
+
       return NextResponse.json({ error: "Failed to accept invitation" }, { status: 500 });
     }
 
-    // Handoff invite: promote the new member to owner and demote the previous owner
-    // to admin in one atomic RPC. If this fails, the invitee is still a regular admin
-    // — we surface the error but don't roll back the acceptance.
-    let ownershipTransferred = false;
-    if (member.transfer_on_accept) {
-      const { error: transferErr } = await admin.rpc("transfer_organization_ownership", {
-        p_org_id: member.organization_id,
-        p_new_owner_user_id: user.id,
-      } as never);
-      if (transferErr) {
-        console.error("Accept invite: ownership transfer error:", transferErr);
-        return NextResponse.json(
-          {
-            organization_id: member.organization_id,
-            error:
-              "Invitation accepted, but ownership could not be transferred automatically. Ask the previous owner to retry from organization settings.",
-          },
-          { status: 500 },
-        );
-      }
-      ownershipTransferred = true;
+    if (!result || (Array.isArray(result) && (result as unknown[]).length === 0)) {
+      return NextResponse.json({ error: "Failed to accept invitation" }, { status: 500 });
     }
+
+    const resultData = Array.isArray(result) ? (result as unknown[])[0] : result;
+    const organizationId = (resultData as { organization_id: string }).organization_id;
+    const organizationName = (resultData as { organization_name: string }).organization_name;
+    const ownershipTransferred = (resultData as { ownership_transferred: boolean }).ownership_transferred;
+    const alreadyMember = (resultData as { already_member: boolean }).already_member;
 
     const posthog = getPostHogClient();
     posthog.capture({
       distinctId: user.id,
       event: "org_member_accepted",
       properties: {
-        organization_id: member.organization_id,
+        organization_id: organizationId,
         ownership_transferred: ownershipTransferred,
+        already_member: alreadyMember,
       },
     });
 
+    // Determine where to send the user after acceptance:
+    // 1. If exactly one active campaign, go to its admin page
+    // 2. Otherwise, go to dashboard filtered by this org
+    const admin = createServiceRoleClient();
+    const { data: campaigns } = await admin
+      .from("campaigns")
+      .select("id")
+      .eq("organization_id", organizationId)
+      .order("created_at", { ascending: false })
+      .limit(2);
+
+    let destination = "/dashboard";
+    if (campaigns && Array.isArray(campaigns) && campaigns.length === 1) {
+      destination = `/admin/${(campaigns[0] as { id: string }).id}`;
+    } else if (campaigns && Array.isArray(campaigns) && campaigns.length > 0) {
+      destination = `/dashboard?org=${organizationId}`;
+    }
+
     return NextResponse.json(
-      { organization_id: member.organization_id, ownership_transferred: ownershipTransferred },
+      {
+        organization_id: organizationId,
+        organization_name: organizationName,
+        ownership_transferred: ownershipTransferred,
+        destination,
+      },
       { status: 200 },
     );
   } catch (error) {

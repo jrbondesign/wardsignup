@@ -174,7 +174,6 @@ export default function EditEventPage() {
   const [showCapacityPublicly, setShowCapacityPublicly] = useState(true);
   const [leaderName, setLeaderName] = useState("");
   const [leaderEmail, setLeaderEmail] = useState("");
-  const [leaderSignupEmailEnabled, setLeaderSignupEmailEnabled] = useState(false);
   // Debounce leader-field auto-save so we don't PATCH on every keystroke.
   const leaderSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   
@@ -353,7 +352,6 @@ export default function EditEventPage() {
 
         setLeaderName((event as any).leader_name ?? "");
         setLeaderEmail((event as any).leader_email ?? "");
-        setLeaderSignupEmailEnabled(Boolean((event as any).leader_signup_email_enabled));
         setDigestEnabled(Boolean((event as any).organizer_digest_enabled));
         setInstantEnabled(Boolean((event as any).organizer_instant_notify_enabled));
         setShowSignupsPublicly(Boolean((event as any).show_signups_publicly));
@@ -552,7 +550,6 @@ export default function EditEventPage() {
   const patchCampaignFields = async (partial: {
     organizer_digest_enabled?: boolean;
     organizer_instant_notify_enabled?: boolean;
-    leader_signup_email_enabled?: boolean;
     show_signups_publicly?: boolean;
     list_on_directory?: boolean;
     event_timezone?: string;
@@ -633,7 +630,7 @@ export default function EditEventPage() {
 
     const saveBool = (
       key: keyof CreateFormState,
-      apiKey: "show_signups_publicly" | "list_on_directory" | "organizer_digest_enabled" | "organizer_instant_notify_enabled" | "leader_signup_email_enabled" | "allow_guests" | "show_capacity_publicly",
+      apiKey: "show_signups_publicly" | "list_on_directory" | "organizer_digest_enabled" | "organizer_instant_notify_enabled" | "allow_guests" | "show_capacity_publicly",
       current: boolean,
       setter: (v: boolean) => void,
     ) => {
@@ -654,7 +651,6 @@ export default function EditEventPage() {
     saveBool("listOnDirectory", "list_on_directory", listOnDirectory, setListOnDirectory);
     saveBool("organizerDigestEnabled", "organizer_digest_enabled", digestEnabled, setDigestEnabled);
     saveBool("organizerInstantNotifyEnabled", "organizer_instant_notify_enabled", instantEnabled, setInstantEnabled);
-    saveBool("leaderSignupEmailEnabled", "leader_signup_email_enabled", leaderSignupEmailEnabled, setLeaderSignupEmailEnabled);
     saveBool("allowGuests", "allow_guests", allowGuests, setAllowGuests);
     saveBool("showCapacityPublicly", "show_capacity_publicly", showCapacityPublicly, setShowCapacityPublicly);
 
@@ -684,7 +680,6 @@ export default function EditEventPage() {
     eventTimezone,
     leaderName,
     leaderEmail,
-    leaderSignupEmailEnabled,
     allowGuests,
     showCapacityPublicly,
     expanded: {

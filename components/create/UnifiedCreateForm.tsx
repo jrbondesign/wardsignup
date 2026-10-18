@@ -13,7 +13,9 @@ import VisibilitySection from "@/components/create/sections/VisibilitySection";
 import NotificationsSection from "@/components/create/sections/NotificationsSection";
 import GoogleCalendarSection from "@/components/create/sections/GoogleCalendarSection";
 import EventSettingsSection from "@/components/create/sections/EventSettingsSection";
+import HeardAboutSection from "@/components/create/sections/HeardAboutSection";
 import ComponentCard from "@/components/create/sections/ComponentCard";
+import { getStoredAttribution } from "@/lib/attribution";
 import {
   INITIAL_FORM_STATE,
   SPOTS_SCHEDULE_FIELDS,
@@ -165,6 +167,11 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
   // slots here so the organizer can retry without retyping anything.
   const pendingRef = useRef<PendingSessions | null>(null);
   const [canRetrySessions, setCanRetrySessions] = useState(false);
+
+  // Optional "How did you hear about us?" tracking
+  type HeardAboutChoice = "signed_up_on_event" | "friend_or_ward" | "search" | "facebook" | "ai_chat" | "other" | null;
+  const [heardAboutChoice, setHeardAboutChoice] = useState<HeardAboutChoice>(null);
+  const [heardAboutOtherText, setHeardAboutOtherText] = useState("");
 
   // Posts sessions in batches. Returns true when all were saved; on failure the
   // unsent remainder stays in pendingRef for a retry.
@@ -328,6 +335,17 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
         return;
       }
 
+      // Get attribution from localStorage
+      const attribution = getStoredAttribution();
+
+      // Prepare heard_about answer if provided
+      const heardAbout = heardAboutChoice
+        ? {
+            choice: heardAboutChoice,
+            other_text: heardAboutChoice === "other" ? heardAboutOtherText.trim() : null,
+          }
+        : null;
+
       // POST /api/events
       const res = await fetch("/api/events", {
         method: "POST",
@@ -340,6 +358,8 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
           allow_guests: state.allowGuests,
           show_capacity_publicly: state.showCapacityPublicly,
           list_on_directory: state.listOnDirectory,
+          attribution,
+          heard_about: heardAbout,
         }),
       });
       if (!res.ok) {
@@ -380,7 +400,6 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
           organizer_instant_notify_enabled: state.organizerInstantNotifyEnabled,
           leader_name: state.leaderName.trim() || null,
           leader_email: state.leaderEmail.trim() || null,
-          leader_signup_email_enabled: state.leaderSignupEmailEnabled,
         }),
       });
 
@@ -620,6 +639,14 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
       <NotificationsSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
       <GoogleCalendarSection state={state} set={(patch) => dispatch({ type: "set", patch })} organizationId={organizationId} />
       <EventSettingsSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
+      
+      {/* How did you hear about us - optional, shown once at first event creation */}
+      <HeardAboutSection
+        heardAboutChoice={heardAboutChoice}
+        heardAboutOtherText={heardAboutOtherText}
+        onHeardAboutChoiceChange={setHeardAboutChoice}
+        onHeardAboutOtherTextChange={setHeardAboutOtherText}
+      />
 
       {error && (
         <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-[13px] text-red-700">

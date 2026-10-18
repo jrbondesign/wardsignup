@@ -10,7 +10,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
 /**
- * Vercel Cron / GH Actions pinger: daily digest for organizers who opted in,
+ * Vercel Cron / GH Actions pinger: daily digest for organizers who opted in
+ * and ALL assigned event leaders (regardless of organizer_digest_enabled),
  * plus independent creator feedback ask.
  * Secured with Authorization: Bearer CRON_SECRET.
  *
@@ -81,10 +82,12 @@ export async function GET(request: NextRequest) {
     });
   }
 
+  // Select campaigns where EITHER the organizer opted in to digests OR there's an assigned leader.
+  // Leaders receive digests regardless of organizer_digest_enabled (that flag only controls the organizer's own digest).
   const { data: campaigns, error } = await admin
     .from("campaigns")
-    .select("id, user_email, organizer_digest_enabled, organizer_last_digest_sent_at, leader_email, leader_signup_email_enabled")
-    .eq("organizer_digest_enabled", true)
+    .select("id, user_email, organizer_digest_enabled, organizer_last_digest_sent_at, leader_email")
+    .or("organizer_digest_enabled.eq.true,leader_email.not.is.null")
     .eq("brand_id", brandId);
 
   if (error) {
@@ -135,9 +138,9 @@ export async function GET(request: NextRequest) {
     const c = row as {
       id: string;
       user_email: string | null;
+      organizer_digest_enabled: boolean | null;
       organizer_last_digest_sent_at: string | null;
       leader_email: string | null;
-      leader_signup_email_enabled: boolean | null;
     };
     const organizerEmail = (c.user_email ?? "").trim().toLowerCase();
     try {
@@ -146,7 +149,13 @@ export async function GET(request: NextRequest) {
         continue;
       }
       const leaderTo = leaderDigestRecipient(c, organizerEmail);
-      const organizerDue = !(organizerEmail && emailedOrganizers.has(organizerEmail));
+      // Organizer gets digest only when they opted in AND haven't been emailed yet this run
+      const organizerDue = Boolean(
+        c.organizer_digest_enabled && 
+        organizerEmail && 
+        !emailedOrganizers.has(organizerEmail)
+      );
+      // Leader always gets digest (when present, not the organizer, and not emailed yet this run)
       const leaderDue = Boolean(leaderTo && !emailedOrganizers.has(leaderTo));
       if (!organizerDue && !leaderDue) {
         skipped += 1;

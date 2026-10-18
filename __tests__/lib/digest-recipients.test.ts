@@ -7,10 +7,9 @@ describe("leaderDigestRecipient", () => {
   it("skips a leader who is the organizer", () => {
     expect(leaderDigestRecipient({ leader_email: "ORG@x.com" }, "org@x.com")).toBeNull();
   });
-  it("skips a leader who opted in to per signup emails", () => {
-    expect(
-      leaderDigestRecipient({ leader_email: "lead@x.com", leader_signup_email_enabled: true }, "org@x.com"),
-    ).toBeNull();
+  it("sends to a leader regardless of old leader_signup_email_enabled flag (per-signup emails now disabled)", () => {
+    // Per-signup leader emails are now disabled entirely; all leaders get the digest
+    expect(leaderDigestRecipient({ leader_email: "lead@x.com" }, "org@x.com")).toBe("lead@x.com");
   });
   it("skips events with no leader", () => {
     expect(leaderDigestRecipient({ leader_email: null }, "org@x.com")).toBeNull();

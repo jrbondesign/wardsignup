@@ -57,6 +57,18 @@ interface MetricsData {
     wowLastCompletedWeekPct: number | null;
     fourWeekAvgNewCreators: number;
   };
+  newWards: {
+    total: number;
+    newThisWeek: number;
+    thisMonth: number;
+    lastMonth: number;
+    monthlyTrend: Array<{
+      month: string;
+      count: number;
+      bySource: Record<string, number>;
+    }>;
+    bySource: Record<string, number>;
+  };
   totalUsers: number;
   newUsersThisWeek: number;
   activeUsersThisWeek: number;
@@ -280,6 +292,115 @@ export default function MetricsPage() {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* New Wards metric */}
+              <div className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6">
+                <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-2">
+                  New wards
+                </div>
+                <p className="text-[13px] text-[#5A8399] mb-5 max-w-3xl">
+                  A <strong className="text-[#2E5566] font-semibold">ward</strong> is an organization whose first published event (with at least one slot) was created.
+                  Test and team accounts are excluded. Attribution shows the source of each ward creator&apos;s first touch (Unknown for accounts created before attribution tracking).
+                </p>
+                
+                {/* Total and New This Week - Prominent Cards */}
+                <div className="grid sm:grid-cols-2 gap-6 mb-6">
+                  <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
+                    <div className="text-[13px] text-[#5A8399] mb-2 font-medium">Total wards (all time)</div>
+                    <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
+                      {data.newWards.total}
+                    </div>
+                    <div className="text-[12px] text-[#5A8399] mt-3">
+                      Organizations with at least one published event
+                    </div>
+                  </div>
+                  <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
+                    <div className="text-[13px] text-[#5A8399] mb-2 font-medium">
+                      New this week (since Mon, Phoenix time)
+                    </div>
+                    <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
+                      {data.newWards.newThisWeek}
+                    </div>
+                    <div className="text-[12px] text-[#5A8399] mt-3">
+                      Wards whose first published event falls in current week
+                    </div>
+                  </div>
+                </div>
+
+                {/* Monthly Stats */}
+                <div className="grid sm:grid-cols-2 gap-6 mb-6 pt-4 border-t border-[rgba(14,150,176,0.10)]">
+                  <div>
+                    <div className="text-[13px] text-[#5A8399] mb-1">This month so far</div>
+                    <div className="text-[40px] font-semibold text-[#0D2B35] leading-none tabular-nums">
+                      {data.newWards.thisMonth}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[13px] text-[#5A8399] mb-1">Last month</div>
+                    <div className="text-[40px] font-semibold text-[#0D2B35] leading-none tabular-nums">
+                      {data.newWards.lastMonth}
+                    </div>
+                  </div>
+                </div>
+
+                {Object.keys(data.newWards.bySource).length > 0 && (
+                  <div className="mb-6">
+                    <div className="text-[12px] font-semibold text-[#0D2B35] mb-3">This month by source</div>
+                    <div className="flex flex-wrap gap-3">
+                      {Object.entries(data.newWards.bySource)
+                        .sort(([, a], [, b]) => (b as number) - (a as number))
+                        .map(([source, count]) => (
+                          <div key={source} className="bg-[#F4FAFB] rounded-lg px-4 py-2">
+                            <div className="text-[11px] text-[#5A8399] uppercase tracking-[0.4px]">{source}</div>
+                            <div className="text-[20px] font-semibold text-[#0D2B35] tabular-nums">{count as number}</div>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="border-t border-[rgba(14,150,176,0.10)] pt-5">
+                  <div className="text-[12px] font-semibold text-[#0D2B35] mb-4">Monthly trend (last 12 months)</div>
+                  <div className="overflow-x-auto">
+                    <table className="w-full">
+                      <thead>
+                        <tr className="text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] border-b border-[rgba(14,150,176,0.10)]">
+                          <th className="text-left pb-3 pr-4 font-semibold">Month</th>
+                          <th className="text-right pb-3 px-3 font-semibold">New wards</th>
+                          <th className="text-left pb-3 pl-3 font-semibold">Top sources</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[...data.newWards.monthlyTrend].reverse().map((row) => {
+                          const topSources = Object.entries(row.bySource)
+                            .sort(([, a], [, b]) => (b as number) - (a as number))
+                            .slice(0, 3)
+                            .map(([src, cnt]) => `${src} (${cnt})`)
+                            .join(", ");
+                          return (
+                            <tr key={row.month} className="border-b border-[rgba(14,150,176,0.06)] last:border-0">
+                              <td className="py-3 pr-4 text-[13px] text-[#5A8399]">
+                                {new Date(row.month + "-01").toLocaleDateString([], { month: "short", year: "numeric" })}
+                              </td>
+                              <td className="py-3 px-3 text-right text-[14px] font-semibold text-[#0E96B0] tabular-nums">
+                                {row.count > 0 ? row.count : <span className="text-[#C8DDE6] font-normal">—</span>}
+                              </td>
+                              <td className="py-3 pl-3 text-[12px] text-[#5A8399]">
+                                {topSources || <span className="text-[#C8DDE6]">—</span>}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                <p className="mt-5 text-[11px] text-[#7A9BAE] leading-relaxed border-t border-[rgba(14,150,176,0.10)] pt-4">
+                  <strong>Exclusions:</strong> Test/team accounts (jonathan@wardsignup.com, jon@jrbond.com, bondesign@gmail.com, plus any in CREATOR_NOTIFY_SKIP_EMAILS) are excluded.
+                  <strong className="ml-3">Stakes:</strong> Stake data is not tracked in the database, so stakes per month cannot be reported.
+                </p>
               </div>
 
               {/* Distribution — signups & events (this calendar week) */}

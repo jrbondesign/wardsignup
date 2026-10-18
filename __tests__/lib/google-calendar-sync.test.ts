@@ -8,6 +8,7 @@ import {
   toWallTime,
   userFacingCalendarSyncError,
 } from "@/lib/google-calendar-sync-format";
+import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 
 // Test data structures
 interface GoogleEvent {
@@ -303,6 +304,46 @@ describe("Google Calendar sync", () => {
       expect(
         userFacingCalendarSyncError("Failed to load sessions: column sessions.start_time does not exist")
       ).toBe("Could not load this event's time slots. Please try again.");
+    });
+  });
+
+  describe("syncCampaignCalendar", () => {
+    it("returns error result instead of throwing when Supabase env is missing", async () => {
+      // Save original env vars
+      const originalUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const originalKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+      try {
+        // Remove env vars to simulate missing configuration
+        delete process.env.NEXT_PUBLIC_SUPABASE_URL;
+        delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+        // Clear any cached client to force new creation with missing env
+        const sync = require("@/lib/google-calendar-sync");
+        if (sync._serviceRoleClient !== undefined) {
+          sync._serviceRoleClient = null;
+        }
+
+        // Call should return error result, not throw
+        const result = await syncCampaignCalendar("test-campaign-id");
+
+        expect(result.success).toBe(false);
+        expect(result.error).toBeDefined();
+      } finally {
+        // Restore env vars
+        if (originalUrl) {
+          process.env.NEXT_PUBLIC_SUPABASE_URL = originalUrl;
+        }
+        if (originalKey) {
+          process.env.SUPABASE_SERVICE_ROLE_KEY = originalKey;
+        }
+
+        // Clear cached client again to ensure next test gets fresh state
+        const sync = require("@/lib/google-calendar-sync");
+        if (sync._serviceRoleClient !== undefined) {
+          sync._serviceRoleClient = null;
+        }
+      }
     });
   });
 });

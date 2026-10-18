@@ -1,3 +1,5 @@
+import { withUtm } from "@/lib/utm";
+
 /**
  * Generate a high-res PNG QR code for an event signup URL and trigger a browser
  * download. qrcode is dynamically imported so it isn't bundled into the
@@ -5,7 +7,12 @@
  */
 export async function downloadEventQr(eventId: string, eventName: string) {
   const QRCode = (await import("qrcode")).default;
-  const url = `${window.location.origin}/event/${eventId}`;
+  const baseUrl = `${window.location.origin}/event/${eventId}`;
+  const url = withUtm(baseUrl, {
+    utm_source: "qr",
+    utm_medium: "print",
+    utm_campaign: "event_qr",
+  });
   const dataUrl = await QRCode.toDataURL(url, {
     errorCorrectionLevel: "H",
     margin: 2,
