@@ -4,6 +4,12 @@ import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { posthogWeeklyEventCounts } from "@/lib/posthog-query";
 import { isMetricsAdminEmail } from "@/lib/metrics-admin";
 import { founderNotifySkipEmails } from "@/lib/founder-notify";
+import {
+  computeEmailCaptureRate,
+  emailCaptureWindowStart,
+  testCampaignIds,
+  type CaptureSignupRow,
+} from "@/lib/email-capture-rate";
 
 function toWeekKey(dateStr: string): string {
   const d = new Date(dateStr);
@@ -249,8 +255,8 @@ export async function GET(request: NextRequest) {
       ? admin.from("signups").select("member_email").in("campaign_id", brandCampaignIds).not("member_email", "is", null)
       : admin.from("signups").select("member_email").not("member_email", "is", null),
     brandCampaignIds !== null
-      ? admin.from("campaigns").select("id, created_at, created_by, user_email").in("id", brandCampaignIds)
-      : admin.from("campaigns").select("id, created_at, created_by, user_email"),
+      ? admin.from("campaigns").select("id, created_at, created_by, user_email, organization_id").in("id", brandCampaignIds)
+      : admin.from("campaigns").select("id, created_at, created_by, user_email, organization_id"),
     brandCampaignIds !== null
       ? admin.from("sessions").select("campaign_id").in("campaign_id", brandCampaignIds)
       : admin.from("sessions").select("campaign_id"),
@@ -720,6 +726,38 @@ export async function GET(request: NextRequest) {
     }
   }
 
+  // Email capture rate (Phoenix Mon to Sun weeks): signups with a non empty
+  // member_email / all signups. Paged so the 1000 row API cap never truncates it.
+  const captureWindowIso = emailCaptureWindowStart(nowDate, 8).toISOString();
+  const captureRows: CaptureSignupRow[] = [];
+  for (let from = 0; ; from += 1000) {
+    let q = admin
+      .from("signups")
+      .select("signed_up_at, member_email, campaign_id")
+      .gte("signed_up_at", captureWindowIso);
+    if (brandCampaignIds !== null) q = q.in("campaign_id", brandCampaignIds);
+    const { data: page, error: pageErr } = await q
+      .order("signed_up_at", { ascending: true })
+      .order("id", { ascending: true })
+      .range(from, from + 999);
+    if (pageErr) {
+      console.error("metrics email capture:", pageErr);
+      break;
+    }
+    captureRows.push(...((page ?? []) as CaptureSignupRow[]));
+    if (!page || page.length < 1000) break;
+  }
+  // Exclude test / team accounts the same way New wards does.
+  const excludedCaptureCampaigns = testCampaignIds({
+    campaigns: (campaignsSlim ?? []) as (SlimCampaign & { organization_id: string | null })[],
+    orgOwnerById: new Map(
+      ((orgsWithCampaigns ?? []) as { id: string; created_by: string | null }[]).map((o) => [o.id, o.created_by]),
+    ),
+    emailByUserId: new Map(allAuthUsers.map((u) => [u.id, u.email ?? null])),
+    skipEmails: founderNotifySkipEmails(),
+  });
+  const emailCapture = computeEmailCaptureRate(captureRows, nowDate, 8, excludedCaptureCampaigns);
+
   return NextResponse.json({
     totalEvents: totalEvents ?? 0,
     totalSessions: totalSessions ?? 0,
@@ -756,6 +794,7 @@ export async function GET(request: NextRequest) {
       monthlyTrend,
       bySource: thisMonthBySource,
     },
+    emailCapture,
     totalUsers,
     newUsersThisWeek,
     activeUsersThisWeek,
