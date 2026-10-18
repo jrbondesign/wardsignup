@@ -34,6 +34,7 @@ export interface Database {
           created_at: string;
           organizer_digest_enabled: boolean;
           organizer_instant_notify_enabled: boolean;
+          /** @deprecated Per-signup leader emails disabled Oct 2026 (PR #81). Leaders now receive daily digest only. Column kept for backward compatibility. */
           leader_signup_email_enabled: boolean;
           organizer_last_digest_sent_at: string | null;
           organizer_last_instant_notify_at: string | null;
@@ -71,6 +72,7 @@ export interface Database {
           created_at?: string;
           organizer_digest_enabled?: boolean;
           organizer_instant_notify_enabled?: boolean;
+          /** @deprecated Per-signup leader emails disabled Oct 2026 (PR #81). Leaders now receive daily digest only. Column kept for backward compatibility. */
           leader_signup_email_enabled?: boolean;
           organizer_last_digest_sent_at?: string | null;
           organizer_last_instant_notify_at?: string | null;
@@ -103,6 +105,7 @@ export interface Database {
           created_at?: string;
           organizer_digest_enabled?: boolean;
           organizer_instant_notify_enabled?: boolean;
+          /** @deprecated Per-signup leader emails disabled Oct 2026 (PR #81). Leaders now receive daily digest only. Column kept for backward compatibility. */
           leader_signup_email_enabled?: boolean;
           organizer_last_digest_sent_at?: string | null;
           organizer_last_instant_notify_at?: string | null;
