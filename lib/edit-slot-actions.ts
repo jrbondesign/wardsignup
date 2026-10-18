@@ -212,3 +212,26 @@ export function reorderStep(
     ? { fromIndex: here.index, toIndex: neighbor.index }
     : { fromIndex: neighbor.index, toIndex: here.index };
 }
+
+const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+/** The day heading text: "Thursday, Oct 22, 2026" (or "Thu, Oct 22, 2026"
+ *  with weekday "short") for a dated day, the weekday name for a recurring one. */
+export function formatDayHeading(
+  group: { sessionDate: string | null; dayOfWeek: number },
+  weekday: "long" | "short" = "long",
+): string {
+  if (!group.sessionDate) return WEEKDAYS[group.dayOfWeek] ?? "";
+  const [year, month, day] = group.sessionDate.split("-").map(Number);
+  return new Date(year, month - 1, day).toLocaleDateString("en-US", {
+    weekday,
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+/** Accessible name for a day's three dots button, using the heading date. */
+export function dayMenuLabel(group: { sessionDate: string | null; dayOfWeek: number }): string {
+  return `Options for ${formatDayHeading(group)}`;
+}

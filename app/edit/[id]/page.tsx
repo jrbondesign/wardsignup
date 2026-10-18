@@ -49,7 +49,9 @@ import ReorderPanel from "@/components/edit/ReorderPanel";
 import {
   applyCapacityDrafts,
   cardLocation,
+  dayMenuLabel,
   duplicateSessionAfter,
+  formatDayHeading,
   removeDayConfirmBody,
   removeSection,
   removeSectionConfirmBody,
@@ -2726,30 +2728,19 @@ export default function EditEventPage() {
                         <div className="pl-0.5 pr-[17px] md:pr-[21px]">
                           <div className="flex items-center gap-2">
                             <div className="font-serif text-[17px] text-[#0D2B35] whitespace-nowrap leading-tight flex-1 min-w-0">
-                              {group.sessionDate
-                                ? (() => {
-                                    const [year, month, day] = group.sessionDate.split("-").map(Number);
-                                    const date = new Date(year, month - 1, day);
-                                    const fmt = (weekday: "long" | "short") =>
-                                      date.toLocaleDateString("en-US", {
-                                        weekday,
-                                        month: "short",
-                                        day: "numeric",
-                                        year: "numeric",
-                                      });
-                                    // Narrow phones get the short weekday so the date never wraps;
-                                    // swapped in CSS so server and client render the same markup.
-                                    return (
-                                      <>
-                                        <span className="min-[360px]:hidden">{fmt("short")}</span>
-                                        <span className="hidden min-[360px]:inline">{fmt("long")}</span>
-                                      </>
-                                    );
-                                  })()
-                                : DAYS[group.dayOfWeek]}
+                              {group.sessionDate ? (
+                                // Narrow phones get the short weekday so the date never wraps;
+                                // swapped in CSS so server and client render the same markup.
+                                <>
+                                  <span className="min-[360px]:hidden">{formatDayHeading(group, "short")}</span>
+                                  <span className="hidden min-[360px]:inline">{formatDayHeading(group)}</span>
+                                </>
+                              ) : (
+                                DAYS[group.dayOfWeek]
+                              )}
                             </div>
                             <MenuTrigger
-                              label={`Options for ${group.sessionDate ?? DAYS[group.dayOfWeek]}`}
+                              label={dayMenuLabel(group)}
                               onOpen={(el) => {
                                 setDayMenuSecondStep(null);
                                 setDayMenuSecondStepDate("");
