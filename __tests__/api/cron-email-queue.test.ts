@@ -58,6 +58,18 @@ function queued(id: string, extra: Partial<QueuedEmailRow> = {}): QueuedEmailRow
   };
 }
 
+/** The drain lists near real time kinds first (.in), then everything else (.not in). */
+function listRows(q: QueryRecord, rows: QueuedEmailRow[]): QueuedEmailRow[] {
+  const inKinds = q.ops.find((o) => o.method === "in" && o.args[0] === "kind")?.args[1] as string[] | undefined;
+  if (inKinds) return rows.filter((r) => inKinds.includes(r.kind));
+  const notIn = q.ops.find((o) => o.method === "not" && o.args[0] === "kind")?.args[2] as string | undefined;
+  if (notIn) {
+    const excluded = notIn.replace(/[()]/g, "").split(",");
+    return rows.filter((r) => !excluded.includes(r.kind));
+  }
+  return rows;
+}
+
 function isRecovery(q: QueryRecord) {
   return hasOp(q, "update") !== undefined && eqValue(q, "status") === "sending";
 }
@@ -75,7 +87,7 @@ function setup(opts: {
       return { data: (ids ?? []).map((id) => ({ id })), error: null };
     }
     if (!hasOp(q, "update")) {
-      return { data: opts.rows ?? [], error: opts.listError ?? null };
+      return { data: listRows(q, opts.rows ?? []), error: opts.listError ?? null };
     }
     const id = eqValue(q, "id") as string;
     // Claim query: update(...).eq(id).eq(status,pending).select("id")
@@ -232,6 +244,7 @@ describe("/api/cron/email-queue", () => {
     const { queries } = setup({ rows: [queued("retry", { attempts: 1 }), queued("dead", { attempts: 2 })] });
     const body = await (await GET(cronRequest(PATH, SECRET))).json();
     expect(body.failed).toBe(2);
+    // digest rows: no backoff field (near real time rows get send_after; see email-queue-drain.test.ts)
     expect(updatesFor(queries, "retry")[1].payload).toEqual({ status: "pending", last_error: "500 from resend" });
     expect(updatesFor(queries, "dead")[1].payload).toEqual({ status: "failed", last_error: "500 from resend" });
   });
@@ -268,7 +281,7 @@ describe("/api/cron/email-queue", () => {
     it("keeps draining when recovery fails", async () => {
       const fake = createFakeAdmin((q) => {
         if (isRecovery(q)) return { data: null, error: { message: "boom" } };
-        if (!hasOp(q, "update")) return { data: [queued("a")], error: null };
+        if (!hasOp(q, "update")) return { data: listRows(q, [queued("a")]), error: null };
         return { data: hasOp(q, "select") ? [{ id: "a" }] : null, error: null };
       });
       mockCreateClient.mockReturnValue(fake.admin as unknown as ReturnType<typeof createServiceRoleClient>);

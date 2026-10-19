@@ -1,6 +1,6 @@
 import type { createServiceRoleClient } from "@/lib/supabase-admin";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
-import { claimCronRun, dayBucketDate } from "@/lib/rate-limit";
+import { claimCronRun } from "@/lib/rate-limit";
 import { phoenixDayStartUtc, phoenixWeekday } from "@/lib/phoenix-time";
 import { getPostHogClient } from "@/lib/posthog-server";
 import {
@@ -63,7 +63,7 @@ export type FeedbackAskSummary = {
  * Daily pass: find engaged creators (own a campaign with >=1 signup, created
  * at least FEEDBACK_ASK_DELAY_DAYS ago) who haven't been asked for feedback on
  * this brand yet, and send each a tokenized one-time feedback ask email.
- * Idempotent per UTC day via claimCronRun; once-per-user via the
+ * Idempotent per Arizona day via claimCronRun; once-per-user via the
  * (user_id, brand_id) unique constraint on feedback_requests.
  */
 export async function runFeedbackAskPass(
@@ -74,7 +74,7 @@ export async function runFeedbackAskPass(
     return { ran: false, sent: 0, paused: true };
   }
 
-  const claim = await claimCronRun(`feedback-ask:${brandId}`, dayBucketDate());
+  const claim = await claimCronRun(`feedback-ask:${brandId}`, phoenixDayStartUtc());
   if (!claim.claimed) return { ran: false, sent: 0 };
 
   const cutoff = new Date(
