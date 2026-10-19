@@ -5,7 +5,7 @@ import { getResendForBrand } from "@/lib/resend-for-brand";
 import { escapeHtml } from "@/lib/html-escape";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { safeReturnPath } from "@/lib/auth-return-path";
-import { getPostHogClient } from "@/lib/posthog-server";
+import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
 import { consumeActionRate } from "@/lib/rate-limit";
 import { consumeEmailKeyRate } from "@/lib/email-send";
 import { magicLinkDedupeBuckets, normalizeEmail } from "@/lib/email-throttle";
@@ -228,6 +228,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("send-magic-link:", e);
+    captureServerException(e, { route: "/api/auth/send-magic-link" });
     return NextResponse.json(
       { error: "Something went wrong. Please try again." },
       { status: 500 },

@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
-import { getPostHogClient } from "@/lib/posthog-server";
+import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
 import { getClientIp } from "@/lib/request-ip";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
@@ -138,6 +138,7 @@ export async function POST(request: Request) {
           if (!lr.ok) console.error("Leader notification send:", lr.error);
         } catch (e) {
           console.error("Item signup leader notification:", e);
+          captureServerException(e, { route: "/api/item-signups" });
         }
       });
     }

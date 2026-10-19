@@ -7,7 +7,7 @@ import { getClientIp } from "@/lib/request-ip";
 import { sendParticipantBatchSignupConfirmation } from "@/lib/participant-email";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
-import { getPostHogClient } from "@/lib/posthog-server";
+import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
@@ -252,6 +252,7 @@ export async function POST(request: Request) {
           }
         } catch (e) {
           console.error("Bulk confirmation email:", e);
+          captureServerException(e, { route: "/api/signups/bulk" });
         }
       });
 
@@ -262,6 +263,7 @@ export async function POST(request: Request) {
             await syncCampaignCalendar(campaign_id);
           } catch (e) {
             console.error("Calendar sync after bulk signup:", e);
+            captureServerException(e, { route: "/api/signups/bulk" });
           }
         });
       }
@@ -288,6 +290,7 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     console.error("Error creating bulk signup:", error);
+    captureServerException(error, { route: "/api/signups/bulk" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },

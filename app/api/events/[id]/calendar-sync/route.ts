@@ -7,7 +7,7 @@ import type { Campaign } from "@/lib/types";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { userFacingCalendarSyncError } from "@/lib/google-calendar-sync-format";
 import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from "@/lib/gcal-feature";
-import { getPostHogClient } from "@/lib/posthog-server";
+import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
 
 function hostBrand(request: NextRequest) {
   const host =
@@ -217,6 +217,7 @@ export async function PATCH(
     );
   } catch (error) {
     console.error("Error in PATCH /api/events/[id]/calendar-sync:", error);
+    captureServerException(error, { route: "/api/events/[id]/calendar-sync" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -302,6 +303,7 @@ export async function POST(
     );
   } catch (error) {
     console.error("Error in POST /api/events/[id]/calendar-sync:", error);
+    captureServerException(error, { route: "/api/events/[id]/calendar-sync" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

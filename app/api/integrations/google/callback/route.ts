@@ -4,7 +4,7 @@ import { verifyState, exchangeCode, encryptToken, listCalendars } from '@/lib/go
 import { persistGoogleCalendarConnection } from '@/lib/google-calendar-connection';
 import { clearConnectionBroken } from '@/lib/google-calendar-health';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
-import { getPostHogClient } from '@/lib/posthog-server';
+import { captureServerException, getPostHogClient } from '@/lib/posthog-server';
 
 async function resolveGoogleEmail(accessToken: string): Promise<string | null> {
   try {
@@ -156,6 +156,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(redirectUrl.toString());
   } catch (err) {
     console.error('[google/callback] error:', err);
+    captureServerException(err, { route: "/api/integrations/google/callback" });
     return NextResponse.redirect(new URL('/settings/organization?error=gcal_internal_error', origin));
   }
 }

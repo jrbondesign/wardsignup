@@ -7,7 +7,7 @@ import { getClientIp } from "@/lib/request-ip";
 import { sendParticipantSignupConfirmation } from "@/lib/participant-email";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
-import { getPostHogClient } from "@/lib/posthog-server";
+import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
@@ -227,6 +227,7 @@ export async function POST(request: Request) {
           }
         } catch (e) {
           console.error("Signup notification email:", e);
+          captureServerException(e, { route: "/api/signups" });
         }
       });
 
@@ -237,6 +238,7 @@ export async function POST(request: Request) {
             await syncCampaignCalendar(campaign_id);
           } catch (e) {
             console.error("Calendar sync after signup:", e);
+            captureServerException(e, { route: "/api/signups" });
           }
         });
       }
@@ -259,6 +261,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ signup: data, cancel_token: cancelToken ?? null });
   } catch (error) {
     console.error("Error creating signup:", error);
+    captureServerException(error, { route: "/api/signups" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
