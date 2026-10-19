@@ -1,5 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { persistSignupAttribution, sanitizeSignupAttribution } from "@/lib/signup-attribution";
 import { createHash } from "crypto";
 import { createSignupIfCapacityRpc } from "@/lib/supabase";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
@@ -8,7 +9,6 @@ import { sendParticipantSignupConfirmation } from "@/lib/participant-email";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { getPostHogClient } from "@/lib/posthog-server";
-import { persistSignupAttribution, sanitizeSignupAttribution } from "@/lib/signup-attribution";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 

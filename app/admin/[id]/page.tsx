@@ -404,7 +404,8 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
           .eq("campaign_id", eventId).order("session_date", { ascending: true, nullsFirst: false }).order("day_of_week").order("time");
         setSessions(sessionsData || []);
       }
-      setShareableLink(`${window.location.origin}/event/${eventId}`);
+      // Only used by the Copy link buttons, so tag it once here (ref=share).
+      setShareableLink(shareLink(`${window.location.origin}/event/${eventId}`));
       setDigestEnabled(Boolean((eventData as any).organizer_digest_enabled));
       setInstantEnabled(Boolean((eventData as any).organizer_instant_notify_enabled));
       setShowSignupsPublicly(Boolean((eventData as any).show_signups_publicly));
@@ -912,7 +913,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard.writeText(shareLink(shareableLink));
+                            navigator.clipboard.writeText(shareableLink);
                             posthog?.capture("event_shared", { event_id: eventId });
                             setToastMessage("Link copied to clipboard!");
                             setShowToast(true);
@@ -1010,7 +1011,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(shareLink(shareableLink));
+                    navigator.clipboard.writeText(shareableLink);
                     posthog?.capture("event_shared", { event_id: eventId });
                     setToastMessage("Link copied to clipboard!");
                     setShowToast(true);
@@ -1160,7 +1161,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(shareLink(shareableLink));
+                    navigator.clipboard.writeText(shareableLink);
                     posthog?.capture("event_shared", { event_id: eventId });
                     setToastMessage("Link copied to clipboard!");
                     setShowToast(true);

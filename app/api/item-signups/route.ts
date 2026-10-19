@@ -1,8 +1,8 @@
 import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { persistSignupAttribution, sanitizeSignupAttribution } from "@/lib/signup-attribution";
 import { createHash } from "crypto";
 import { getPostHogClient } from "@/lib/posthog-server";
-import { persistSignupAttribution, sanitizeSignupAttribution } from "@/lib/signup-attribution";
 import { getClientIp } from "@/lib/request-ip";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
