@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import {
   GEOGRAPHY_HOGQL,
@@ -10,6 +11,30 @@ import {
 export const GEOGRAPHY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** Soft stale window: still serve cache while allowing lazy refresh. */
 export const GEOGRAPHY_CACHE_STALE_MS = 36 * 60 * 60 * 1000;
+
+/** Public homepage map endpoint (ISR, see its route segment config). */
+export const GEOGRAPHY_PUBLIC_PATH = "/api/geography/public";
+/**
+ * CDN header for the public map endpoint: fresh for 1h, then serve stale for up
+ * to a day while revalidating in the background.
+ */
+export const GEOGRAPHY_PUBLIC_CACHE_CONTROL =
+  "public, s-maxage=3600, stale-while-revalidate=86400";
+
+/**
+ * Purge the cached public map response after the snapshot row changes so the
+ * homepage matches the metrics page right away instead of waiting for ISR.
+ * Never throws: a failed purge must not fail the write; the 1h window covers it.
+ */
+export function revalidatePublicGeography(): boolean {
+  try {
+    revalidatePath(GEOGRAPHY_PUBLIC_PATH);
+    return true;
+  } catch (err) {
+    console.warn("geography public revalidate failed:", err);
+    return false;
+  }
+}
 
 const POSTHOG_HOST =
   process.env.NEXT_PUBLIC_POSTHOG_HOST?.replace(/\/$/, "") ||
@@ -49,8 +74,10 @@ export async function fetchLiveGeographyFromPostHog(): Promise<GeographyCity[] |
           query: GEOGRAPHY_HOGQL,
         },
       }),
-      // Daily cadence — avoid hammering PostHog from concurrent page loads.
-      next: { revalidate: 86400 },
+      // Only the daily refresh (and the rare stale cache fallback) calls this,
+      // and both persist the result. A Next data cache entry here could make
+      // the cron write a day old PostHog result, so always fetch fresh.
+      cache: "no-store",
     },
   );
 
@@ -141,6 +168,8 @@ export async function writeGeographyCache(
       console.error("geography cache write:", error.message);
       return { ok: false, error: error.message };
     }
+
+    revalidatePublicGeography();
 
     return {
       ok: true,

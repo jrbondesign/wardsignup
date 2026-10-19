@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { LoadingSpinner } from "./LoadingSpinner";
+import { formatMapUpdatedDate } from "@/lib/geography-format";
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((mod) => mod.MapContainer),
@@ -36,6 +37,8 @@ interface GeographyData {
   cities: CityData[];
   totalCities: number;
   totalUsers: number;
+  /** When the cached snapshot row was last written (absent for the baked fallback). */
+  refreshedAt?: string;
 }
 
 export default function PublicGeographyMap() {
@@ -86,6 +89,8 @@ export default function PublicGeographyMap() {
       </div>
     );
   }
+
+  const updatedDate = formatMapUpdatedDate(data.refreshedAt);
 
   const getMarkerSize = (userCount: number): number => {
     const maxCount = Math.max(...data.cities.map((c) => c.userCount), 1);
@@ -168,8 +173,11 @@ export default function PublicGeographyMap() {
       </div>
 
       <div className="text-[11px] text-[#7A9BAE] text-center leading-relaxed">
-        One pin per city for event creators and people who signed up. Updated
-        daily from city-level location data — no street or IP data.
+        One pin per city for event creators and people who signed up. City
+        level location data only, never street or IP data.{" "}
+        <span data-testid="geography-map-updated">
+          {updatedDate ? `Updated ${updatedDate}.` : "Updated daily."}
+        </span>
       </div>
     </div>
   );
