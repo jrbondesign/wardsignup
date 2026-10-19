@@ -1,6 +1,5 @@
 import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
-import { persistSignupAttribution, sanitizeSignupAttribution } from "@/lib/signup-attribution";
 import { createHash } from "crypto";
 import { createSignupIfCapacityRpc } from "@/lib/supabase";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
@@ -168,14 +167,6 @@ export async function POST(request: Request) {
           .eq("id", signupId);
       }
     }
-
-    // First-touch attribution (PR #69): the body carried it but it was never saved.
-    await persistSignupAttribution(
-      admin,
-      "signups",
-      [(data as Record<string, unknown>).id as string | undefined],
-      sanitizeSignupAttribution(body),
-    );
 
     const emailTrim =
       typeof member_email === "string" ? member_email.trim() : "";
