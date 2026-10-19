@@ -18,9 +18,8 @@ jest.mock("@/lib/posthog-server", () => ({
   getPostHogClient: () => ({ capture: jest.fn() }),
 }));
 
-const mockRpc = createSignupIfCapacityRpc as jest.MockedFunction<
-  typeof createSignupIfCapacityRpc
->;
+// Loosely typed: the RPC's generated return type doesn't model the mocked payloads.
+const mockRpc = createSignupIfCapacityRpc as unknown as jest.Mock;
 
 describe("/api/signups", () => {
   beforeEach(() => {

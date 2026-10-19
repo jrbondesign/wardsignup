@@ -37,6 +37,32 @@ export interface OAuthState {
   expiresAt: number;
 }
 
+export const DEFAULT_RETURN_PATH = '/settings/organization';
+
+/** httpOnly cookie that binds an OAuth state to the browser that started it. */
+export const OAUTH_NONCE_COOKIE = 'gcal_oauth_nonce';
+
+/**
+ * Only same-origin relative paths are allowed. Rejects protocol-relative
+ * (`//evil.com`), backslash (`/\evil.com`) and absolute URLs, which
+ * `new URL(path, origin)` would otherwise resolve off-site.
+ */
+export function sanitizeReturnPath(path: string | null | undefined): string {
+  if (!path || typeof path !== 'string') return DEFAULT_RETURN_PATH;
+  if (!path.startsWith('/') || path.startsWith('//') || path.startsWith('/\\')) {
+    return DEFAULT_RETURN_PATH;
+  }
+  // Control characters (tabs/newlines are stripped by URL parsers) could smuggle `//`.
+  if (/[\u0000-\u001f\u007f]/.test(path)) return DEFAULT_RETURN_PATH;
+  try {
+    const resolved = new URL(path, 'https://placeholder.invalid');
+    if (resolved.origin !== 'https://placeholder.invalid') return DEFAULT_RETURN_PATH;
+    return resolved.pathname + resolved.search + resolved.hash;
+  } catch {
+    return DEFAULT_RETURN_PATH;
+  }
+}
+
 export interface TokenResponse {
   access_token: string;
   refresh_token?: string;
