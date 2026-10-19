@@ -8,6 +8,7 @@ import { sendParticipantSignupConfirmation } from "@/lib/participant-email";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { persistSignupAttribution, sanitizeSignupAttribution } from "@/lib/signup-attribution";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
@@ -167,6 +168,14 @@ export async function POST(request: Request) {
           .eq("id", signupId);
       }
     }
+
+    // First-touch attribution (PR #69): the body carried it but it was never saved.
+    await persistSignupAttribution(
+      admin,
+      "signups",
+      [(data as Record<string, unknown>).id as string | undefined],
+      sanitizeSignupAttribution(body),
+    );
 
     const emailTrim =
       typeof member_email === "string" ? member_email.trim() : "";

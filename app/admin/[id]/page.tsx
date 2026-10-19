@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, use, useEffect, useRef, useState } from "react";
+import { shareLink } from "@/lib/share-links";
 import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import Link from "next/link";
@@ -911,7 +912,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                         <button
                           type="button"
                           onClick={() => {
-                            navigator.clipboard.writeText(shareableLink);
+                            navigator.clipboard.writeText(shareLink(shareableLink));
                             posthog?.capture("event_shared", { event_id: eventId });
                             setToastMessage("Link copied to clipboard!");
                             setShowToast(true);
@@ -1009,7 +1010,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(shareableLink);
+                    navigator.clipboard.writeText(shareLink(shareableLink));
                     posthog?.capture("event_shared", { event_id: eventId });
                     setToastMessage("Link copied to clipboard!");
                     setShowToast(true);
@@ -1159,7 +1160,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                 <button
                   type="button"
                   onClick={() => {
-                    navigator.clipboard.writeText(shareableLink);
+                    navigator.clipboard.writeText(shareLink(shareableLink));
                     posthog?.capture("event_shared", { event_id: eventId });
                     setToastMessage("Link copied to clipboard!");
                     setShowToast(true);

@@ -8,6 +8,7 @@ import { sendParticipantBatchSignupConfirmation } from "@/lib/participant-email"
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { persistSignupAttribution, sanitizeSignupAttribution } from "@/lib/signup-attribution";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
@@ -168,6 +169,9 @@ export async function POST(request: Request) {
         .update({ signup_note: signupNote } as never)
         .in("id", successfulSignupIds);
     }
+
+    // First-touch attribution (PR #69) on every successful row.
+    await persistSignupAttribution(admin, "signups", successfulSignupIds, sanitizeSignupAttribution(body));
 
     // One combined confirmation email covering every slot (+ one leader
     // notification per batch when the campaign has an assigned leader).

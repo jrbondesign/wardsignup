@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { shareLink } from "@/lib/share-links";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClientComponentClient } from "@/lib/auth";
@@ -190,7 +191,7 @@ export default function OrganizationSettingsPage() {
   };
 
   const copyDirectoryUrl = () => {
-    const url = `${typeof window !== "undefined" ? window.location.origin : ""}/w/${slug}`;
+    const url = shareLink(`${typeof window !== "undefined" ? window.location.origin : ""}/w/${slug}`);
     void navigator.clipboard.writeText(url);
     setCopyToast(true);
     setTimeout(() => setCopyToast(false), 2000);

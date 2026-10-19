@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { persistSignupAttribution, sanitizeSignupAttribution } from "@/lib/signup-attribution";
 import { getClientIp } from "@/lib/request-ip";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
@@ -96,6 +97,16 @@ export async function POST(request: Request) {
       console.error("Failed to create item signup:", error);
       return NextResponse.json({ error: "Failed to sign up" }, { status: 500 });
     }
+
+    // First-touch attribution (PR #69). Needs migration
+    // 20261018120000_item_signup_attribution.sql; until it's applied the update
+    // fails, is logged, and the signup still succeeds.
+    await persistSignupAttribution(
+      admin,
+      "item_signups",
+      [((Array.isArray(data) ? data[0] : data) as Record<string, unknown> | null)?.id as string | undefined],
+      sanitizeSignupAttribution(body),
+    );
 
     // Assigned-leader notification (fire-and-forget; never fails the signup).
     if (serviceKey && supabaseUrl) {
