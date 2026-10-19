@@ -34,7 +34,7 @@ function MiniBars({ values, weeks, metric }: { values: (number | null)[]; weeks:
         const fill = i === values.length - 1 ? "#0E96B0" : i === values.length - 2 ? "#9fd3de" : "#cfe8ee";
         return (
           <rect key={weeks[i]} x={i * bw + 2} y={h - bh} width={bw - 5} height={bh} rx={2} fill={fill}>
-            <title>{`Week of ${formatWeekStart(weeks[i]!)}: ${fmtValue(metric, v)}`}</title>
+            <title>{`${formatWeekRange(weeks[i]!)}: ${fmtValue(metric, v)}`}</title>
           </rect>
         );
       })}
@@ -182,7 +182,7 @@ export function WeeklyTrendChart({
                       rx={1.5}
                       fill={s.color}
                     >
-                      <title>{`Week of ${formatWeekStart(weeks[i]!)}: ${fmt(v)}`}</title>
+                      <title>{`${formatWeekRange(weeks[i]!)}: ${fmt(v)}`}</title>
                     </rect>
                   ),
                 )}
@@ -199,7 +199,7 @@ export function WeeklyTrendChart({
               {s.values.map((v, i) =>
                 v == null ? null : (
                   <circle key={i} cx={x(i)} cy={y(v, max)} r={2.5} fill={s.color}>
-                    <title>{`Week of ${formatWeekStart(weeks[i]!)}: ${fmt(v)}`}</title>
+                    <title>{`${formatWeekRange(weeks[i]!)}: ${fmt(v)}`}</title>
                   </circle>
                 ),
               )}

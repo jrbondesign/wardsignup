@@ -436,7 +436,7 @@ export default function MetricsPage() {
                     </p>
                     <div className="grid sm:grid-cols-3 gap-6 mb-6">
                       <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
-                        <div className="text-[13px] text-[#5A8399] mb-2 font-medium">This week so far</div>
+                        <div className="text-[13px] text-[#5A8399] mb-2 font-medium">This week so far ({weekLabel(ec.thisWeek.weekStart)})</div>
                         <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
                           {formatCaptureRate(ec.thisWeek)}
                         </div>
@@ -446,7 +446,7 @@ export default function MetricsPage() {
                       </div>
                       {lastDone && (
                         <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
-                          <div className="text-[13px] text-[#5A8399] mb-2 font-medium">Last completed week</div>
+                          <div className="text-[13px] text-[#5A8399] mb-2 font-medium">Last completed week ({weekLabel(lastDone.weekStart)})</div>
                           <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
                             {formatCaptureRate(lastDone)}
                           </div>
@@ -473,7 +473,7 @@ export default function MetricsPage() {
                         <table className="w-full">
                           <thead>
                             <tr className="text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] border-b border-[rgba(14,150,176,0.10)]">
-                              <th className="text-left pb-3 pr-4 font-semibold">Week of</th>
+                              <th className="text-left pb-3 pr-4 font-semibold">Week (Mon to Sun)</th>
                               <th className="text-right pb-3 px-3 font-semibold">Signups</th>
                               <th className="text-right pb-3 px-3 font-semibold">With email</th>
                               <th className="text-right pb-3 pl-3 font-semibold">Rate</th>
@@ -483,7 +483,7 @@ export default function MetricsPage() {
                             {[...ec.completedWeeks].reverse().map((w) => (
                               <tr key={w.weekStart} className="border-b border-[rgba(14,150,176,0.06)] last:border-0">
                                 <td className="py-3 pr-4 text-[13px] text-[#5A8399]">
-                                  {new Date(`${w.weekStart}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" })}
+                                  {weekLabel(w.weekStart)}
                                 </td>
                                 <td className="py-3 px-3 text-right text-[13px] text-[#0D2B35] tabular-nums">{w.total}</td>
                                 <td className="py-3 px-3 text-right text-[13px] text-[#0D2B35] tabular-nums">{w.withEmail}</td>

@@ -2,32 +2,28 @@
  * Time and trend helpers for the founder metrics page.
  * Every week on the page is Monday to Sunday in America/Phoenix (UTC-7, no DST).
  */
-import { phoenixWeekStartUtc } from "@/lib/email-capture-rate";
+import {
+  MS_WEEK,
+  addWeeksToKey,
+  formatDateKey,
+  formatPhoenixWeekRange,
+  phoenixDateKeyToUtc,
+  phoenixMonthKey,
+  phoenixWeekKey,
+  phoenixWeekStartUtc,
+} from "@/lib/phoenix-time";
 
-export { phoenixWeekStartUtc };
-
-const PHOENIX_OFFSET_MS = -7 * 60 * 60 * 1000;
-const MS_DAY = 24 * 60 * 60 * 1000;
-export const MS_WEEK = 7 * MS_DAY;
-
-/** Phoenix Monday (YYYY-MM-DD) of the week containing the instant `at`. */
-export function phoenixWeekKey(at: string | Date): string {
-  const d = typeof at === "string" ? new Date(at) : at;
-  const start = phoenixWeekStartUtc(d);
-  return new Date(start.getTime() + PHOENIX_OFFSET_MS).toISOString().slice(0, 10);
-}
+// Week math lives in the shared lib/phoenix-time helper (same file as #95);
+// these names are kept for the metrics code.
+export { MS_WEEK, phoenixMonthKey, phoenixWeekKey, phoenixWeekStartUtc };
 
 /** UTC instant of Phoenix midnight starting the week keyed `weekKey` (a Phoenix Monday). */
 export function phoenixWeekKeyToUtc(weekKey: string): Date {
-  return new Date(`${weekKey}T07:00:00.000Z`);
+  return phoenixDateKeyToUtc(weekKey);
 }
 
 /** Add whole weeks to a Phoenix week key. */
-export function addWeeks(weekKey: string, n: number): string {
-  const d = new Date(`${weekKey}T12:00:00.000Z`);
-  d.setUTCDate(d.getUTCDate() + 7 * n);
-  return d.toISOString().slice(0, 10);
-}
+export const addWeeks = addWeeksToKey;
 
 /** Phoenix week keys from the week containing `from` through the week containing `to`. */
 export function phoenixWeekRange(from: string | Date, to: string | Date): string[] {
@@ -37,11 +33,6 @@ export function phoenixWeekRange(from: string | Date, to: string | Date): string
   return out;
 }
 
-/** Phoenix calendar month (YYYY-MM) of an instant. */
-export function phoenixMonthKey(at: string | Date): string {
-  const d = typeof at === "string" ? new Date(at) : at;
-  return new Date(d.getTime() + PHOENIX_OFFSET_MS).toISOString().slice(0, 7);
-}
 
 /** Shift a YYYY-MM month key by n months. */
 export function addMonths(monthKey: string, n: number): string {
@@ -62,22 +53,14 @@ export function formatMonthLabel(monthKey: string, locale?: string | string[]): 
   });
 }
 
-/** "Oct 12 to Oct 18" for a Phoenix Monday key. */
+/** "Oct 12 to Oct 18" (Monday to Sunday) for a Phoenix Monday key. */
 export function formatWeekRange(weekKey: string, locale?: string | string[]): string {
-  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", timeZone: "UTC" };
-  const mon = new Date(`${weekKey}T12:00:00Z`);
-  const sun = new Date(`${addWeeks(weekKey, 1)}T12:00:00Z`);
-  sun.setUTCDate(sun.getUTCDate() - 1);
-  return `${mon.toLocaleDateString(locale ?? [], opts)} to ${sun.toLocaleDateString(locale ?? [], opts)}`;
+  return formatPhoenixWeekRange(weekKey, locale);
 }
 
-/** "Oct 12" for a Phoenix Monday key. */
+/** "Oct 12" for a Phoenix Monday key (chart axis ticks). */
 export function formatWeekStart(weekKey: string, locale?: string | string[]): string {
-  return new Date(`${weekKey}T12:00:00Z`).toLocaleDateString(locale ?? [], {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  });
+  return formatDateKey(weekKey, locale);
 }
 
 export type Trend = "up" | "down" | "flat";

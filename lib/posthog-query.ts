@@ -16,7 +16,7 @@ export async function posthogWeeklyEventCounts(
   const since = sinceIso.replace(/[^0-9T:.\-Z]/g, "");
   // Weeks are Monday to Sunday in Phoenix time, same as the rest of the founder metrics page.
   const query = `select event, toString(toStartOfWeek(toTimeZone(timestamp, 'America/Phoenix'), 1)) as w, count() from events
-    where event in (${list}) and timestamp >= toDateTime('${since.slice(0, 19).replace("T", " ")}')
+    where event in (${list}) and timestamp >= toDateTime('${since.slice(0, 19).replace("T", " ")}', 'UTC')
     group by event, w`;
   try {
     const res = await fetch(`${host}/api/projects/${project}/query/`, {
@@ -124,14 +124,14 @@ export async function posthogCoreWeekly(opts: {
       countIf(event = 'event_created') as sheets_created,
       uniqIf(person_id, event in ('user_signed_in', 'event_created', 'event_shared')) as active_organizers
     from events
-    where timestamp >= toDateTime('${since}')
+    where timestamp >= toDateTime('${since}', 'UTC')
       and event in ('$pageview', 'signup_completed', 'item_signup_completed', 'event_created', 'user_signed_in', 'event_shared')
       and ${team}
     group by w
     order by w`;
   const organizersQuery = `select ${week} as w, toString(person_id) as pid
     from events
-    where timestamp >= toDateTime('${since}')
+    where timestamp >= toDateTime('${since}', 'UTC')
       and event in ('user_signed_in', 'event_created', 'event_shared')
       and ${team}
     group by w, pid

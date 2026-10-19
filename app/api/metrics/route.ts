@@ -16,8 +16,8 @@ import {
   addWeeks,
   phoenixMonthKey,
   phoenixWeekKey,
+  formatWeekRange,
   phoenixWeekKeyToUtc,
-  phoenixWeekStartUtc,
 } from "@/lib/metrics-weeks";
 import { buildCoreWeekly, lastWeekKeys } from "@/lib/core-metrics";
 
@@ -716,12 +716,12 @@ export async function GET(request: NextRequest) {
   // Total wards (all-time count of distinct orgs with at least one published sheet)
   const totalWards = orgFirstEventMap.size;
 
-  // New wards this week (Phoenix Monday to Sunday)
-  const weekStartISO = phoenixWeekStartUtc(nowDate).toISOString();
-
+  // New wards this week (Phoenix Monday 00:00 to Sunday 23:59:59). Compare
+  // week keys, not ISO strings: "…07:00:00+00:00" sorts before "…07:00:00.000Z".
+  const nowWeekKey = toWeekKey(nowDate);
   let newWardsThisWeek = 0;
   for (const { date } of orgFirstEventMap.values()) {
-    if (date >= weekStartISO) {
+    if (toWeekKey(date) === nowWeekKey) {
       newWardsThisWeek += 1;
     }
   }
@@ -795,14 +795,14 @@ export async function GET(request: NextRequest) {
     newAccountsByProviderThisCalendarWeek,
     newAccountsRolling7Days: newUsersThisWeek,
     northStar: {
-      primaryLabel: "New creators (this week, Phoenix Mon to Sun)",
+      primaryLabel: `New creators (this week, ${formatWeekRange(currentWeek)})`,
       newCreatorsThisCalendarWeek,
       totalAccounts: totalUsers,
       secondaryLabel: "Signups on events (this calendar week)",
       weeklyMemberSignups,
       rollingLabel: "New accounts (rolling 7 days)",
       newAccountsRolling7Days: newUsersThisWeek,
-      lastCompletedWeekLabel: "New creators (last completed week)",
+      lastCompletedWeekLabel: `New creators (last completed week, ${formatWeekRange(addWeeks(currentWeek, -1))})`,
       newCreatorsLastCompletedWeek,
       wowLastCompletedWeekPct: wowNewCreatorsLastCompletedWeekPct,
       fourWeekAvgNewCreators,
