@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
 import { captureServerException } from "@/lib/posthog-server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { sendOrganizerMetricsEmail } from "@/lib/organizer-email";
 import { campaignNeedsDigest, leaderDigestRecipient } from "@/lib/digest-recipients";

@@ -1,5 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
 import { captureServerException } from "@/lib/posthog-server";
+import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
