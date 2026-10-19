@@ -19,6 +19,12 @@ export type SignupFormKind = "slots" | "item" | "custom_item";
 export interface FunnelContext {
   /** Ward (organization) id; null when unknown (lookup failed or legacy event). */
   orgId: string | null;
+  /**
+   * Whether the ward is a test ward (lib/test-orgs). null when the lookup failed
+   * or has not finished. Optional so older call sites still type check; missing
+   * is sent as null.
+   */
+  isTestOrg?: boolean | null;
   /** Campaign id. The app calls a campaign an "event"; the URL id is the same value. */
   campaignId: string;
   sheetType: SheetType;
@@ -26,6 +32,7 @@ export interface FunnelContext {
 
 export interface FunnelProps {
   org_id: string | null;
+  is_test_org: boolean | null;
   campaign_id: string;
   event_id: string;
   sheet_type: SheetType;
@@ -40,6 +47,7 @@ export function buildFunnelProps(
   return {
     ...extra,
     org_id: ctx.orgId,
+    is_test_org: typeof ctx.isTestOrg === "boolean" ? ctx.isTestOrg : null,
     campaign_id: ctx.campaignId,
     event_id: ctx.campaignId,
     sheet_type: ctx.sheetType,
