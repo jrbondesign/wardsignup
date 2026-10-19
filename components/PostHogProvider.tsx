@@ -15,6 +15,9 @@ if (typeof window !== "undefined") {
     // Capture UTM params and custom ref parameter as person properties on first visit
     property_denylist: [],
     capture_performance: true,
+    // Error tracking: unhandled errors and unhandled promise rejections become
+    // $exception events tied to the session replay.
+    capture_exceptions: true,
   });
 }
 

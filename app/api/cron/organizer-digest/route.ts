@@ -1,3 +1,4 @@
+import { captureServerException } from "@/lib/posthog-server";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { sendOrganizerMetricsEmail } from "@/lib/organizer-email";
@@ -67,6 +68,7 @@ export async function GET(request: NextRequest) {
     feedbackAsk = await runFeedbackAskPass(admin, brandId);
   } catch (e) {
     console.error("feedback-ask pass:", e);
+    captureServerException(e, { route: "cron:organizer-digest" });
     feedbackAsk = { error: e instanceof Error ? e.message : String(e) };
   }
 

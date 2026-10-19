@@ -1,3 +1,4 @@
+import { captureServerException } from "@/lib/posthog-server";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
@@ -95,6 +96,7 @@ export async function GET(request: NextRequest) {
     }
   } catch (err) {
     console.error("Calendar reconcile cron error:", err);
+    captureServerException(err, { route: "cron:calendar-reconcile" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

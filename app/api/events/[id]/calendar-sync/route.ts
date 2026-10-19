@@ -1,3 +1,4 @@
+import { captureServerException } from "@/lib/posthog-server";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { getBrandFromHost } from "@/lib/brand";
@@ -217,6 +218,7 @@ export async function PATCH(
     );
   } catch (error) {
     console.error("Error in PATCH /api/events/[id]/calendar-sync:", error);
+    captureServerException(error, { route: "/api/events/[id]/calendar-sync" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -302,6 +304,7 @@ export async function POST(
     );
   } catch (error) {
     console.error("Error in POST /api/events/[id]/calendar-sync:", error);
+    captureServerException(error, { route: "/api/events/[id]/calendar-sync" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

@@ -6,7 +6,7 @@ import { ensureOrganizerBrandMatchesHost } from "@/lib/organizer-profile";
 import { isValidIanaTimezone } from "@/lib/event-timezone";
 import { getCurrentOrganization, listUserOrganizations } from "@/lib/organizations";
 import type { Database } from "@/lib/types";
-import { getPostHogClient } from "@/lib/posthog-server";
+import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
 import { notifyFounderIfFirstEvent } from "@/lib/founder-notify";
 import { locationFromVercelHeaders } from "@/lib/request-geo";
 
@@ -45,6 +45,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ events: data ?? [] });
   } catch (error) {
     console.error("GET /api/events unexpected error:", error);
+    captureServerException(error, { route: "/api/events" });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
@@ -225,6 +226,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ event: data });
   } catch (error) {
     console.error("Error creating event:", error);
+    captureServerException(error, { route: "/api/events" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
