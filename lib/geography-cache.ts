@@ -7,7 +7,7 @@ import {
   type GeographyCity,
 } from "@/lib/geography-snapshot";
 
-/** Daily cadence: cache is fresh for ~1 day; cron refreshes once per UTC day. */
+/** Daily cadence: cache is fresh for ~1 day; cron refreshes once per Phoenix day (8 AM Arizona). */
 export const GEOGRAPHY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** Soft stale window: still serve cache while allowing lazy refresh. */
 export const GEOGRAPHY_CACHE_STALE_MS = 36 * 60 * 60 * 1000;
