@@ -8,6 +8,7 @@ import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { buildBrandSignatureFooterHtml } from "@/lib/site-footer";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { isTestOrgId, isTestOwnerEmail } from "@/lib/test-orgs";
 
 const TOKEN_TTL_DAYS = 14;
 
@@ -255,6 +256,20 @@ export async function POST(
       event: "org_member_invited",
       properties: { organization_id: org.id, brand_id: org.brand_id, transfer_on_accept: transferOwnership },
     });
+    // Co-admin findability: one event per co-admin invite email actually sent
+    // (ownership handoff invites are excluded; they stay on org_member_invited).
+    // The inviter is always the owner, so the owner email check uses user.email.
+    if (!transferOwnership) {
+      posthog.capture({
+        distinctId: user.id,
+        event: "coadmin_invite_sent",
+        properties: {
+          org_id: org.id,
+          is_test_org: isTestOwnerEmail(user.email) || isTestOrgId(org.id),
+          brand_id: org.brand_id,
+        },
+      });
+    }
 
     return NextResponse.json({ member: memberRow }, { status: 201 });
   } catch (error) {
