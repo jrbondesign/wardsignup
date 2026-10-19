@@ -10,6 +10,7 @@ describe("buildFunnelProps", () => {
     expect(buildFunnelProps(ctx, { session_count: 2 })).toEqual({
       session_count: 2,
       org_id: ORG,
+      is_test_org: null,
       campaign_id: CAMPAIGN,
       event_id: CAMPAIGN,
       sheet_type: "spots",
@@ -18,6 +19,17 @@ describe("buildFunnelProps", () => {
 
   it("keeps org_id null when unknown instead of dropping it", () => {
     expect(buildFunnelProps({ ...ctx, orgId: null }).org_id).toBeNull();
+  });
+
+  it("carries is_test_org true / false, and null when unknown", () => {
+    expect(buildFunnelProps({ ...ctx, isTestOrg: true }).is_test_org).toBe(true);
+    expect(buildFunnelProps({ ...ctx, isTestOrg: false }).is_test_org).toBe(false);
+    expect(buildFunnelProps({ ...ctx, isTestOrg: null }).is_test_org).toBeNull();
+    expect(buildFunnelProps(ctx).is_test_org).toBeNull();
+  });
+
+  it("extra props cannot override is_test_org", () => {
+    expect(buildFunnelProps({ ...ctx, isTestOrg: true }, { is_test_org: false }).is_test_org).toBe(true);
   });
 
   it("extra props cannot override the ids", () => {
@@ -74,7 +86,21 @@ describe("SignupFunnelTracker", () => {
     const props = capture.mock.calls[0][1];
     expect(JSON.stringify(props)).not.toContain("jane");
     expect(JSON.stringify(props)).not.toContain("example.com");
-    expect(Object.keys(props).sort()).toEqual(["campaign_id", "event_id", "form", "org_id", "sheet_type"]);
+    expect(Object.keys(props).sort()).toEqual(["campaign_id", "event_id", "form", "is_test_org", "org_id", "sheet_type"]);
+  });
+
+  it("sends is_test_org on sheet_viewed, signup_form_started and signup_email_entered", () => {
+    const capture = jest.fn();
+    const t = new SignupFunnelTracker(capture);
+    const testCtx = { ...ctx, isTestOrg: true };
+    t.sheetViewed(testCtx, { slot_count: 1 });
+    t.formStarted(testCtx, "slots", "field_focus");
+    t.emailEntered(testCtx, "slots", "jane@example.com");
+    expect(capture.mock.calls.map((c) => [c[0], c[1].is_test_org])).toEqual([
+      ["sheet_viewed", true],
+      ["signup_form_started", true],
+      ["signup_email_entered", true],
+    ]);
   });
 
   it("a throwing capture never breaks the page", () => {

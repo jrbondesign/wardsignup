@@ -122,6 +122,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   // PII in any property. org_id comes from a tiny public lookup so ward-level
   // analysis works without group analytics.
   const [orgId, setOrgId] = useState<string | null>(null);
+  const [isTestOrg, setIsTestOrg] = useState<boolean | null>(null);
   const [orgIdResolved, setOrgIdResolved] = useState(false);
   const posthogRef = useRef(posthog);
   posthogRef.current = posthog;
@@ -133,16 +134,19 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     };
   }
   const funnel = funnelRef.current.tracker;
-  const funnelCtx: FunnelContext = { orgId, campaignId: eventId, sheetType: eventType };
+  const funnelCtx: FunnelContext = { orgId, isTestOrg, campaignId: eventId, sheetType: eventType };
 
   useEffect(() => {
     let cancelled = false;
     setOrgId(null);
+    setIsTestOrg(null);
     setOrgIdResolved(false);
     fetch(`/api/events/${eventId}/analytics-context`)
       .then((r) => (r.ok ? r.json() : {}))
-      .then((d: { orgId?: string | null }) => {
-        if (!cancelled) setOrgId(typeof d.orgId === "string" ? d.orgId : null);
+      .then((d: { orgId?: string | null; isTestOrg?: boolean | null }) => {
+        if (cancelled) return;
+        setOrgId(typeof d.orgId === "string" ? d.orgId : null);
+        setIsTestOrg(typeof d.isTestOrg === "boolean" ? d.isTestOrg : null);
       })
       .catch(() => {})
       .finally(() => {
@@ -161,7 +165,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     );
     // funnelCtx is derived from the deps below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, event, orgIdResolved, orgId, eventType, items.length, sessions.length, funnel]);
+  }, [loading, event, orgIdResolved, orgId, isTestOrg, eventType, items.length, sessions.length, funnel]);
 
   // ---- Email nudge experiment (flag email-capture-next, lib/email-nudge.ts).
   // The flag is read once, on signup_form_started, on spots / rsvp sheets
