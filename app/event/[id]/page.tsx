@@ -17,6 +17,16 @@ import { usePostHog } from "posthog-js/react";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
 import { usePublicCover } from "@/lib/use-public-cover";
 import { SignupFunnelTracker, buildFunnelProps, type FunnelContext, type SignupFormKind } from "@/lib/signup-funnel";
+import {
+  EMAIL_NUDGE_EVENTS,
+  hasSkippedEmailNudge,
+  isEmailNudgeEligibleSheet,
+  readEmailNudgeVariant,
+  rememberEmailNudgeSkip,
+  shouldShowEmailNudge,
+  type EmailNudgeVariant,
+} from "@/lib/email-nudge";
+import EmailNudgePrompt from "@/components/EmailNudgePrompt";
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -153,8 +163,29 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, event, orgIdResolved, orgId, eventType, items.length, sessions.length, funnel]);
 
+  // ---- Email nudge experiment (flag email-capture-next, lib/email-nudge.ts).
+  // The flag is read once, on signup_form_started, on spots / rsvp sheets
+  // only; that read is the exposure. null = flags not loaded or PostHog
+  // error: control, no exposure.
+  const nudgeVariantRef = useRef<{ eventId: string; variant: EmailNudgeVariant | null } | null>(null);
+  const nudgeShownRef = useRef(0);
+  const [nudgeOpen, setNudgeOpen] = useState(false);
+  const emailInputRef = useRef<HTMLInputElement | null>(null);
+  const nudgeVariant = (): EmailNudgeVariant | null =>
+    nudgeVariantRef.current?.eventId === eventId ? nudgeVariantRef.current.variant : null;
+  const captureNudge = (name: string) => {
+    try {
+      posthogRef.current?.capture(name, buildFunnelProps(funnelCtx, { variant: nudgeVariant() ?? "control", form: "slots" }));
+    } catch {
+      // Analytics must never break the signup page.
+    }
+  };
+
   const trackFormStarted = (form: SignupFormKind, trigger: "field_focus" | "slot_selected" = "field_focus") => {
-    funnel.formStarted(funnelCtx, form, trigger);
+    const started = funnel.formStarted(funnelCtx, form, trigger);
+    if (started && form === "slots" && isEmailNudgeEligibleSheet(eventType)) {
+      nudgeVariantRef.current = { eventId, variant: readEmailNudgeVariant(posthogRef.current as never) };
+    }
   };
   const trackEmailEntered = (form: SignupFormKind, email: string) => {
     funnel.emailEntered(funnelCtx, form, email);
@@ -433,14 +464,35 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     }
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSignup = async (e?: React.FormEvent, opts: { skipNudge?: boolean } = {}) => {
+    e?.preventDefault();
     // For single-session events (rsvp/spots with one session), auto-use that session
     const sessionsToSignUp = isSingleSession && sessions.length === 1
       ? [sessions[0].id]
       : selectedSessions;
     if (sessionsToSignUp.length === 0) { setError("Please select at least one slot"); return; }
     if (!formData.name.trim()) { setError("Please enter your name"); return; }
+
+    // Test arm only: one nudge per signup when a dated slot has no email.
+    // Never blocks: Skip submits right away.
+    if (
+      !opts.skipNudge &&
+      shouldShowEmailNudge({
+        variant: nudgeVariant(),
+        sheetType: eventType,
+        email: formData.email,
+        sessions,
+        selectedIds: sessionsToSignUp,
+        shownThisSignup: nudgeShownRef.current,
+        skippedBefore: hasSkippedEmailNudge(),
+      })
+    ) {
+      nudgeShownRef.current += 1;
+      setNudgeOpen(true);
+      captureNudge(EMAIL_NUDGE_EVENTS.shown);
+      return;
+    }
+    setNudgeOpen(false);
 
     setSubmitting(true);
     setError("");
@@ -490,6 +542,18 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleNudgeAdd = () => {
+    setNudgeOpen(false);
+    captureNudge(EMAIL_NUDGE_EVENTS.add);
+    emailInputRef.current?.focus();
+  };
+  const handleNudgeSkip = () => {
+    setNudgeOpen(false);
+    rememberEmailNudgeSkip();
+    captureNudge(EMAIL_NUDGE_EVENTS.skip);
+    void handleSignup(undefined, { skipNudge: true });
   };
 
   if (loading) {
@@ -911,7 +975,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
                       Email <span className="text-[#5A8399] font-normal">(optional)</span>
                     </label>
-                    <input type="email" value={formData.email}
+                    <input type="email" value={formData.email} ref={emailInputRef}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       onBlur={(e) => trackEmailEntered("slots", e.target.value)}
                       placeholder="you@example.com"
@@ -947,6 +1011,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   {error && (
                     <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm">{error}</div>
                   )}
+                  {nudgeOpen && <EmailNudgePrompt onAdd={handleNudgeAdd} onSkip={handleNudgeSkip} disabled={submitting} />}
                   <button type="submit" disabled={submitting}
                     className="w-full text-base font-semibold px-4 py-[15px] rounded-xl text-white bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] shadow-[0_6px_20px_rgba(14,150,176,0.38)] hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(14,150,176,0.45)] active:translate-y-0 transition-all disabled:opacity-60 disabled:cursor-default disabled:translate-y-0">
                     {submitting ? "Signing up…" : "Sign Up"}
@@ -1572,7 +1637,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
                   Email <span className="text-[#5A8399] font-normal">(optional)</span>
                 </label>
-                <input type="email" value={formData.email}
+                <input type="email" value={formData.email} ref={emailInputRef}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                   onBlur={(e) => trackEmailEntered("slots", e.target.value)}
                   placeholder="john@example.com"
@@ -1609,9 +1674,10 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 </div>
               )}
 
+              {nudgeOpen && <EmailNudgePrompt onAdd={handleNudgeAdd} onSkip={handleNudgeSkip} disabled={submitting} />}
               <div className="flex gap-3 pt-2">
                 <button type="button"
-                  onClick={() => { setShowSignupForm(false); setError(""); }}
+                  onClick={() => { setShowSignupForm(false); setError(""); setNudgeOpen(false); }}
                   className="flex-1 text-sm font-semibold px-4 py-3 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#2E5566] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all">
                   Back
                 </button>
