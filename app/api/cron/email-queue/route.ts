@@ -4,11 +4,18 @@ import { sendGuardedEmail } from "@/lib/email-send";
 import { getBrandDefinition, toPublicBrand } from "@/lib/brand/brands";
 import type { BrandId } from "@/lib/brand/types";
 import type { QueuedEmailRow } from "@/lib/email-queue";
+import { MAX_QUEUE_ATTEMPTS, REALTIME_KINDS, isRealtimeKind, realtimeRetrySendAfter } from "@/lib/email-queue-time";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = MAX_QUEUE_ATTEMPTS;
+
+/**
+ * A claim older than this is treated as abandoned (the run crashed or timed
+ * out after claiming). Well above maxDuration so a live run is never touched.
+ */
+export const STALE_CLAIM_MS = 15 * 60 * 1000;
 
 function drainLimit(): number {
   const n = Number(process.env.EMAIL_QUEUE_DRAIN_LIMIT);
@@ -16,10 +23,28 @@ function drainLimit(): number {
 }
 
 /**
- * Drains email_queue just after the UTC quota reset (vercel.json: 00:07 UTC).
+ * Drains email_queue every hour at :07 (vercel.json "7 * * * *").
+ *
+ * - Near real time rows (welcome, new creator notice, feedback received;
+ *   REALTIME_KINDS) are only here when Resend was out of budget and Brevo
+ *   couldn't take them (not configured, or it failed). They are due at once
+ *   and are sent first, through Brevo again if Resend is still full. A failed
+ *   attempt backs off (next run, then about 2 hours); after 3 attempts the
+ *   row is failed and never retried.
+ * - Batch rows (digests, feedback asks) wait for 12:05 AM Arizona
+ *   (lib/email-queue-time.ts), so the 12:07 AM run sends them.
+ * Both daily counters in lib/email-deliver.ts (Arizona day budget, UTC day
+ * safety cap) still apply; anything they refuse stays pending for a later run.
  * Each row is claimed (pending to sending) before it is sent, so overlapping
  * runs never send the same email twice. Rows go back to pending if Resend is
  * out of budget, and to failed after 3 errors.
+ *
+ * Recovery: a run that dies between claim and result write leaves the row in
+ * sending. Each run first returns sending rows claimed more than
+ * STALE_CLAIM_MS ago to pending (or failed once MAX_ATTEMPTS is used up).
+ * This trades a possible duplicate (Resend accepted the email but the result
+ * write was lost) for never silently dropping one; the attempts cap bounds
+ * duplicates to at most MAX_ATTEMPTS sends.
  * Secured with Authorization: Bearer CRON_SECRET.
  */
 export async function GET(request: NextRequest) {
@@ -38,27 +63,62 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Config error" }, { status: 500 });
   }
 
-  const { data, error } = await admin
+  const staleBefore = new Date(Date.now() - STALE_CLAIM_MS).toISOString();
+  const { data: requeued, error: requeueError } = await admin
+    .from("email_queue")
+    .update({ status: "pending", last_error: "claim expired" } as never)
+    .eq("status", "sending")
+    .lt("claimed_at", staleBefore)
+    .lt("attempts", MAX_ATTEMPTS)
+    .select("id");
+  const { data: expired, error: expireError } = await admin
+    .from("email_queue")
+    .update({ status: "failed", last_error: "claim expired" } as never)
+    .eq("status", "sending")
+    .lt("claimed_at", staleBefore)
+    .gte("attempts", MAX_ATTEMPTS)
+    .select("id");
+  if (requeueError || expireError) console.error("email-queue recovery error:", requeueError ?? expireError);
+  const recovered = ((requeued as unknown[] | null) ?? []).length;
+  const expiredClaims = ((expired as unknown[] | null) ?? []).length;
+
+  const nowIso = new Date().toISOString();
+  const limit = drainLimit();
+  // Near real time rows first, so a batch backlog can't use the budget ahead of a welcome.
+  const realtimeRes = await admin
     .from("email_queue")
     .select("*")
     .eq("status", "pending")
-    .lte("send_after", new Date().toISOString())
+    .in("kind", [...REALTIME_KINDS])
+    .lte("send_after", nowIso)
     .order("send_after", { ascending: true })
-    .limit(drainLimit());
+    .limit(limit);
+  const batchRes = realtimeRes.error
+    ? realtimeRes
+    : await admin
+        .from("email_queue")
+        .select("*")
+        .eq("status", "pending")
+        .not("kind", "in", `(${REALTIME_KINDS.join(",")})`)
+        .lte("send_after", nowIso)
+        .order("send_after", { ascending: true })
+        .limit(limit);
+  const error = realtimeRes.error || batchRes.error;
   if (error) {
     console.error("email-queue list error:", error);
     return NextResponse.json({ error: "Failed to list queue" }, { status: 500 });
   }
+  const data = [...((realtimeRes.data ?? []) as QueuedEmailRow[]), ...((batchRes.data ?? []) as QueuedEmailRow[])].slice(0, limit);
 
   let sent = 0;
   let failed = 0;
   let skipped = 0;
   let stoppedOverBudget = false;
 
-  for (const raw of (data ?? []) as QueuedEmailRow[]) {
+  for (const raw of data) {
     const { data: claimed } = await admin
       .from("email_queue")
-      .update({ status: "sending", attempts: raw.attempts + 1 } as never)
+      .update({ status: "sending", attempts: raw.attempts + 1, claimed_at: new Date().toISOString() } as never)
       .eq("id", raw.id)
       .eq("status", "pending")
       .select("id");
@@ -82,6 +142,7 @@ export async function GET(request: NextRequest) {
       text: raw.text_body ?? undefined,
       replyTo: raw.reply_to ?? undefined,
       attachments: raw.attachments ?? undefined,
+      realtime: isRealtimeKind(raw.kind),
       fromQueue: true,
     });
 
@@ -107,13 +168,17 @@ export async function GET(request: NextRequest) {
       stoppedOverBudget = true;
       break;
     }
-    const giveUp = raw.attempts + 1 >= MAX_ATTEMPTS;
-    await admin
-      .from("email_queue")
-      .update({ status: giveUp ? "failed" : "pending", last_error: r.error ?? "send failed" } as never)
-      .eq("id", raw.id);
+    const attemptsMade = raw.attempts + 1;
+    const giveUp = attemptsMade >= MAX_ATTEMPTS;
+    const patch: Record<string, unknown> = { status: giveUp ? "failed" : "pending", last_error: r.error ?? "send failed" };
+    // Near real time rows back off: next run, then about 2 hours, then failed.
+    if (!giveUp && isRealtimeKind(raw.kind)) {
+      patch.send_after = realtimeRetrySendAfter(new Date(), attemptsMade).toISOString();
+    }
+    if (giveUp) console.error(`email_queue ${raw.id} (${raw.kind}) failed after ${attemptsMade} attempts: ${r.error ?? "send failed"}`);
+    await admin.from("email_queue").update(patch as never).eq("id", raw.id);
     failed += 1;
   }
 
-  return NextResponse.json({ ok: true, sent, failed, skipped, stoppedOverBudget });
+  return NextResponse.json({ ok: true, sent, failed, skipped, recovered, expired: expiredClaims, stoppedOverBudget });
 }

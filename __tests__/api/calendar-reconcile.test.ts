@@ -115,7 +115,7 @@ describe("/api/cron/calendar-reconcile", () => {
     const { admin } = createRecordingAdmin({
       syncError: { message: "column sessions.start_time does not exist" },
     });
-    mockCreateClient.mockReturnValue(admin as ReturnType<typeof createServiceRoleClient>);
+    mockCreateClient.mockReturnValue(admin as unknown as ReturnType<typeof createServiceRoleClient>);
 
     const response = await GET(requestWithSecret("test-cron-secret"));
     expect(response.status).toBe(500);
@@ -131,7 +131,7 @@ describe("/api/cron/calendar-reconcile", () => {
         { campaign_id: "camp-2", session_date: "2026-10-11" },
       ],
     });
-    mockCreateClient.mockReturnValue(admin as ReturnType<typeof createServiceRoleClient>);
+    mockCreateClient.mockReturnValue(admin as unknown as ReturnType<typeof createServiceRoleClient>);
     mockSync.mockResolvedValue({ success: true });
 
     const response = await GET(requestWithSecret("test-cron-secret"));

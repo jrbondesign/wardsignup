@@ -8,8 +8,13 @@ import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
 import "@testing-library/jest-dom";
 
 const capture = jest.fn();
+// Stable client, like the real hook (it returns the provider's single client).
+// The dashboard's load effect depends on it: a new object per render re-ran the
+// effect on every render, an endless fetch and setEvents loop that made this
+// file hang or pass depending on scheduling.
+const mockPosthog = { capture: (...a: unknown[]) => capture(...a), identify: jest.fn() };
 jest.mock("posthog-js/react", () => ({
-  usePostHog: () => ({ capture, identify: jest.fn() }),
+  usePostHog: () => mockPosthog,
 }));
 
 // Stable router: the dashboard's load effect depends on it, like the real hook.
@@ -26,7 +31,9 @@ jest.mock("next/image", () => ({
 
 // Chainable stand in for the dashboard's campaigns query.
 let campaignsResult: { data: unknown[]; error: null } = { data: [], error: null };
+let campaignsQueries = 0;
 function campaignsChain() {
+  campaignsQueries += 1;
   const chain: Record<string, unknown> = {};
   for (const m of ["select", "eq", "order"]) chain[m] = () => chain;
   chain.then = (resolve: (v: unknown) => unknown) => Promise.resolve(campaignsResult).then(resolve);
@@ -78,6 +85,7 @@ const flush = () => act(async () => { await Promise.resolve(); });
 beforeEach(() => {
   capture.mockClear();
   campaignsResult = { data: [], error: null };
+  campaignsQueries = 0;
 });
 
 describe("OrgSettingsEntry", () => {
@@ -215,5 +223,7 @@ describe("Dashboard header", () => {
     expect(newEvent).toHaveAttribute("href", "/create");
     expect(newEvent).toHaveClass("bg-gradient-to-br", "from-[#22C8D8]", "via-[#0E96B0]", "to-[#08647E]", "text-white");
     await flush();
+    // The load effect runs once; a re-render must not refetch (that loop is what hung this test).
+    expect(campaignsQueries).toBe(1);
   });
 });

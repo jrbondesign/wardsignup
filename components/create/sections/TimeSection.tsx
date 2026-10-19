@@ -168,7 +168,7 @@ function SpotsTime({ state, set }: Props) {
     const last = state.spotsPickedDates.filter((p) => p.date === date).slice(-1)[0];
     const start = last?.start ?? state.spotsStartTime;
     const end = last?.end ?? state.spotsEndTime;
-    const id = `${date}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    const id = `${date}-${crypto.randomUUID()}`;
     const next = [...state.spotsPickedDates, { id, date, start, end }];
     set({ spotsPickedDates: next });
   };

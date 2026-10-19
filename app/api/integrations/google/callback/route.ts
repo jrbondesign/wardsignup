@@ -1,10 +1,45 @@
 import { NextResponse } from 'next/server';
 import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
-import { verifyState, exchangeCode, encryptToken, listCalendars } from '@/lib/google-oauth';
+import { timingSafeEqual } from 'crypto';
+import {
+  verifyState,
+  exchangeCode,
+  encryptToken,
+  listCalendars,
+  sanitizeReturnPath,
+  OAUTH_NONCE_COOKIE,
+} from '@/lib/google-oauth';
+import { userIsAcceptedOrgMember } from '@/lib/campaign-access';
 import { persistGoogleCalendarConnection } from '@/lib/google-calendar-connection';
 import { clearConnectionBroken } from '@/lib/google-calendar-health';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
 import { getPostHogClient } from '@/lib/posthog-server';
+
+function readCookie(request: Request, name: string): string | null {
+  const header = request.headers.get('cookie');
+  if (!header) return null;
+  for (const part of header.split(';')) {
+    const [key, ...rest] = part.trim().split('=');
+    if (key === name) return decodeURIComponent(rest.join('='));
+  }
+  return null;
+}
+
+function nonceMatches(cookieNonce: string | null, stateNonce: string): boolean {
+  if (!cookieNonce) return false;
+  const a = Buffer.from(cookieNonce);
+  const b = Buffer.from(stateNonce);
+  return a.length === b.length && timingSafeEqual(a, b);
+}
+
+function clearNonceCookie(response: NextResponse): NextResponse {
+  response.cookies.set(OAUTH_NONCE_COOKIE, '', {
+    httpOnly: true,
+    path: '/api/integrations/google/callback',
+    maxAge: 0,
+  });
+  return response;
+}
 
 async function resolveGoogleEmail(accessToken: string): Promise<string | null> {
   try {
@@ -75,16 +110,31 @@ export async function GET(request: Request) {
       return NextResponse.redirect(new URL('/settings/organization?error=gcal_invalid_state', origin));
     }
 
+    const returnPath = sanitizeReturnPath(state.returnPath);
     const failRedirect = (code: string) => {
-      const fail = new URL(state.returnPath || '/settings/organization', origin);
+      const fail = new URL(returnPath, origin);
       fail.searchParams.set('error', code);
-      return NextResponse.redirect(fail.toString());
+      return clearNonceCookie(NextResponse.redirect(fail.toString()));
     };
+
+    // The state must come back to the same browser that started the flow.
+    if (!nonceMatches(readCookie(request, OAUTH_NONCE_COOKIE), state.nonce)) {
+      console.error('[google/callback] Nonce cookie missing or mismatched');
+      return failRedirect('gcal_invalid_state');
+    }
 
     // Require org allowlist check
     if (!isGcalSyncEnabledForOrg(state.orgId)) {
       console.error('[google/callback] Org not in allowlist:', state.orgId);
       return failRedirect('gcal_org_not_enabled');
+    }
+
+    const admin = createServiceRoleClient();
+
+    // Membership may have changed since connect; re-check before storing tokens.
+    if (!(await userIsAcceptedOrgMember(admin, { id: state.userId }, state.orgId))) {
+      console.error('[google/callback] User is not an accepted org member');
+      return failRedirect('gcal_not_org_member');
     }
 
     // Exchange code for tokens
@@ -119,7 +169,6 @@ export async function GET(request: Request) {
 
     // Update the existing org connection (including expired rows) rather than
     // inserting a second row keyed on google_email.
-    const admin = createServiceRoleClient();
     const { error: dbError, connectionId } = await persistGoogleCalendarConnection(admin, {
       userId: state.userId,
       organizationId: state.orgId,
@@ -151,9 +200,9 @@ export async function GET(request: Request) {
     });
 
     // Success - redirect to return path
-    const redirectUrl = new URL(state.returnPath, origin);
+    const redirectUrl = new URL(returnPath, origin);
     redirectUrl.searchParams.set('gcal_connected', '1');
-    return NextResponse.redirect(redirectUrl.toString());
+    return clearNonceCookie(NextResponse.redirect(redirectUrl.toString()));
   } catch (err) {
     console.error('[google/callback] error:', err);
     return NextResponse.redirect(new URL('/settings/organization?error=gcal_internal_error', origin));

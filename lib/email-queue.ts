@@ -20,11 +20,32 @@ export type QueuedEmailRow = QueuedEmailInsert & {
   attempts: number;
 };
 
+/**
+ * Insert a queued email. With `dedupe`, an identical email (same brand, kind,
+ * recipient and subject) that is already pending or sending is not queued
+ * again, so a retried request can't put two copies of a welcome in the queue.
+ * Callers keep their own once-only guards (welcome_email_sent, the creator
+ * notification log); this is a second net. A failed lookup still queues:
+ * losing the email is worse than the small chance of a duplicate.
+ */
 export async function enqueueEmail(
   row: QueuedEmailInsert,
-): Promise<{ ok: true } | { ok: false; error: string }> {
+  opts: { dedupe?: boolean } = {},
+): Promise<{ ok: true; deduped?: boolean } | { ok: false; error: string }> {
   try {
     const admin = createServiceRoleClient();
+    if (opts.dedupe) {
+      const { data: existing, error: findErr } = await admin
+        .from("email_queue")
+        .select("id")
+        .eq("brand_id", row.brand_id)
+        .eq("kind", row.kind)
+        .eq("to_address", row.to_address)
+        .eq("subject", row.subject)
+        .in("status", ["pending", "sending"])
+        .limit(1);
+      if (!findErr && Array.isArray(existing) && existing.length > 0) return { ok: true, deduped: true };
+    }
     const { error } = await admin.from("email_queue").insert(row as never);
     if (error) {
       console.error("email_queue insert failed:", error);
