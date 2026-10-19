@@ -13,6 +13,16 @@ export function isProtectedPath(pathname: string): boolean {
   return false;
 }
 
+/** Longest the middleware waits on Supabase auth before letting the request through. */
+export const AUTH_TIMEOUT_MS = 5000;
+
+/** True when the request carries a Supabase auth cookie (sb-<ref>-auth-token, possibly chunked). */
+export function hasAuthCookie(cookies: { name: string }[]): boolean {
+  return cookies.some(
+    (c) => c.name.startsWith("sb-") && c.name.includes("-auth-token"),
+  );
+}
+
 /**
  * Refreshes the Supabase session from cookies and returns the response that
  * must be used so Set-Cookie headers are applied (per @supabase/ssr).
@@ -20,7 +30,14 @@ export function isProtectedPath(pathname: string): boolean {
 export async function updateSession(request: NextRequest): Promise<{
   response: NextResponse;
   user: User | null;
+  /** Supabase did not answer within AUTH_TIMEOUT_MS; user is unknown, not signed out. */
+  timedOut: boolean;
 }> {
+  // Anonymous visitors have no session to refresh; skip the Supabase round trip.
+  if (!hasAuthCookie(request.cookies.getAll())) {
+    return { response: NextResponse.next({ request }), user: null, timedOut: false };
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   });
@@ -54,9 +71,20 @@ export async function updateSession(request: NextRequest): Promise<{
     },
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<"timeout">((resolve) => {
+    timer = setTimeout(() => resolve("timeout"), AUTH_TIMEOUT_MS);
+  });
+  const result = await Promise.race([
+    supabase.auth.getUser().catch(() => null),
+    timeout,
+  ]);
+  clearTimeout(timer);
 
-  return { response: supabaseResponse, user };
+  if (result === "timeout") {
+    console.error(`middleware: Supabase auth did not respond within ${AUTH_TIMEOUT_MS}ms`);
+    return { response: NextResponse.next({ request }), user: null, timedOut: true };
+  }
+
+  return { response: supabaseResponse, user: result?.data.user ?? null, timedOut: false };
 }
