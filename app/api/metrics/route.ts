@@ -3,21 +3,29 @@ import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { posthogWeeklyEventCounts } from "@/lib/posthog-query";
 import { isMetricsAdminEmail } from "@/lib/metrics-admin";
+import { posthogCoreWeekly } from "@/lib/posthog-query";
 import { founderNotifySkipEmails } from "@/lib/founder-notify";
 import {
   computeEmailCaptureRate,
   emailCaptureWindowStart,
-  testCampaignIds,
   type CaptureSignupRow,
 } from "@/lib/email-capture-rate";
+import { isTeamEmail, teamSheetIds } from "@/lib/team-accounts";
+import {
+  addMonths,
+  addWeeks,
+  phoenixMonthKey,
+  phoenixWeekKey,
+  phoenixWeekKeyToUtc,
+  phoenixWeekStartUtc,
+} from "@/lib/metrics-weeks";
+import { buildCoreWeekly, lastWeekKeys } from "@/lib/core-metrics";
 
-function toWeekKey(dateStr: string): string {
-  const d = new Date(dateStr);
-  const day = d.getUTCDay(); // 0=Sun
-  const diff = d.getUTCDate() - day + (day === 0 ? -6 : 1); // back to Monday
-  d.setUTCDate(diff);
-  return d.toISOString().slice(0, 10);
-}
+/** Every week on the founder metrics page is Monday to Sunday in Phoenix time. */
+const toWeekKey = phoenixWeekKey;
+
+/** Weeks charted in the core strip trend charts (this week included). */
+const CORE_TREND_WEEKS = 12;
 
 const MS_DAY = 24 * 60 * 60 * 1000;
 
@@ -140,14 +148,11 @@ export async function GET(request: NextRequest) {
     (firstCampaign as { created_at: string } | null)?.created_at ?? new Date().toISOString();
   const weeks: string[] = [];
   const currentWeek = toWeekKey(new Date().toISOString());
-  for (let w = toWeekKey(launchIso); w <= currentWeek; ) {
+  for (let w = toWeekKey(launchIso); w <= currentWeek; w = addWeeks(w, 1)) {
     weeks.push(w);
-    const d = new Date(`${w}T00:00:00.000Z`);
-    d.setUTCDate(d.getUTCDate() + 7);
-    w = d.toISOString().slice(0, 10);
   }
   const oldestWeekStart = weeks[0]!;
-  const oldestIso = `${oldestWeekStart}T00:00:00.000Z`;
+  const oldestIso = phoenixWeekKeyToUtc(oldestWeekStart).toISOString();
 
   // When filtering by brand, fetch campaign IDs first so we can filter dependent tables.
   let brandCampaignIds: string[] | null = null;
@@ -328,7 +333,7 @@ export async function GET(request: NextRequest) {
   }
   const skipEmails = founderNotifySkipEmails();
   const activatedCreators = authUserList.filter(
-    (u) => firstEventAt.has(u.id) && !skipEmails.has(u.email?.toLowerCase() ?? ""),
+    (u) => firstEventAt.has(u.id) && !isTeamEmail(u.email, skipEmails),
   );
   const ownerNoEventIds = new Set(
     authUserList.filter((u) => !firstEventAt.has(u.id)).map((u) => u.id),
@@ -593,7 +598,7 @@ export async function GET(request: NextRequest) {
   // A ward's first published event is the earliest campaign with at least one session.
   const { data: orgsWithCampaigns } = await admin
     .from("organizations")
-    .select("id, first_touch_utm_source, first_touch_utm_medium, first_touch_utm_campaign, first_touch_ref, created_by");
+    .select("id, first_touch_utm_source, first_touch_utm_medium, first_touch_utm_campaign, first_touch_ref, created_by, owner_id");
   
   const { data: campaignsWithSessions } = await admin
     .from("campaigns")
@@ -615,7 +620,21 @@ export async function GET(request: NextRequest) {
     first_touch_utm_campaign: string | null;
     first_touch_ref: string | null;
     created_by: string;
+    owner_id: string | null;
   };
+
+  // Team / test sheets: classified by the ward's CURRENT owner (falls back to the
+  // creator for sheets with no ward). One rule for New wards, email capture and the strip.
+  const emailByUserId = new Map(allAuthUsers.map((u) => [u.id, u.email ?? null]));
+  const wardOwnerById = new Map(
+    ((orgsWithCampaigns ?? []) as OrgWithAttribution[]).map((o) => [o.id, o.owner_id ?? o.created_by ?? null]),
+  );
+  const teamSheets = teamSheetIds({
+    sheets: (campaignsSlim ?? []) as (SlimCampaign & { organization_id: string | null })[],
+    wardOwnerById,
+    emailByUserId,
+    isTeam: (e) => isTeamEmail(e, skipEmails),
+  });
 
   const orgFirstEventMap = new Map<string, { date: string; orgData: OrgWithAttribution }>();
   
@@ -629,10 +648,8 @@ export async function GET(request: NextRequest) {
       const orgData = (orgsWithCampaigns ?? []).find((o: OrgWithAttribution) => o.id === orgId);
       if (!orgData) continue;
 
-      const skipEmails = founderNotifySkipEmails();
-      const ownerUser = allAuthUsers.find((u) => u.id === orgData.created_by);
-      const ownerEmail = ownerUser?.email?.toLowerCase();
-      if (ownerEmail && skipEmails.has(ownerEmail)) continue;
+      // Team ward: its current owner is a team or test account.
+      if (teamSheets.has(campaign.id)) continue;
 
       orgFirstEventMap.set(orgId, { 
         date: campaign.created_at,
@@ -641,13 +658,12 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  function toMonthKey(dateStr: string): string {
-    return dateStr.slice(0, 7); // YYYY-MM
-  }
+  // Phoenix calendar months (YYYY-MM).
+  const toMonthKey = phoenixMonthKey;
 
   const nowDate = new Date();
-  const currentMonth = toMonthKey(nowDate.toISOString());
-  const lastMonth = toMonthKey(new Date(nowDate.getFullYear(), nowDate.getMonth() - 1, 1).toISOString());
+  const currentMonth = toMonthKey(nowDate);
+  const lastMonth = addMonths(currentMonth, -1);
 
   const monthlyWardsMap = new Map<string, { count: number; bySource: Map<string, number> }>();
 
@@ -670,10 +686,7 @@ export async function GET(request: NextRequest) {
   }
 
   const months: string[] = [];
-  const startDate = new Date(nowDate.getFullYear(), nowDate.getMonth() - 11, 1);
-  for (let d = new Date(startDate); d <= nowDate; d.setMonth(d.getMonth() + 1)) {
-    months.push(toMonthKey(d.toISOString()));
-  }
+  for (let i = 11; i >= 0; i -= 1) months.push(addMonths(currentMonth, -i));
 
   const monthlyTrend = months.map((month) => {
     const data = monthlyWardsMap.get(month);
@@ -703,21 +716,8 @@ export async function GET(request: NextRequest) {
   // Total wards (all-time count of distinct orgs with at least one published sheet)
   const totalWards = orgFirstEventMap.size;
 
-  // New wards this week (Phoenix time, Monday-start week)
-  // Phoenix is America/Phoenix (UTC-7, no DST)
-  const phoenixOffset = -7 * 60; // minutes
-  const nowPhoenix = new Date(nowDate.getTime() + phoenixOffset * 60 * 1000);
-  
-  // Get the Monday of the current week in Phoenix time
-  const phoenixDay = nowPhoenix.getUTCDay();
-  const phoenixDaysSinceMonday = phoenixDay === 0 ? 6 : phoenixDay - 1; // 0 = Sunday, treat as day 6
-  const phoenixWeekStart = new Date(nowPhoenix);
-  phoenixWeekStart.setUTCDate(phoenixWeekStart.getUTCDate() - phoenixDaysSinceMonday);
-  phoenixWeekStart.setUTCHours(0, 0, 0, 0);
-  
-  // Convert back to UTC for comparison
-  const weekStartUTC = new Date(phoenixWeekStart.getTime() - phoenixOffset * 60 * 1000);
-  const weekStartISO = weekStartUTC.toISOString();
+  // New wards this week (Phoenix Monday to Sunday)
+  const weekStartISO = phoenixWeekStartUtc(nowDate).toISOString();
 
   let newWardsThisWeek = 0;
   for (const { date } of orgFirstEventMap.values()) {
@@ -728,7 +728,8 @@ export async function GET(request: NextRequest) {
 
   // Email capture rate (Phoenix Mon to Sun weeks): signups with a non empty
   // member_email / all signups. Paged so the 1000 row API cap never truncates it.
-  const captureWindowIso = emailCaptureWindowStart(nowDate, 8).toISOString();
+  // Fetch enough weeks for the core trend chart; the card below still shows 8 completed weeks.
+  const captureWindowIso = emailCaptureWindowStart(nowDate, CORE_TREND_WEEKS - 1).toISOString();
   const captureRows: CaptureSignupRow[] = [];
   for (let from = 0; ; from += 1000) {
     let q = admin
@@ -747,16 +748,36 @@ export async function GET(request: NextRequest) {
     captureRows.push(...((page ?? []) as CaptureSignupRow[]));
     if (!page || page.length < 1000) break;
   }
-  // Exclude test / team accounts the same way New wards does.
-  const excludedCaptureCampaigns = testCampaignIds({
-    campaigns: (campaignsSlim ?? []) as (SlimCampaign & { organization_id: string | null })[],
-    orgOwnerById: new Map(
-      ((orgsWithCampaigns ?? []) as { id: string; created_by: string | null }[]).map((o) => [o.id, o.created_by]),
-    ),
-    emailByUserId: new Map(allAuthUsers.map((u) => [u.id, u.email ?? null])),
-    skipEmails: founderNotifySkipEmails(),
+  // Exclude team / test sheets the same way New wards does (ward's current owner).
+  const emailCapture = computeEmailCaptureRate(captureRows, nowDate, 8, teamSheets);
+  const captureTrend = computeEmailCaptureRate(captureRows, nowDate, CORE_TREND_WEEKS - 1, teamSheets);
+
+  // Core strip: this week vs last week plus a 12 week trend, Phoenix weeks.
+  const coreWeeks = lastWeekKeys(currentWeek, CORE_TREND_WEEKS);
+  const coreFirstWeekIso = phoenixWeekKeyToUtc(coreWeeks[0]!).toISOString();
+  const corePosthog = await posthogCoreWeekly({
+    // One extra week so returning organizers has a base for the oldest week.
+    sinceIso: phoenixWeekKeyToUtc(addWeeks(coreWeeks[0]!, -1)).toISOString(),
+    teamSheetIds: teamSheets,
+    extraTeamEmails: skipEmails,
   });
-  const emailCapture = computeEmailCaptureRate(captureRows, nowDate, 8, excludedCaptureCampaigns);
+  const newWardsByWeek: Record<string, number> = {};
+  let wardsBeforeFirstWeek = 0;
+  for (const { date } of orgFirstEventMap.values()) {
+    if (date < coreFirstWeekIso) wardsBeforeFirstWeek += 1;
+    const k = toWeekKey(date);
+    newWardsByWeek[k] = (newWardsByWeek[k] ?? 0) + 1;
+  }
+  const core = buildCoreWeekly({
+    weeks: coreWeeks,
+    posthog: corePosthog,
+    newCreatorsByWeek: accountWeekMap,
+    newWardsByWeek,
+    wardsBeforeFirstWeek,
+    emailCaptureByWeek: Object.fromEntries(
+      [...captureTrend.completedWeeks, captureTrend.thisWeek].map((w) => [w.weekStart, w]),
+    ),
+  });
 
   return NextResponse.json({
     totalEvents: totalEvents ?? 0,
@@ -774,7 +795,7 @@ export async function GET(request: NextRequest) {
     newAccountsByProviderThisCalendarWeek,
     newAccountsRolling7Days: newUsersThisWeek,
     northStar: {
-      primaryLabel: "New creators (this calendar week, UTC Mon–Sun)",
+      primaryLabel: "New creators (this week, Phoenix Mon to Sun)",
       newCreatorsThisCalendarWeek,
       totalAccounts: totalUsers,
       secondaryLabel: "Signups on events (this calendar week)",
@@ -795,6 +816,7 @@ export async function GET(request: NextRequest) {
       bySource: thisMonthBySource,
     },
     emailCapture,
+    core,
     totalUsers,
     newUsersThisWeek,
     activeUsersThisWeek,
