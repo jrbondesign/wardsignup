@@ -2,7 +2,7 @@
  * Reminder visibility copy: the signer email hint switch (dated vs undated
  * events) and the creator only reminder note on the Manage page.
  */
-import { readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
@@ -16,6 +16,13 @@ import {
 } from "@/lib/reminder-copy";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
+/** A page route plus the hooks/sections it was split into under components/<area>/. */
+const readPage = (page: string, area: string) => {
+  const parts = [`components/${area}/hooks`, `components/${area}/sections`]
+    .filter((d) => existsSync(join(process.cwd(), d)))
+    .flatMap((d) => readdirSync(join(process.cwd(), d)).sort().map((f) => `${d}/${f}`));
+  return [page, ...parts].map(read).join("\n");
+};
 
 describe("reminder copy text", () => {
   it("matches the agreed wording", () => {
@@ -62,7 +69,7 @@ describe("signerEmailHint", () => {
   });
 
   it("is what the public event page renders in both signup forms, for the slots being submitted", () => {
-    const src = read("app/event/[id]/page.tsx");
+    const src = readPage("app/event/[id]/page.tsx", "event");
     expect(src.match(/\{signerEmailHint\(sessions, signupSessionIds\)\}/g)).toHaveLength(2);
     expect(src).toContain("const signupSessionIds = isSingleSession ? [sessions[0].id] : selectedSessions;");
     expect(src).not.toContain("reminder the day before");
@@ -89,14 +96,14 @@ describe("CreatorRemindersNote", () => {
   });
 
   it("is only wired into the Manage page, behind the access check", () => {
-    const manage = read("app/admin/[id]/page.tsx");
+    const manage = readPage("app/admin/[id]/page.tsx", "admin");
     expect(manage).toContain("<CreatorRemindersNote viewerCanManage={viewerCanManage} eventType={eventType} />");
     const accessIdx = manage.indexOf("if (!hasAccess)");
     const grantIdx = manage.indexOf("setViewerCanManage(true)");
     expect(accessIdx).toBeGreaterThan(-1);
     expect(grantIdx).toBeGreaterThan(accessIdx);
 
-    const publicPage = read("app/event/[id]/page.tsx");
+    const publicPage = readPage("app/event/[id]/page.tsx", "event");
     expect(publicPage).not.toContain("CreatorRemindersNote");
     expect(publicPage).not.toContain(CREATOR_REMINDERS_NOTE);
   });
