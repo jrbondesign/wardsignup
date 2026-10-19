@@ -5,7 +5,7 @@ jest.mock("@/lib/resend-for-brand", () => ({
   getResendForBrand: () => ({ emails: { send: resendSend } }),
 }));
 
-import { brevoConfig, deliverEmail, parseFrom, sendViaBrevo } from "@/lib/email-deliver";
+import { brevoConfig, deliverEmail, parseFrom, resendUtcDayCap, sendViaBrevo } from "@/lib/email-deliver";
 
 const brand = { id: "wardsignup", name: "Ward Signup" } as never;
 const msg = { brand, from: "Ward Signup <noreply@wardsignup.com>", to: "a@b.com", subject: "S", html: "<p>h</p>" };
@@ -86,4 +86,67 @@ it("does nothing extra when Brevo is not configured", async () => {
   resendSend.mockResolvedValue({ error: null });
   expect(await deliverEmail(msg, { urgent: true })).toEqual({ ok: true, provider: "resend" });
   expect(global.fetch).not.toHaveBeenCalled();
+});
+
+describe("Arizona day budget plus UTC day safety cap", () => {
+  const callsFor = (action: string) =>
+    rpc.mock.calls.filter((c) => (c[1] as { p_action: string }).p_action === action).map((c) => c[1] as Record<string, unknown>);
+  afterEach(() => jest.useRealTimers());
+
+  it("counts each Resend send on both counters: UTC day and Arizona day buckets", async () => {
+    jest.useFakeTimers();
+    // 6:30 PM Arizona Oct 12 = 01:30Z Oct 13: Arizona day Oct 12, Resend day Oct 13
+    jest.setSystemTime(new Date("2026-10-13T01:30:00Z"));
+    rpc.mockResolvedValue({ data: true, error: null });
+    resendSend.mockResolvedValue({ error: null });
+    expect(await deliverEmail(msg, { urgent: false })).toEqual({ ok: true, provider: "resend" });
+    const [utc] = callsFor("email_resend_daily");
+    const [phx] = callsFor("email_resend_phx_day");
+    expect(utc.p_bucket).toBe("2026-10-13T00:00:00.000Z");
+    expect(utc.p_max).toBe(90);
+    expect(phx.p_bucket).toBe("2026-10-12T07:00:00.000Z");
+    expect(phx.p_max).toBe(90);
+    // the UTC cap keeps the counter key the old budget used, so it carries over on deploy
+    expect(utc.p_ip_hash).toBe(require("crypto").createHash("sha256").update("resend-daily:wardsignup").digest("hex"));
+  });
+
+  it("UTC cap full: refuses without touching the Arizona budget", async () => {
+    rpc.mockImplementation((_n: string, a: { p_action: string }) =>
+      Promise.resolve({ data: a.p_action !== "email_resend_daily", error: null }),
+    );
+    const r = await deliverEmail(msg, { urgent: false });
+    expect(r).toMatchObject({ ok: false, overBudget: true });
+    expect(callsFor("email_resend_phx_day")).toHaveLength(0);
+    expect(resendSend).not.toHaveBeenCalled();
+  });
+
+  it("Arizona budget full: non urgent mail is over budget even with UTC room", async () => {
+    rpc.mockImplementation((_n: string, a: { p_action: string }) =>
+      Promise.resolve({ data: a.p_action !== "email_resend_phx_day", error: null }),
+    );
+    expect(await deliverEmail(msg, { urgent: false })).toMatchObject({ ok: false, overBudget: true });
+    expect(resendSend).not.toHaveBeenCalled();
+  });
+
+  it("Arizona budget full: urgent mail goes to Brevo", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    rpc.mockImplementation((_n: string, a: { p_action: string }) =>
+      Promise.resolve({ data: a.p_action !== "email_resend_phx_day", error: null }),
+    );
+    expect(await deliverEmail(msg, { urgent: true })).toEqual({ ok: true, provider: "brevo" });
+  });
+
+  it("counter errors fail open to Resend (Resend's 429 is the backstop)", async () => {
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    rpc.mockResolvedValue({ data: null, error: { message: "db down" } });
+    resendSend.mockResolvedValue({ error: null });
+    expect(await deliverEmail(msg, { urgent: false })).toEqual({ ok: true, provider: "resend" });
+  });
+
+  it("cap defaults to the soft limit and never goes above Resend's 100", () => {
+    expect(resendUtcDayCap({})).toBe(90);
+    expect(resendUtcDayCap({ RESEND_DAILY_SOFT_LIMIT: "80" })).toBe(80);
+    expect(resendUtcDayCap({ RESEND_UTC_DAY_CAP: "95" })).toBe(95);
+    expect(resendUtcDayCap({ RESEND_UTC_DAY_CAP: "500" })).toBe(100);
+  });
 });

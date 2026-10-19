@@ -12,17 +12,25 @@ WardSignup runs on **Arizona time (America/Phoenix, UTC-7 all year, no DST)**.
 
 | Job | Where | Schedule (UTC) | Phoenix time | Once per |
 |---|---|---|---|---|
-| `/api/cron/organizer-digest` (+ feedback ask) | vercel.json | `5 0 * * *` | 5:05 PM daily | UTC day (on purpose, see below) |
+| `/api/cron/organizer-digest` (+ feedback ask) | vercel.json | `5 12 * * *` (was `5 0 * * *`, 5:05 PM) | 5:05 AM daily | Phoenix day |
 | `/api/cron/geography-refresh` | vercel.json | `0 15 * * *` | 8:00 AM daily | Phoenix day (PR #90) |
-| `/api/cron/email-queue` | vercel.json | `7 0 * * *` | 5:07 PM daily | each run (row claims) |
+| `/api/cron/email-queue` | vercel.json | `7 7 * * *` (was `7 0 * * *`, 5:07 PM) | 12:07 AM daily | each run (row claims) |
 | `/api/cron/participant-reminders` | vercel.json + email-pingers.yml | `0 * * * *`, `35 * * * *` | hourly at :00 and :35 | hour |
 | `/api/cron/organizer-faster` | email-pingers.yml | `35 * * * *` | hourly at :35 | hour |
 | `/api/cron/calendar-reconcile` | calendar-reconcile.yml | `5 * * * *` | hourly at :05 | hour |
 
+## Email budget and hold (Phoenix day)
+
+- **Daily send budget**: `RESEND_DAILY_SOFT_LIMIT` (default 90) per Phoenix day, counted under `email_resend_phx_day`. A Resend send needs room in **both** this budget and the UTC day cap (the old `email_resend_daily` counter, same key, so nothing resets on deploy). Either one full means urgent mail goes to Brevo (if configured) and non urgent mail is queued.
+- **Hold for non urgent mail** (welcome, digests, reports, feedback asks): sent right away during the first `EMAIL_DEFER_SEND_WINDOW_HOURS` (default 6) of the Phoenix day, so 12 AM to 6 AM Arizona. Otherwise queued with `send_after` 12:05 AM Arizona next day, drained by `/api/cron/email-queue` at 12:07 AM.
+- **Organizer digest and feedback ask**: once per Phoenix day, run at 5:05 AM Arizona, inside the send window, so they go out immediately.
+- Tradeoff: the 12:07 AM drain lands 7 hours into Resend's UTC day. If 5 PM to midnight Arizona already used most of it, the cap stops the drain and the rest stay pending for the next night. Nothing gets refused by Resend; some non urgent mail can slip a day.
+- Tradeoff: daytime non urgent mail (a 9 AM welcome email) now waits until 12:07 AM, about 15 hours, where before it waited until 5:05 PM. `EMAIL_DEFER_SEND_WINDOW_HOURS` widens the send window if that's too long.
+
 ## Deliberately still UTC
 
-- **Resend's daily quota resets at 00:00 UTC (5 PM Phoenix).** `lib/email-deliver.ts` (daily send budget), `lib/email-queue-time.ts` (the "5 PM hold": non urgent mail sent late in the UTC day waits for 00:05 UTC) and the email-queue cron follow Resend's clock, not ours.
-- **Organizer digest and feedback ask daily claim** (`dayBucketDate()`): tied to the 5 PM Phoenix reset so digests go out right after it. A Phoenix-day claim would move them to the first ping after midnight Arizona time.
+- **Resend's own quota still resets at 00:00 UTC (5 PM Phoenix).** We can't move that. Our daily email budget, the "hold" for non urgent mail and the queue drain are on the Phoenix day now (see below), and `lib/email-deliver.ts` keeps a **UTC day safety cap** (`RESEND_UTC_DAY_CAP`, default = `RESEND_DAILY_SOFT_LIMIT`, max 100) so no Resend day ever gets more than Resend allows.
+
 - **Hour buckets** (`hourBucketDate()`): Arizona is a whole-hour offset, so an hour is the same instant either way.
 - **Participant reminder SQL prefilter and calendar reconcile lower bound**: deliberately wide UTC date windows (±1 to 2 days); the exact per-row check uses each event's own timezone.
 - **Event times** use the event's own `event_timezone` (default America/Phoenix), never the server zone.

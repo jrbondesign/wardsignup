@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { sendOrganizerMetricsEmail } from "@/lib/organizer-email";
 import { campaignNeedsDigest, leaderDigestRecipient } from "@/lib/digest-recipients";
-import { claimCronRun, dayBucketDate } from "@/lib/rate-limit";
+import { claimCronRun } from "@/lib/rate-limit";
+import { phoenixDayStartUtc } from "@/lib/phoenix-time";
 import { runFeedbackAskPass } from "@/lib/feedback-ask";
 import { resolveCronBrandId } from "@/lib/cron-brand";
 
@@ -15,11 +16,11 @@ export const maxDuration = 120;
  * plus independent creator feedback ask.
  * Secured with Authorization: Bearer CRON_SECRET.
  *
- * Schedule: vercel.json "5 0 * * *" = 00:05 UTC = 5:05 PM Phoenix.
- * The once-per-day claim stays on the UTC day ON PURPOSE: digests are timed
- * to go out right after Resend's 00:00 UTC (5 PM Phoenix) quota reset. A
- * Phoenix-day claim would let the first ping after Phoenix midnight send
- * them at 12 AM Arizona time instead.
+ * Schedule: vercel.json "5 12 * * *" = 12:05 UTC = 5:05 AM Phoenix, so
+ * organizers have it in the morning. The once-per-day claim is the Arizona
+ * day (resets at midnight Phoenix). 5:05 AM is inside the first 6 hours of
+ * the Arizona day, so these deferrable digests send right away instead of
+ * waiting in the email queue (lib/email-queue-time.ts).
  *
  * Feedback ask MUST run even when the organizer-digest day-claim is already
  * taken (or the digest path errors after claiming) — feedback ask has its
@@ -40,7 +41,7 @@ export async function GET(request: NextRequest) {
   // participant-reminders.yml), same as organizer-faster and
   // participant-reminders — those pings don't carry x-vercel-cron, so the
   // Bearer CRON_SECRET is the sole auth here. Replay is bounded by the
-  // brand-scoped daily claimCronRun below (at most one real run per UTC day).
+  // brand-scoped daily claimCronRun below (at most one real run per Arizona day).
   if (auth !== `Bearer ${secret}`) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -67,7 +68,7 @@ export async function GET(request: NextRequest) {
   }
 
   // P0: feedback ask runs independently of the organizer-digest claim and
-  // of digest early exits / list failures. Same UTC-day claim inside each pass.
+  // of digest early exits / list failures. Same Arizona day claim inside each pass.
   let feedbackAsk: Awaited<ReturnType<typeof runFeedbackAskPass>> | { error: string };
   try {
     feedbackAsk = await runFeedbackAskPass(admin, brandId);
@@ -76,9 +77,9 @@ export async function GET(request: NextRequest) {
     feedbackAsk = { error: e instanceof Error ? e.message : String(e) };
   }
 
-  // Idempotency: at most one organizer-digest run per UTC day bucket.
+  // Idempotency: at most one organizer-digest run per Arizona day.
   // Brand-scoped: all 3 Vercel projects share one Supabase.
-  const claim = await claimCronRun(`organizer-digest:${brandId}`, dayBucketDate());
+  const claim = await claimCronRun(`organizer-digest:${brandId}`, phoenixDayStartUtc());
   if (!claim.claimed) {
     return NextResponse.json({
       ok: true,

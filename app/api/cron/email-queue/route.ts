@@ -16,9 +16,12 @@ function drainLimit(): number {
 }
 
 /**
- * Drains email_queue just after the UTC quota reset (vercel.json "7 0 * * *":
- * 00:07 UTC = 5:07 PM Phoenix). Stays on UTC on purpose: Resend's daily quota
- * resets at 00:00 UTC, not on the Phoenix day.
+ * Drains email_queue just after our daily email budget resets at midnight
+ * Arizona time (vercel.json "7 7 * * *": 07:07 UTC = 12:07 AM Phoenix). Queued
+ * rows wait for 12:05 AM Arizona (lib/email-queue-time.ts). Resend's own
+ * quota still resets at 00:00 UTC; the UTC day safety cap in
+ * lib/email-deliver.ts keeps this drain under it, and anything it refuses
+ * stays pending for the next night.
  * Each row is claimed (pending to sending) before it is sent, so overlapping
  * runs never send the same email twice. Rows go back to pending if Resend is
  * out of budget, and to failed after 3 errors.

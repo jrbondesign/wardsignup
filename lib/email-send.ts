@@ -132,8 +132,8 @@ export type GuardedSendParams = {
   urgent?: boolean;
   /**
    * Welcome, digests, reports, feedback asks, announcements, new creator
-   * notices. Queued until just after the UTC reset unless it is already early
-   * in the UTC day.
+   * notices. Queued until 12:05 AM Arizona unless it is already early in the
+   * Arizona day (first EMAIL_DEFER_SEND_WINDOW_HOURS hours, default 6).
    */
   deferrable?: boolean;
   /** Short label stored on queued rows, e.g. "welcome" or "digest". */
@@ -208,7 +208,7 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
   );
   if (sent.ok) return { ok: true };
   if (sent.overBudget) {
-    // Non urgent mail when Resend is out of budget waits for the reset.
+    // Non urgent mail when Resend is out of budget waits for the next Arizona day.
     if (!params.fromQueue && deferEnabled()) return queueIt();
     return { ok: false, error: sent.error, overBudget: true };
   }

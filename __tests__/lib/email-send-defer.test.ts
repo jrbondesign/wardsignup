@@ -24,7 +24,8 @@ beforeEach(() => {
 });
 afterEach(() => jest.useRealTimers());
 
-it("queues deferrable mail late in the UTC day for 00:05 UTC", async () => {
+it("queues deferrable mail after 6 AM Arizona for 12:05 AM Arizona", async () => {
+  // 8:11 AM Arizona Oct 11
   jest.setSystemTime(new Date("2026-10-11T15:11:00Z"));
   const r = await sendGuardedEmail({ ...base, deferrable: true, kind: "welcome" });
   expect(r).toEqual({ ok: true, queued: true });
@@ -32,15 +33,22 @@ it("queues deferrable mail late in the UTC day for 00:05 UTC", async () => {
   expect(enqueueEmail.mock.calls[0][0]).toMatchObject({
     kind: "welcome",
     to_address: "a@b.com",
-    send_after: "2026-10-12T00:05:00.000Z",
+    send_after: "2026-10-12T07:05:00.000Z",
   });
 });
 
-it("sends deferrable mail right away just after the reset", async () => {
-  jest.setSystemTime(new Date("2026-10-12T00:05:00Z"));
+it("sends deferrable mail right away early in the Arizona day (5:05 AM digest)", async () => {
+  jest.setSystemTime(new Date("2026-10-12T12:05:00Z"));
   deliverEmail.mockResolvedValue({ ok: true, provider: "resend" });
   expect(await sendGuardedEmail({ ...base, deferrable: true })).toEqual({ ok: true });
   expect(enqueueEmail).not.toHaveBeenCalled();
+});
+
+it("5:05 PM Arizona (the old UTC reset) is no longer a send window", async () => {
+  jest.setSystemTime(new Date("2026-10-12T00:05:00Z"));
+  const r = await sendGuardedEmail({ ...base, deferrable: true, kind: "digest" });
+  expect(r).toEqual({ ok: true, queued: true });
+  expect(enqueueEmail.mock.calls[0][0].send_after).toBe("2026-10-12T07:05:00.000Z");
 });
 
 it("never queues urgent mail", async () => {
