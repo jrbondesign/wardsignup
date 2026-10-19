@@ -17,7 +17,7 @@ jest.mock("@/lib/brand/brands", () => ({
   toPublicBrand: jest.fn((def: { id: string }) => ({ id: def.id })),
 }));
 
-import { GET } from "@/app/api/cron/email-queue/route";
+import { GET, STALE_CLAIM_MS } from "@/app/api/cron/email-queue/route";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { sendGuardedEmail } from "@/lib/email-send";
 import type { QueuedEmailRow } from "@/lib/email-queue";
@@ -58,8 +58,22 @@ function queued(id: string, extra: Partial<QueuedEmailRow> = {}): QueuedEmailRow
   };
 }
 
-function setup(opts: { rows?: QueuedEmailRow[]; listError?: { message: string }; lostClaim?: string[] }) {
+function isRecovery(q: QueryRecord) {
+  return hasOp(q, "update") !== undefined && eqValue(q, "status") === "sending";
+}
+
+function setup(opts: {
+  rows?: QueuedEmailRow[];
+  listError?: { message: string };
+  lostClaim?: string[];
+  requeued?: string[];
+  expired?: string[];
+}) {
   const resolve = (q: QueryRecord): QueryResult => {
+    if (isRecovery(q)) {
+      const ids = hasOp(q, "gte") ? opts.expired : opts.requeued;
+      return { data: (ids ?? []).map((id) => ({ id })), error: null };
+    }
     if (!hasOp(q, "update")) {
       return { data: opts.rows ?? [], error: opts.listError ?? null };
     }
@@ -152,7 +166,15 @@ describe("/api/cron/email-queue", () => {
     });
 
     const body = await (await GET(cronRequest(PATH, SECRET))).json();
-    expect(body).toEqual({ ok: true, sent: 2, failed: 0, skipped: 0, stoppedOverBudget: false });
+    expect(body).toEqual({
+      ok: true,
+      sent: 2,
+      failed: 0,
+      skipped: 0,
+      recovered: 0,
+      expired: 0,
+      stoppedOverBudget: false,
+    });
     expect(claimsAtFirstSend).toBe(1);
     expect(mockSend).toHaveBeenCalledTimes(2);
     expect(mockSend).toHaveBeenCalledWith(
@@ -161,10 +183,10 @@ describe("/api/cron/email-queue", () => {
 
     const a = updatesFor(queries, "a");
     expect(a[0].claim).toBe(true);
-    expect(a[0].payload).toEqual({ status: "sending", attempts: 1 });
+    expect(a[0].payload).toEqual({ status: "sending", attempts: 1, claimed_at: expect.any(String) });
     expect(a[0].ops).toContainEqual({ method: "eq", args: ["status", "pending"] });
     expect(a[1].payload).toMatchObject({ status: "sent", last_error: null });
-    expect(updatesFor(queries, "b")[0].payload).toEqual({ status: "sending", attempts: 2 });
+    expect(updatesFor(queries, "b")[0].payload).toMatchObject({ status: "sending", attempts: 2 });
   });
 
   it("does not send a row another run already claimed", async () => {
@@ -212,5 +234,46 @@ describe("/api/cron/email-queue", () => {
     expect(body.failed).toBe(2);
     expect(updatesFor(queries, "retry")[1].payload).toEqual({ status: "pending", last_error: "500 from resend" });
     expect(updatesFor(queries, "dead")[1].payload).toEqual({ status: "failed", last_error: "500 from resend" });
+  });
+
+  describe("stale claim recovery", () => {
+    it("requeues stale sending rows with attempts left and fails exhausted ones, before listing", async () => {
+      const now = Date.parse("2026-10-18T01:00:00.000Z");
+      jest.spyOn(Date, "now").mockReturnValue(now);
+      const { queries } = setup({ rows: [], requeued: ["r1", "r2"], expired: ["e1"] });
+
+      const body = await (await GET(cronRequest(PATH, SECRET))).json();
+      expect(body).toMatchObject({ recovered: 2, expired: 1, failed: 0 });
+
+      const recovery = queries.filter(isRecovery);
+      expect(recovery).toHaveLength(2);
+      const listIdx = queries.findIndex((q) => !hasOp(q, "update"));
+      expect(queries.indexOf(recovery[0])).toBeLessThan(listIdx);
+      expect(queries.indexOf(recovery[1])).toBeLessThan(listIdx);
+
+      const cutoff = new Date(now - STALE_CLAIM_MS).toISOString();
+      const [requeue, expire] = recovery;
+      expect(hasOp(requeue, "update")!.args[0]).toEqual({ status: "pending", last_error: "claim expired" });
+      expect(requeue.ops).toContainEqual({ method: "lt", args: ["claimed_at", cutoff] });
+      expect(requeue.ops).toContainEqual({ method: "lt", args: ["attempts", 3] });
+      expect(hasOp(expire, "update")!.args[0]).toEqual({ status: "failed", last_error: "claim expired" });
+      expect(expire.ops).toContainEqual({ method: "lt", args: ["claimed_at", cutoff] });
+      expect(expire.ops).toContainEqual({ method: "gte", args: ["attempts", 3] });
+    });
+
+    it("uses a threshold well above the function's maxDuration", () => {
+      expect(STALE_CLAIM_MS).toBeGreaterThanOrEqual(15 * 60 * 1000);
+    });
+
+    it("keeps draining when recovery fails", async () => {
+      const fake = createFakeAdmin((q) => {
+        if (isRecovery(q)) return { data: null, error: { message: "boom" } };
+        if (!hasOp(q, "update")) return { data: [queued("a")], error: null };
+        return { data: hasOp(q, "select") ? [{ id: "a" }] : null, error: null };
+      });
+      mockCreateClient.mockReturnValue(fake.admin as unknown as ReturnType<typeof createServiceRoleClient>);
+      const body = await (await GET(cronRequest(PATH, SECRET))).json();
+      expect(body).toMatchObject({ sent: 1, recovered: 0, expired: 0 });
+    });
   });
 });
