@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { createClientComponentClient } from "@/lib/auth";
 import { useBrand } from "@/components/BrandProvider";
 import type { AiEventResult } from "@/lib/ai-event-extraction";
@@ -11,17 +11,19 @@ interface Props {
   onResult: (result: AiEventResult, missingFields: string[]) => void;
 }
 
+const subscribeNoop = () => () => {};
+
 export function AiEventInput({ onResult }: Props) {
   const brand = useBrand();
   const [description, setDescription] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [isMac, setIsMac] = useState(false);
-
-  // Detect platform after mount to avoid SSR/CSR hydration mismatch.
-  useEffect(() => {
-    setIsMac(/Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent));
-  }, []);
+  // Server snapshot is false so hydration matches; the client value applies right after.
+  const isMac = useSyncExternalStore(
+    subscribeNoop,
+    () => /Mac|iPhone|iPad|iPod/i.test(navigator.platform || navigator.userAgent),
+    () => false
+  );
 
   const submitHint = isMac ? "⌘+Enter to generate" : "Ctrl+Enter to generate";
 

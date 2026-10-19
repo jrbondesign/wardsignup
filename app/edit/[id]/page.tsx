@@ -359,6 +359,7 @@ export default function EditEventPage() {
     scrolledToHashRef.current = true;
     // Defer so the router's own post-navigation scroll doesn't override ours.
     setTimeout(() => el.scrollIntoView({ block: "start" }), 150);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- highlight is driven by window.location.hash + DOM lookup after sessions render
     setHighlightDate(hash.slice("edit-date-".length));
     setTimeout(() => setHighlightDate(null), 2500);
   }, [loading, sessions]);
@@ -599,7 +600,7 @@ export default function EditEventPage() {
     };
 
     loadEvent();
-  }, [eventId, brand.id]);
+  }, [eventId, brand]);
 
   const patchCampaignFields = async (partial: {
     organizer_digest_enabled?: boolean;

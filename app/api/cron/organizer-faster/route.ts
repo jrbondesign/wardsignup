@@ -31,16 +31,6 @@ export async function GET(request: NextRequest) {
   // Filter by brand_id so each brand's cron only processes its own campaigns.
   const brandId = resolveCronBrandId(request);
 
-  // Idempotency: at most one run per hour bucket. External pings on a 30-min
-  // schedule will succeed once per hour and short-circuit on the second hit,
-  // which is fine for "did anything change in the last hour" alerts.
-  // Brand-scoped claim: all 3 Vercel projects share one Supabase, so an
-  // unscoped key would let one brand's ping starve the others for the hour.
-  const claim = await claimCronRun(`organizer-faster:${brandId}`, hourBucketDate());
-  if (!claim.claimed) {
-    return NextResponse.json({ ok: true, brandId, skipped: "already_ran_this_hour" });
-  }
-
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json(
       { error: "Service role not configured" },
@@ -56,6 +46,16 @@ export async function GET(request: NextRequest) {
       { error: e instanceof Error ? e.message : "Config error" },
       { status: 500 },
     );
+  }
+
+  // Idempotency: at most one run per hour bucket. External pings on a 30-min
+  // schedule will succeed once per hour and short-circuit on the second hit,
+  // which is fine for "did anything change in the last hour" alerts.
+  // Brand-scoped claim: all 3 Vercel projects share one Supabase, so an
+  // unscoped key would let one brand's ping starve the others for the hour.
+  const claim = await claimCronRun(`organizer-faster:${brandId}`, hourBucketDate());
+  if (!claim.claimed) {
+    return NextResponse.json({ ok: true, brandId, skipped: "already_ran_this_hour" });
   }
 
   const { data: campaigns, error } = await admin

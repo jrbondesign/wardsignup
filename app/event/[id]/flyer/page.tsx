@@ -34,6 +34,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
 
   useEffect(() => {
     const url = `${window.location.origin}/event/${eventId}`;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- window.location.origin is only available client-side after mount
     setSignupUrl(url);
 
     (async () => {

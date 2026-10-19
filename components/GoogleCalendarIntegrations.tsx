@@ -45,10 +45,8 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
   const show = isGcalSyncUIEnabled(organizationId);
 
   useEffect(() => {
-    if (!show) {
-      setLoading(false);
-      return;
-    }
+    // When hidden the component renders null, so `loading` is never read.
+    if (!show) return;
 
     const load = async () => {
       setConnection(await loadOrgConnection(organizationId));
@@ -62,10 +60,8 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
   useEffect(() => {
     if (!show) return;
 
-    if (!connection || isConnectionExpired(connection)) {
-      setCalendars([]);
-      return;
-    }
+    // calendars is already empty here: it starts empty and handleDisconnect clears it.
+    if (!connection || isConnectionExpired(connection)) return;
 
     const loadCalendars = async () => {
       setLoadingCalendars(true);
@@ -229,6 +225,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
       };
       
       const message = errorMessages[error] || "Could not connect to Google Calendar. Please try again.";
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- surfaces the OAuth callback ?error= param from window.location, then strips it
       setMessage({ kind: "error", text: message });
       
       // Clear the error param

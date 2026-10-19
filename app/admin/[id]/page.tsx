@@ -134,6 +134,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   
   // Signup options menu and confirm dialog state
   const [openMenuSignupId, setOpenMenuSignupId] = useState<string | null>(null);
+  const [openMenuButton, setOpenMenuButton] = useState<HTMLButtonElement | null>(null);
   const [confirmDialog, setConfirmDialog] = useState<{
     signupId: string;
     memberName: string;
@@ -159,6 +160,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
     if (params.get("created") === "1") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reads window.location after mount (not available during SSR) and strips the flag
       setJustCreated(true);
       // Drop the query flag so refresh / share doesn't keep re-triggering the prompt UI state.
       params.delete("created");
@@ -424,7 +426,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
       setLoading(false);
     };
     loadData();
-  }, [router, eventId, brand.id]);
+  }, [router, eventId, brand]);
 
   const patchOrganizerEmailPrefs = async (partial: {
     organizer_digest_enabled?: boolean;
@@ -1228,7 +1230,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                               <button
                                 ref={(el) => { if (el) menuButtonRefs.current.set(sig.id, el); }}
                                 type="button"
-                                onClick={() => setOpenMenuSignupId(sig.id)}
+                                onClick={(e) => { setOpenMenuButton(e.currentTarget); setOpenMenuSignupId(sig.id); }}
                                 aria-label={`Options for ${sig.member_name}`}
                                 className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
                               >
@@ -1247,7 +1249,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                     setOpenMenuSignupId(null);
                                     menuButtonRefs.current.get(sig.id)?.focus();
                                   }}
-                                  buttonElement={menuButtonRefs.current.get(sig.id) || null}
+                                  buttonElement={openMenuButton}
                                 />
                               )}
                             </div>
@@ -1284,7 +1286,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                       <button
                         ref={(el) => { if (el) menuButtonRefs.current.set(sig.id, el); }}
                         type="button"
-                        onClick={() => setOpenMenuSignupId(sig.id)}
+                        onClick={(e) => { setOpenMenuButton(e.currentTarget); setOpenMenuSignupId(sig.id); }}
                         aria-label={`Options for ${sig.member_name}`}
                         className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
                       >
@@ -1303,7 +1305,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                             setOpenMenuSignupId(null);
                             menuButtonRefs.current.get(sig.id)?.focus();
                           }}
-                          buttonElement={menuButtonRefs.current.get(sig.id) || null}
+                          buttonElement={openMenuButton}
                         />
                       )}
                     </div>
@@ -1440,7 +1442,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                         <button
                                           ref={(el) => { if (el) menuButtonRefs.current.set(signup.id, el); }}
                                           type="button"
-                                          onClick={() => setOpenMenuSignupId(signup.id)}
+                                          onClick={(e) => { setOpenMenuButton(e.currentTarget); setOpenMenuSignupId(signup.id); }}
                                           aria-label={`Options for ${signup.member_name}`}
                                           className="absolute top-2 right-2 w-11 h-11 flex items-center justify-center rounded-lg text-gray-500 hover:text-gray-600 hover:bg-gray-100 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
                                         >
@@ -1470,7 +1472,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
                                               setOpenMenuSignupId(null);
                                               menuButtonRefs.current.get(signup.id)?.focus();
                                             }}
-                                            buttonElement={menuButtonRefs.current.get(signup.id) || null}
+                                            buttonElement={openMenuButton}
                                           />
                                         )}
                                       </div>

@@ -24,7 +24,13 @@ function getGoogleOAuthCallbackUrl(): string {
 }
 
 function getStateSecret(): string {
-  return process.env.GOOGLE_OAUTH_STATE_SECRET || process.env.CRON_SECRET || 'dev-secret-change-in-prod';
+  const secret = process.env.GOOGLE_OAUTH_STATE_SECRET || process.env.CRON_SECRET;
+  if (secret) return secret;
+  // Never sign OAuth state with a publicly known key in production.
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('GOOGLE_OAUTH_STATE_SECRET (or CRON_SECRET) must be set');
+  }
+  return 'dev-secret-change-in-prod';
 }
 
 const STATE_EXPIRY_MS = 10 * 60 * 1000; // 10 minutes

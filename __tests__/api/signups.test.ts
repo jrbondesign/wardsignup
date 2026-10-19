@@ -6,7 +6,14 @@ import { POST } from "@/app/api/signups/route";
 import { NextRequest } from "next/server";
 import { createSignupIfCapacityRpc } from "@/lib/supabase";
 
+// after() needs a Next request scope; run callbacks inline instead.
+jest.mock("next/server", () => ({
+  ...jest.requireActual("next/server"),
+  after: (cb: () => unknown) => void cb(),
+}));
+
 jest.mock("@/lib/supabase", () => ({
+  ...jest.requireActual("@/lib/supabase"),
   createSignupIfCapacityRpc: jest.fn(),
 }));
 
@@ -15,7 +22,7 @@ jest.mock("@/lib/participant-email", () => ({
 }));
 
 jest.mock("@/lib/posthog-server", () => ({
-  getPostHogClient: () => ({ capture: jest.fn() }),
+  getPostHogClient: () => ({ capture: jest.fn(), flush: jest.fn() }),
 }));
 
 // Loosely typed: the RPC's generated return type doesn't model the mocked payloads.
