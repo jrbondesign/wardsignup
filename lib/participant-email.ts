@@ -141,7 +141,7 @@ export async function sendParticipantSignupConfirmation(params: {
     params.campaign.event_end_date ?? null,
   );
   const successPageUrl = params.cancelToken
-    ? `${siteOrigin}/signup-success/${params.cancelToken}`
+    ? participantManageLink(`${siteOrigin}/signup-success/${params.cancelToken}`, "confirmation")
     : null;
   const calendarBlock = googleCalUrl
     ? `
@@ -228,7 +228,7 @@ export async function sendParticipantReminderEmail(params: {
     params.campaign.event_end_date ?? null,
   );
   const successPageUrl = params.cancelToken
-    ? `${siteOrigin}/signup-success/${params.cancelToken}`
+    ? participantManageLink(`${siteOrigin}/signup-success/${params.cancelToken}`, "reminder")
     : null;
   const calendarBlock = googleCalUrl
     ? `
