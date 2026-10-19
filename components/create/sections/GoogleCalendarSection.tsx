@@ -3,7 +3,7 @@
 import type { CreateFormState } from "@/lib/create-form-state";
 import EventGoogleCalendarControls from "@/components/EventGoogleCalendarControls";
 import OptionalDisclosureCard from "@/components/create/sections/OptionalDisclosureCard";
-import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
+import { useOrgFeatures } from "@/lib/use-org-features";
 import { isGoogleCalendarActive } from "@/lib/optional-event-settings";
 
 interface Props {
@@ -27,8 +27,9 @@ export default function GoogleCalendarSection({
   lastError,
   onSyncResult,
 }: Props) {
+  const gcalEnabled = useOrgFeatures(organizationId).gcalSync;
   const show =
-    isGcalSyncUIEnabled(organizationId ?? undefined) &&
+    gcalEnabled &&
     (state.eventType === "spots" || state.eventType === "rsvp");
 
   if (!show) return null;

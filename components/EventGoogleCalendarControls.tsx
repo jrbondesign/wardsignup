@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClientComponentClient } from "@/lib/auth";
-import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
+import { useOrgFeatures } from "@/lib/use-org-features";
 import { CONNECTION_BROKEN_ERROR, isConnectionExpired, pickDisplayedConnection } from "@/lib/google-calendar-connection";
 
 export type EventGoogleCalendarFields = {
@@ -72,8 +72,9 @@ export default function EventGoogleCalendarControls({
   onSyncResult,
   layout = "stack",
 }: Props) {
+  const gcalEnabled = useOrgFeatures(organizationId).gcalSync;
   const show =
-    isGcalSyncUIEnabled(organizationId ?? undefined) &&
+    gcalEnabled &&
     (eventType === "spots" || eventType === "rsvp");
 
   const [calendars, setCalendars] = useState<CalendarOption[]>([]);

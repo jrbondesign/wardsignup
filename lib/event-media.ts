@@ -1,5 +1,5 @@
 import type { createServiceRoleClient } from "@/lib/supabase-admin";
-import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
+import { isCoverImageEnabledForOrgOrFlag } from "@/lib/org-feature-gates";
 import { coverObjectPosition } from "@/lib/cover-position";
 
 type AdminClient = ReturnType<typeof createServiceRoleClient>;
@@ -83,7 +83,7 @@ export async function publicCoverForCampaign(
     cover_image_url: string | null;
     cover_position: string | null;
   } | null;
-  if (!row || !isCoverImageEnabledForOrg(row.organization_id)) return null;
+  if (!row || !(await isCoverImageEnabledForOrgOrFlag(row.organization_id))) return null;
   if (!isEventCoverUrl(row.cover_image_url)) return null;
   return { url: row.cover_image_url, position: coverObjectPosition(row.cover_position) };
 }

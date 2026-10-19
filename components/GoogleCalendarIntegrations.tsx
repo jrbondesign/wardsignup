@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClientComponentClient } from "@/lib/auth";
-import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
+import { useOrgFeatures } from "@/lib/use-org-features";
 import { isConnectionExpired, pickDisplayedConnection } from "@/lib/google-calendar-connection";
 
 interface GoogleCalendarIntegrationsProps {
@@ -42,7 +42,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
   const [calendars, setCalendars] = useState<Calendar[]>([]);
   const [loadingCalendars, setLoadingCalendars] = useState(false);
   const [savingCalendar, setSavingCalendar] = useState(false);
-  const show = isGcalSyncUIEnabled(organizationId);
+  const show = useOrgFeatures(organizationId).gcalSync;
 
   useEffect(() => {
     if (!show) {

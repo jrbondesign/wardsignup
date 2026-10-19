@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClientComponentClient } from "@/lib/auth";
 import { CONNECTION_BROKEN_ERROR, isConnectionBroken } from "@/lib/google-calendar-connection";
-import { isGcalSyncUIEnabled } from "@/lib/gcal-feature";
+import { useOrgFeatures } from "@/lib/use-org-features";
 
 type Props = {
   campaignId: string;
@@ -24,6 +24,7 @@ export const RECONNECT_BANNER_BUTTON = "Reconnect Google";
  */
 export default function ReconnectGoogleBanner({ campaignId, organizationId, lastError }: Props) {
   const [broken, setBroken] = useState(lastError === CONNECTION_BROKEN_ERROR);
+  const gcalEnabled = useOrgFeatures(organizationId).gcalSync;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -58,8 +59,8 @@ export default function ReconnectGoogleBanner({ campaignId, organizationId, last
     };
   }, [campaignId]);
 
-  // Feature gate: require allowlisted org
-  if (!broken || !organizationId || !isGcalSyncUIEnabled(organizationId)) return null;
+  // Feature gate: allowlisted org or PostHog flag (fails closed to the allowlist)
+  if (!broken || !organizationId || !gcalEnabled) return null;
 
   const reconnect = async () => {
     setBusy(true);
