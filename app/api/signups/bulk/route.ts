@@ -1,5 +1,6 @@
 import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { persistSignupAttribution, sanitizeSignupAttribution } from "@/lib/signup-attribution";
 import { createHash } from "crypto";
 import { createSignupIfCapacityRpc } from "@/lib/supabase";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
@@ -168,6 +169,9 @@ export async function POST(request: Request) {
         .update({ signup_note: signupNote } as never)
         .in("id", successfulSignupIds);
     }
+
+    // First-touch attribution (PR #69) on every successful row.
+    await persistSignupAttribution(admin, "signups", successfulSignupIds, sanitizeSignupAttribution(body));
 
     // One combined confirmation email covering every slot (+ one leader
     // notification per batch when the campaign has an assigned leader).

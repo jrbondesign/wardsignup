@@ -47,6 +47,17 @@ function eventLink(siteOrigin: string, campaignId: string): string {
   });
 }
 
+type ParticipantEmailCampaign = "confirmation" | "batch_confirmation" | "reminder";
+
+/**
+ * Tag a participant's cancel / manage link with the same UTM params as that
+ * email's event link (PR #69 convention). Token links keep working: the token
+ * is in the path, and withUtm keeps existing params and hashes.
+ */
+export function participantManageLink(url: string, campaign: ParticipantEmailCampaign): string {
+  return withUtm(url, { utm_source: "participant_email", utm_medium: "email", utm_campaign: campaign });
+}
+
 function participantFooter(brand: PublicBrand): string {
   return buildParticipantEmailFooterHtml(brand);
 }
@@ -113,7 +124,7 @@ export async function sendParticipantSignupConfirmation(params: {
   const name = escapeHtml(params.memberName.trim());
   const link = eventLink(siteOrigin, params.campaign.id);
   const cancelLink = params.cancelUrl
-    ? `&nbsp;·&nbsp;<a href="${escapeHtml(params.cancelUrl)}" style="color:#5A8399;">Cancel my signup</a>`
+    ? `&nbsp;·&nbsp;<a href="${escapeHtml(participantManageLink(params.cancelUrl, "confirmation"))}" style="color:#5A8399;">Cancel my signup</a>`
     : "";
 
   const guests = params.guestNames?.filter(Boolean) ?? [];
@@ -130,7 +141,7 @@ export async function sendParticipantSignupConfirmation(params: {
     params.campaign.event_end_date ?? null,
   );
   const successPageUrl = params.cancelToken
-    ? `${siteOrigin}/signup-success/${params.cancelToken}`
+    ? participantManageLink(`${siteOrigin}/signup-success/${params.cancelToken}`, "confirmation")
     : null;
   const calendarBlock = googleCalUrl
     ? `
@@ -205,7 +216,7 @@ export async function sendParticipantReminderEmail(params: {
     }
   );
   const cancelLink = params.cancelUrl
-    ? `&nbsp;·&nbsp;<a href="${escapeHtml(params.cancelUrl)}" style="color:#5A8399;">Cancel my signup</a>`
+    ? `&nbsp;·&nbsp;<a href="${escapeHtml(participantManageLink(params.cancelUrl, "reminder"))}" style="color:#5A8399;">Cancel my signup</a>`
     : "";
 
   // Calendar links
@@ -217,7 +228,7 @@ export async function sendParticipantReminderEmail(params: {
     params.campaign.event_end_date ?? null,
   );
   const successPageUrl = params.cancelToken
-    ? `${siteOrigin}/signup-success/${params.cancelToken}`
+    ? participantManageLink(`${siteOrigin}/signup-success/${params.cancelToken}`, "reminder")
     : null;
   const calendarBlock = googleCalUrl
     ? `
@@ -308,7 +319,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
     }
   );
   const cancelLink = params.cancelUrl
-    ? `&nbsp;·&nbsp;<a href="${escapeHtml(params.cancelUrl)}" style="color:#5A8399;">Manage my signups</a>`
+    ? `&nbsp;·&nbsp;<a href="${escapeHtml(participantManageLink(params.cancelUrl, "batch_confirmation"))}" style="color:#5A8399;">Manage my signups</a>`
     : "";
 
   const guests = params.guestNames?.filter(Boolean) ?? [];
@@ -320,7 +331,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
     .map((s, i) => {
       const slotCancelUrl = params.sessionCancelUrls?.[i];
       const slotCancel = slotCancelUrl
-        ? `&nbsp;·&nbsp;<a href="${escapeHtml(slotCancelUrl)}" style="color:#5A8399;font-size:13px;">Cancel</a>`
+        ? `&nbsp;·&nbsp;<a href="${escapeHtml(participantManageLink(slotCancelUrl, "batch_confirmation"))}" style="color:#5A8399;font-size:13px;">Cancel</a>`
         : "";
       return `<li style="margin:0 0 4px;font-size:15px;">${escapeHtml(
         formatSessionSlotLabel(s, { eventTimezone: params.campaign.event_timezone }),

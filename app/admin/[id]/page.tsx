@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, use, useEffect, useRef, useState } from "react";
+import { shareLink } from "@/lib/share-links";
 import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import Link from "next/link";
@@ -403,7 +404,8 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
           .eq("campaign_id", eventId).order("session_date", { ascending: true, nullsFirst: false }).order("day_of_week").order("time");
         setSessions(sessionsData || []);
       }
-      setShareableLink(`${window.location.origin}/event/${eventId}`);
+      // Only used by the Copy link buttons, so tag it once here (ref=share).
+      setShareableLink(shareLink(`${window.location.origin}/event/${eventId}`));
       setDigestEnabled(Boolean((eventData as any).organizer_digest_enabled));
       setInstantEnabled(Boolean((eventData as any).organizer_instant_notify_enabled));
       setShowSignupsPublicly(Boolean((eventData as any).show_signups_publicly));

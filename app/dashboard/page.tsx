@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { shareLink } from "@/lib/share-links";
 import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import { createClientComponentClient } from "@/lib/auth";
@@ -327,7 +328,7 @@ export default function DashboardPage() {
   }
 
   const copyEventLink = (eventId: string) => {
-    const url = `${typeof window !== "undefined" ? window.location.origin : ""}/event/${eventId}`;
+    const url = shareLink(`${typeof window !== "undefined" ? window.location.origin : ""}/event/${eventId}`);
     void navigator.clipboard.writeText(url);
     posthog?.capture("event_link_copied", { event_id: eventId });
     setCopyToast(true);
