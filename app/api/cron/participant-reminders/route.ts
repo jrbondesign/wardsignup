@@ -58,6 +58,8 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Schedule: vercel.json "0 * * * *" (hourly, on the hour) plus the :35
+  // GitHub pinger. Hour buckets are the same instant in Phoenix and UTC.
   // Idempotency: one run per hour bucket. Reminders go out up to 25h before a slot, so an
   // hourly external ping is the intended cadence; a replay within the same
   // hour would re-send to anyone whose row hasn't been marked yet.
