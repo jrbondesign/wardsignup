@@ -40,8 +40,11 @@ export interface UtmParams {
  * // => 'https://example.com/event/123?token=abc&ref=share#section'
  */
 export function withUtm(url: string, params: UtmParams): string {
+  // Relative paths (e.g. '/create') parse against a placeholder origin and
+  // come back relative.
+  const isRelative = url.startsWith('/') && !url.startsWith('//');
   try {
-    const urlObj = new URL(url);
+    const urlObj = isRelative ? new URL(url, 'http://relative.invalid') : new URL(url);
     
     // Only add defined params if they don't already exist
     if (params.utm_source && !urlObj.searchParams.has('utm_source')) {
@@ -57,7 +60,9 @@ export function withUtm(url: string, params: UtmParams): string {
       urlObj.searchParams.set('ref', params.ref);
     }
     
-    return urlObj.toString();
+    return isRelative
+      ? `${urlObj.pathname}${urlObj.search}${urlObj.hash}`
+      : urlObj.toString();
   } catch (e) {
     // If URL parsing fails, return original URL unchanged (fail closed)
     console.error('withUtm: invalid URL', url, e);
