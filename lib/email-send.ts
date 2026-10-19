@@ -35,6 +35,8 @@ export type GuardedSendResult =
       error?: string;
       /** Resend is out of daily budget; queue callers leave the row pending. */
       overBudget?: boolean;
+      /** Brevo refused or errored; the drain counts this as a failed attempt. */
+      brevoFailed?: boolean;
     };
 
 function unsubSecret(): string | null {
@@ -174,7 +176,7 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
       attachments: attachments?.length ? attachments : null,
       // Near real time mail is due now (hourly drain); batch mail waits for 12:05 AM Arizona.
       send_after: (realtime ? new Date() : nextResetSendAfter(new Date())).toISOString(),
-    });
+    }, { dedupe: realtime });
     return q.ok ? { ok: true, queued: true } : { ok: false, error: q.error };
   };
 
@@ -222,6 +224,12 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     // queued due now for the hourly drain; batch mail waits for 12:05 AM Arizona.
     if (!params.fromQueue && (realtime || deferEnabled())) return queueIt();
     return { ok: false, error: sent.error, overBudget: true };
+  }
+  if (realtime && sent.brevoFailed) {
+    // Resend was full and Brevo failed: queue it due now for the hourly drain
+    // (3 attempts with backoff there) instead of failing the welcome.
+    if (!params.fromQueue) return queueIt();
+    return { ok: false, error: sent.error, brevoFailed: true };
   }
   return { ok: false, error: sent.error };
 }

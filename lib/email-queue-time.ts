@@ -49,3 +49,18 @@ export const REALTIME_KINDS = ["welcome", "new_creator", "feedback_response"] as
 export function isRealtimeKind(kind: string | null | undefined): boolean {
   return (REALTIME_KINDS as readonly string[]).includes(kind ?? "");
 }
+
+/** Attempts the drain makes for a queued email before marking it failed. */
+export const MAX_QUEUE_ATTEMPTS = 3;
+
+/**
+ * When a near real time row may be retried after a failed attempt (Brevo
+ * refused or errored). The drain runs hourly at :07, so:
+ * after attempt 1, the next run (about 1 hour); after attempt 2, wait about
+ * 2 hours (115 minutes so cron jitter can't push it a further hour). After
+ * attempt 3 the row is failed and never retried.
+ */
+export function realtimeRetrySendAfter(now: Date, attemptsMade: number): Date {
+  const minutes = attemptsMade >= 2 ? 115 : 0;
+  return new Date(now.getTime() + minutes * 60 * 1000);
+}

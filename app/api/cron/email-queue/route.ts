@@ -4,12 +4,12 @@ import { sendGuardedEmail } from "@/lib/email-send";
 import { getBrandDefinition, toPublicBrand } from "@/lib/brand/brands";
 import type { BrandId } from "@/lib/brand/types";
 import type { QueuedEmailRow } from "@/lib/email-queue";
-import { REALTIME_KINDS, isRealtimeKind } from "@/lib/email-queue-time";
+import { MAX_QUEUE_ATTEMPTS, REALTIME_KINDS, isRealtimeKind, realtimeRetrySendAfter } from "@/lib/email-queue-time";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
 
-const MAX_ATTEMPTS = 3;
+const MAX_ATTEMPTS = MAX_QUEUE_ATTEMPTS;
 
 function drainLimit(): number {
   const n = Number(process.env.EMAIL_QUEUE_DRAIN_LIMIT);
@@ -21,8 +21,10 @@ function drainLimit(): number {
  *
  * - Near real time rows (welcome, new creator notice, feedback received;
  *   REALTIME_KINDS) are only here when Resend was out of budget and Brevo
- *   couldn't take them. They are due at once and are sent first, through
- *   Brevo again if Resend is still full.
+ *   couldn't take them (not configured, or it failed). They are due at once
+ *   and are sent first, through Brevo again if Resend is still full. A failed
+ *   attempt backs off (next run, then about 2 hours); after 3 attempts the
+ *   row is failed and never retried.
  * - Batch rows (digests, feedback asks) wait for 12:05 AM Arizona
  *   (lib/email-queue-time.ts), so the 12:07 AM run sends them.
  * Both daily counters in lib/email-deliver.ts (Arizona day budget, UTC day
@@ -134,11 +136,15 @@ export async function GET(request: NextRequest) {
       stoppedOverBudget = true;
       break;
     }
-    const giveUp = raw.attempts + 1 >= MAX_ATTEMPTS;
-    await admin
-      .from("email_queue")
-      .update({ status: giveUp ? "failed" : "pending", last_error: r.error ?? "send failed" } as never)
-      .eq("id", raw.id);
+    const attemptsMade = raw.attempts + 1;
+    const giveUp = attemptsMade >= MAX_ATTEMPTS;
+    const patch: Record<string, unknown> = { status: giveUp ? "failed" : "pending", last_error: r.error ?? "send failed" };
+    // Near real time rows back off: next run, then about 2 hours, then failed.
+    if (!giveUp && isRealtimeKind(raw.kind)) {
+      patch.send_after = realtimeRetrySendAfter(new Date(), attemptsMade).toISOString();
+    }
+    if (giveUp) console.error(`email_queue ${raw.id} (${raw.kind}) failed after ${attemptsMade} attempts: ${r.error ?? "send failed"}`);
+    await admin.from("email_queue").update(patch as never).eq("id", raw.id);
     failed += 1;
   }
 

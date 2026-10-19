@@ -192,3 +192,34 @@ describe("Arizona day budget plus UTC day safety cap", () => {
     });
   });
 });
+
+describe("Brevo failure is reported so near real time mail can be queued", () => {
+  it("realtime: Resend full and Brevo refuses -> brevoFailed", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    rpc.mockResolvedValue({ data: false, error: null });
+    (global.fetch as jest.Mock).mockResolvedValue({ ok: false, status: 500, text: async () => "boom" });
+    const r = await deliverEmail(msg, { urgent: false, realtime: true });
+    expect(r).toMatchObject({ ok: false, brevoFailed: true });
+    expect(r).not.toHaveProperty("overBudget");
+    expect(resendSend).not.toHaveBeenCalled();
+  });
+
+  it("realtime: Resend 429 then Brevo network error -> brevoFailed", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    rpc.mockResolvedValue({ data: true, error: null });
+    resendSend.mockResolvedValue({ error: { statusCode: 429, name: "daily_quota_exceeded", message: "quota" } });
+    (global.fetch as jest.Mock).mockRejectedValue(new Error("ECONNRESET"));
+    expect(await deliverEmail(msg, { urgent: false, realtime: true })).toMatchObject({ ok: false, brevoFailed: true });
+  });
+
+  it("a Resend error that isn't a quota error is not marked brevoFailed", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    rpc.mockResolvedValue({ data: true, error: null });
+    resendSend.mockResolvedValue({ error: { statusCode: 422, name: "validation_error", message: "bad" } });
+    const r = await deliverEmail(msg, { urgent: false, realtime: true });
+    expect(r).toMatchObject({ ok: false, error: "bad" });
+    expect(r).not.toHaveProperty("brevoFailed");
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+

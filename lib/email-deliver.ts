@@ -35,7 +35,13 @@ export type DeliverParams = {
 
 export type DeliverResult =
   | { ok: true; provider: "resend" | "brevo" }
-  | { ok: false; error: string; overBudget?: boolean };
+  | {
+      ok: false;
+      error: string;
+      overBudget?: boolean;
+      /** Brevo was tried (Resend out of budget or 429) and refused or errored. */
+      brevoFailed?: boolean;
+    };
 
 type Env = Record<string, string | undefined>;
 
@@ -160,7 +166,8 @@ export async function sendViaBrevo(
  * reminders) may use Brevo when Resend is out of budget. `realtime` mail
  * (welcome, new creator notice, feedback received) also uses Brevo then, but
  * never goes past our budgets on Resend: with no Brevo it gets
- * `overBudget: true` back so the caller can queue it for the hourly drain.
+ * `overBudget: true` back, and if Brevo fails it gets `brevoFailed: true`
+ * back, so the caller can queue it for the hourly drain.
  * Other non urgent mail gets `overBudget: true` back so the caller can queue
  * it for the next Arizona day.
  */
@@ -169,18 +176,22 @@ export async function deliverEmail(
   opts: { urgent: boolean; realtime?: boolean },
 ): Promise<DeliverResult> {
   const brevoOk = opts.urgent || Boolean(opts.realtime);
+  const viaBrevo = async (cfg: NonNullable<typeof brevo>): Promise<DeliverResult> => {
+    const r = await sendViaBrevo(p, cfg);
+    return r.ok ? r : { ...r, brevoFailed: true };
+  };
   const brevo = brevoConfig();
   const resendHasRoom = await consumeResendDailyBudget(p.brand.id);
 
   if (!resendHasRoom) {
-    if (brevoOk && brevo) return sendViaBrevo(p, brevo);
+    if (brevoOk && brevo) return viaBrevo(brevo);
     if (!opts.urgent) return { ok: false, error: "Resend daily soft limit reached", overBudget: true };
     // Urgent with no fallback configured: let Resend try, it may still have room.
   }
 
   const resend = getResendForBrand(p.brand);
   if (!resend) {
-    if (brevo) return sendViaBrevo(p, brevo);
+    if (brevo) return viaBrevo(brevo);
     return { ok: false, error: `Resend API key missing for brand ${p.brand.id}` };
   }
 
@@ -203,7 +214,7 @@ export async function deliverEmail(
     err.name === "rate_limit_exceeded" ||
     err.name === "monthly_quota_exceeded";
   if (quota) {
-    if (brevoOk && brevo) return sendViaBrevo(p, brevo);
+    if (brevoOk && brevo) return viaBrevo(brevo);
     if (!opts.urgent) return { ok: false, error: err.message || "Resend 429", overBudget: true };
   }
   return { ok: false, error: err.message || "send failed" };

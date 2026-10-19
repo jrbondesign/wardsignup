@@ -22,7 +22,19 @@ WardSignup runs on **Arizona time (America/Phoenix, UTC-7 all year, no DST)**.
 ## Email budget and hold (Phoenix day)
 
 - **Daily send budget**: `RESEND_DAILY_SOFT_LIMIT` (default 90) per Phoenix day, counted under `email_resend_phx_day`. A Resend send needs room in **both** this budget and the UTC day cap (the old `email_resend_daily` counter, same key, so nothing resets on deploy). Either one full means urgent and near real time mail goes to Brevo (if configured) and batch mail is queued.
-- **Near real time mail, no hold** (welcome, new creator notice, feedback received; `REALTIME_KINDS` in `lib/email-queue-time.ts`): sent right away at any hour. If Resend is out of budget it goes through Brevo. Only if Brevo isn't configured or is also refused is it queued, due now, and the hourly drain sends it first (Brevo again if Resend is still full). It never goes past either Resend counter.
+- **Near real time mail, no hold** (welcome, new creator notice, feedback received; `REALTIME_KINDS` in `lib/email-queue-time.ts`): sent right away at any hour. If Resend is out of budget it goes through Brevo. If Brevo isn't configured, or Brevo refuses or errors, it is queued, due now (an identical pending or sending email isn't queued twice), and the hourly drain sends it first (Brevo again if Resend is still full). It never goes past either Resend counter. A failed drain attempt backs off: the next run, then about 2 hours; after 3 attempts the row is marked failed and never retried. Each row is claimed before sending, so overlapping runs can't send it twice.
+
+  Worst case delay for a welcome email:
+
+  | Condition | Delay |
+  |---|---|
+  | Resend has room | 0, sent right away |
+  | Resend full (either counter, or 429), Brevo works | 0, sent through Brevo |
+  | Resend full, Brevo fails once, then works | next hourly run, up to about 1 hour |
+  | Brevo keeps failing while Resend stays full | 3 drain attempts over about 4 hours (about 1 h, 2 h, 4 h after the original), then failed |
+  | Brevo not configured, only the UTC cap full | next run after 5 PM Arizona (5:07 PM) |
+  | Brevo not configured, Arizona budget full | 12:07 AM Arizona run, up to about 23 hours |
+  | Hourly ceiling (100 per hour) hit, or the queue insert fails | not queued; the welcome route returns 502 and retries on the next session |
 - **Hold for batch mail** (digests, reports, feedback asks): sent right away during the first `EMAIL_DEFER_SEND_WINDOW_HOURS` (default 6) of the Phoenix day, so 12 AM to 6 AM Arizona. Otherwise queued with `send_after` 12:05 AM Arizona next day, sent by the 12:07 AM run of `/api/cron/email-queue`.
 - **Organizer digest and feedback ask**: once per Phoenix day, run at 5:05 AM Arizona, inside the send window, so they go out immediately.
 - Tradeoff: the 12:07 AM drain lands 7 hours into Resend's UTC day. If 5 PM to midnight Arizona already used most of it, the cap stops the drain and the rest stay pending. The hourly runs retry them, so they go out at 5:07 PM when the UTC cap resets (if Arizona budget is left), else the next 12:07 AM. Nothing gets refused by Resend.

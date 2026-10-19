@@ -124,3 +124,42 @@ describe("near real time mail (welcome, new creator, feedback received)", () => 
     expect(deliverEmail.mock.calls[0][1]).toEqual({ urgent: true, realtime: false });
   });
 });
+
+describe("Brevo failure on near real time mail", () => {
+  it("queues the welcome due now (deduped) instead of failing", async () => {
+    // 9:00 AM Arizona
+    jest.setSystemTime(new Date("2026-10-12T16:00:00Z"));
+    deliverEmail.mockResolvedValue({ ok: false, error: "Brevo 500: boom", brevoFailed: true });
+    expect(await sendGuardedEmail({ ...base, realtime: true, kind: "welcome" })).toEqual({ ok: true, queued: true });
+    expect(enqueueEmail.mock.calls[0][0]).toMatchObject({ kind: "welcome", send_after: "2026-10-12T16:00:00.000Z" });
+    expect(enqueueEmail.mock.calls[0][1]).toEqual({ dedupe: true });
+  });
+
+  it("from the drain it reports the failure instead of queueing again (no loop)", async () => {
+    jest.setSystemTime(new Date("2026-10-12T16:07:00Z"));
+    deliverEmail.mockResolvedValue({ ok: false, error: "Brevo 500: boom", brevoFailed: true });
+    const r = await sendGuardedEmail({ ...base, realtime: true, kind: "welcome", fromQueue: true });
+    expect(r).toEqual({ ok: false, error: "Brevo 500: boom", brevoFailed: true });
+    expect(enqueueEmail).not.toHaveBeenCalled();
+  });
+
+  it("urgent mail whose Brevo send fails still fails (not queued)", async () => {
+    jest.setSystemTime(new Date("2026-10-12T16:00:00Z"));
+    deliverEmail.mockResolvedValue({ ok: false, error: "Brevo 500: boom", brevoFailed: true });
+    expect(await sendGuardedEmail({ ...base, urgent: true })).toEqual({ ok: false, error: "Brevo 500: boom" });
+    expect(enqueueEmail).not.toHaveBeenCalled();
+  });
+
+  it("batch queueing does not ask for dedupe", async () => {
+    jest.setSystemTime(new Date("2026-10-11T15:11:00Z"));
+    await sendGuardedEmail({ ...base, deferrable: true, kind: "digest" });
+    expect(enqueueEmail.mock.calls[0][1]).toEqual({ dedupe: false });
+  });
+
+  it("a queue insert failure is reported, so the welcome route can retry", async () => {
+    jest.setSystemTime(new Date("2026-10-12T16:00:00Z"));
+    deliverEmail.mockResolvedValue({ ok: false, error: "Brevo 500: boom", brevoFailed: true });
+    enqueueEmail.mockResolvedValueOnce({ ok: false, error: "db down" });
+    expect(await sendGuardedEmail({ ...base, realtime: true, kind: "welcome" })).toEqual({ ok: false, error: "db down" });
+  });
+});

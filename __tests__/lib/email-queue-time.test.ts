@@ -3,6 +3,7 @@ import {
   deferSendWindowHours,
   inPostResetWindow,
   isRealtimeKind,
+  realtimeRetrySendAfter,
   nextResetSendAfter,
 } from "@/lib/email-queue-time";
 
@@ -50,4 +51,10 @@ describe("email queue timing (Arizona day)", () => {
     expect(deferEnabled({})).toBe(true);
     expect(deferEnabled({ EMAIL_DEFER_NON_URGENT: "off" })).toBe(false);
   });
+});
+
+it("near real time retry backoff: next run, then 115 minutes", () => {
+  const now = new Date("2026-10-12T16:07:00Z");
+  expect(realtimeRetrySendAfter(now, 1).toISOString()).toBe("2026-10-12T16:07:00.000Z");
+  expect(realtimeRetrySendAfter(now, 2).toISOString()).toBe("2026-10-12T18:02:00.000Z");
 });
