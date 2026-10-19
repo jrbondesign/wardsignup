@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
-import { createSignupIfCapacityRpc } from "@/lib/supabase";
+import { createSignupIfCapacityRpc, mapSignupRpcError } from "@/lib/supabase";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { getClientIp } from "@/lib/request-ip";
 import { sendParticipantBatchSignupConfirmation } from "@/lib/participant-email";
@@ -129,15 +129,9 @@ export async function POST(request: Request) {
       });
 
       if (error) {
-        const msg =
-          typeof error === "object" && error !== null && "message" in error
-            ? String((error as { message?: string }).message ?? "")
-            : "";
-        let userMsg = "Failed to sign up for this slot";
-        if (msg.includes("SESSION_FULL")) userMsg = "This slot is already full";
-        else if (msg.includes("SESSION_NOT_FOUND")) userMsg = "Slot not found";
-        else if (msg.includes("CAMPAIGN_MISMATCH")) userMsg = "Session does not belong to this event";
-        else console.error("Bulk signup RPC error:", error);
+        const mapped = mapSignupRpcError(error);
+        if (!mapped.known) console.error("Bulk signup RPC error:", error);
+        const userMsg = mapped.known ? mapped.message : "Failed to sign up for this slot";
         results.push({ session_id: sessionId, error: userMsg });
         continue;
       }

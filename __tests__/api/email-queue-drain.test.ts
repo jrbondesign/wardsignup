@@ -38,6 +38,8 @@ function makeAdmin() {
             if (c === "id") id = v;
             return chain;
           },
+          lt: () => chain,
+          gte: () => chain,
           select: () => {
             const r = rows.find((x) => x.id === id && x.status === "pending");
             if (r) Object.assign(r, patch);
