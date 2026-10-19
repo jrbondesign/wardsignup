@@ -285,7 +285,7 @@ export default function DashboardPage() {
     };
 
     loadUserAndEvents();
-  }, [router, brand.id]);
+  }, [router, brand.id, posthog]);
 
   useEffect(() => {
     const handleClickOutside = () => setOpenDropdown(null);

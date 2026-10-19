@@ -60,6 +60,7 @@ export default function OrgMembersSection({ organizationId, isOwner }: Props) {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loads members from the API; load() is shared with the invite/transfer handlers
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizationId]);
