@@ -76,7 +76,9 @@ export async function DELETE(
       distinctId: user.id,
       event: "event_deleted",
       properties: {
+        org_id: (event as Campaign).organization_id ?? null,
         event_id: eventId,
+        campaign_id: eventId,
       },
     });
 

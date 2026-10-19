@@ -2,6 +2,7 @@ import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { orgIdForCampaign } from "@/lib/analytics-context";
 import { getClientIp } from "@/lib/request-ip";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
@@ -144,12 +145,15 @@ export async function POST(request: Request) {
 
     const distinctId = request.headers.get("x-posthog-distinct-id") ?? `anon_signup_${crypto.randomUUID()}`;
     const posthogClient = getPostHogClient();
+    const orgId = await orgIdForCampaign(admin, campaign_id);
     posthogClient.capture({
       distinctId,
       event: "item_signup_created",
       properties: {
+        org_id: orgId,
         item_id,
         campaign_id,
+        event_id: campaign_id,
         has_email: Boolean(member_email?.trim()),
       },
     });

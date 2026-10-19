@@ -2,7 +2,7 @@
 
 import EmailTypoHint from "@/components/EmailTypoHint";
 import { signerEmailHint } from "@/lib/reminder-copy";
-import { Fragment, use, useEffect, useState } from "react";
+import { Fragment, use, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import MadeWithFooter from "@/components/MadeWithFooter";
 import { usePostHog } from "posthog-js/react";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
 import { usePublicCover } from "@/lib/use-public-cover";
+import { SignupFunnelTracker, buildFunnelProps, type FunnelContext, type SignupFormKind } from "@/lib/signup-funnel";
 
 const DAYS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
 
@@ -105,6 +106,59 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<{ day: number; year: number; month: number } | null>(null);
 
   useEffect(() => { fetchData(); }, [eventId]);
+
+  // ---- PostHog signup funnel (sheet_viewed → signup_form_started →
+  // signup_email_entered → signup_completed). One tracker per page view; no
+  // PII in any property. org_id comes from a tiny public lookup so ward-level
+  // analysis works without group analytics.
+  const [orgId, setOrgId] = useState<string | null>(null);
+  const [orgIdResolved, setOrgIdResolved] = useState(false);
+  const posthogRef = useRef(posthog);
+  posthogRef.current = posthog;
+  const funnelRef = useRef<{ eventId: string; tracker: SignupFunnelTracker } | null>(null);
+  if (!funnelRef.current || funnelRef.current.eventId !== eventId) {
+    funnelRef.current = {
+      eventId,
+      tracker: new SignupFunnelTracker((name, props) => posthogRef.current?.capture(name, props)),
+    };
+  }
+  const funnel = funnelRef.current.tracker;
+  const funnelCtx: FunnelContext = { orgId, campaignId: eventId, sheetType: eventType };
+
+  useEffect(() => {
+    let cancelled = false;
+    setOrgId(null);
+    setOrgIdResolved(false);
+    fetch(`/api/events/${eventId}/analytics-context`)
+      .then((r) => (r.ok ? r.json() : {}))
+      .then((d: { orgId?: string | null }) => {
+        if (!cancelled) setOrgId(typeof d.orgId === "string" ? d.orgId : null);
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!cancelled) setOrgIdResolved(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [eventId]);
+
+  useEffect(() => {
+    if (loading || !event || !orgIdResolved) return;
+    funnel.sheetViewed(
+      funnelCtx,
+      eventType === "items" ? { item_count: items.length } : { slot_count: sessions.length },
+    );
+    // funnelCtx is derived from the deps below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, event, orgIdResolved, orgId, eventType, items.length, sessions.length, funnel]);
+
+  const trackFormStarted = (form: SignupFormKind, trigger: "field_focus" | "slot_selected" = "field_focus") => {
+    funnel.formStarted(funnelCtx, form, trigger);
+  };
+  const trackEmailEntered = (form: SignupFormKind, email: string) => {
+    funnel.emailEntered(funnelCtx, form, email);
+  };
 
   // Single-session bypass: auto-select the only session so the form is ready immediately
   useEffect(() => {
@@ -293,6 +347,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   };
 
   const toggleSessionSelection = (sessionId: string) => {
+    trackFormStarted("slots", "slot_selected");
     setSelectedSessions((prev) =>
       prev.includes(sessionId) ? prev.filter((id) => id !== sessionId) : [...prev, sessionId]
     );
@@ -331,7 +386,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         const d = await res.json();
         throw new Error(d.error || "Failed to sign up");
       }
-      posthog?.capture("item_signup_completed", { campaign_id: eventId, item_id: itemId, has_email: Boolean(itemFormData.email), quantity: itemFormData.quantity });
+      posthog?.capture("item_signup_completed", buildFunnelProps(funnelCtx, { item_id: itemId, has_email: Boolean(itemFormData.email.trim()), quantity: itemFormData.quantity }));
       setItemSuccess(true);
       setItemFormData({ name: "", email: "", note: "", quantity: 1 });
       setExpandedItem(null);
@@ -368,7 +423,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         const d = await res.json();
         throw new Error(d.error || "Failed to add your contribution");
       }
-      posthog?.capture("item_signup_completed", { campaign_id: eventId, custom: true });
+      posthog?.capture("item_signup_completed", buildFunnelProps(funnelCtx, { custom: true }));
       setCustomItem({ label: "", name: "", note: "" });
       fetchData();
     } catch (err: any) {
@@ -419,7 +474,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
         throw new Error(firstFailure.error);
       }
 
-      posthog?.capture("signup_completed", { campaign_id: eventId, session_count: selectedSessions.length, has_email: Boolean(formData.email), has_phone: Boolean(formData.phone) });
+      posthog?.capture("signup_completed", buildFunnelProps(funnelCtx, { session_count: sessionsToSignUp.length, has_email: Boolean(formData.email.trim()), has_phone: Boolean(formData.phone.trim()) }));
 
       // Redirect to dedicated success page with the primary cancel_token.
       const cancelToken = json?.primary_cancel_token;
@@ -841,7 +896,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
 
                 <h2 className="font-serif text-2xl text-[#0D2B35] mb-5">Register for this event</h2>
 
-                <form onSubmit={handleSignup} className="space-y-4">
+                <form onSubmit={handleSignup} onFocusCapture={() => trackFormStarted("slots")} className="space-y-4">
                   <div>
                     <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
                       Your Name <span className="text-red-400">*</span>
@@ -858,6 +913,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                     </label>
                     <input type="email" value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      onBlur={(e) => trackEmailEntered("slots", e.target.value)}
                       placeholder="you@example.com"
                       className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70"
                       disabled={submitting} />
@@ -990,7 +1046,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                             {itemError}
                           </div>
                         )}
-                        <form onSubmit={(e) => handleItemSignup(e, item.id)} className="space-y-3">
+                        <form onSubmit={(e) => handleItemSignup(e, item.id)} onFocusCapture={() => trackFormStarted("item")} className="space-y-3">
                           <div>
                             <label className="block text-[12px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1">
                               How many?
@@ -1051,6 +1107,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                               type="email"
                               value={itemFormData.email}
                               onChange={(e) => setItemFormData((prev) => ({ ...prev, email: e.target.value }))}
+                              onBlur={(e) => trackEmailEntered("item", e.target.value)}
                               placeholder="you@example.com"
                               className="w-full text-sm text-[#0D2B35] px-[14px] py-[11px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
                               disabled={itemSubmitting}
@@ -1105,7 +1162,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                   ))}
                 </div>
               )}
-              <form onSubmit={handleCustomItemSignup} className="px-5 py-4 space-y-3 bg-[#F4FAFB]">
+              <form onSubmit={handleCustomItemSignup} onFocusCapture={() => trackFormStarted("custom_item")} className="px-5 py-4 space-y-3 bg-[#F4FAFB]">
                 {customError && (
                   <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-sm">{customError}</div>
                 )}
@@ -1500,7 +1557,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
               </div>
             </div>
 
-            <form onSubmit={handleSignup} className="space-y-4">
+            <form onSubmit={handleSignup} onFocusCapture={() => trackFormStarted("slots")} className="space-y-4">
               <div>
                 <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
                   Your Name <span className="text-red-400">*</span>
@@ -1517,6 +1574,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
                 </label>
                 <input type="email" value={formData.email}
                   onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  onBlur={(e) => trackEmailEntered("slots", e.target.value)}
                   placeholder="john@example.com"
                   className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70" />
                 <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />

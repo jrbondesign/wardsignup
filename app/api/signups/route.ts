@@ -8,6 +8,7 @@ import { sendParticipantSignupConfirmation } from "@/lib/participant-email";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { orgIdForCampaign } from "@/lib/analytics-context";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 
@@ -244,11 +245,14 @@ export async function POST(request: Request) {
 
     const distinctId = request.headers.get("x-posthog-distinct-id") ?? `anon_signup_${crypto.randomUUID()}`;
     const posthog = getPostHogClient();
+    const orgId = await orgIdForCampaign(admin, campaign_id);
     posthog.capture({
       distinctId,
       event: "signup_created",
       properties: {
+        org_id: orgId,
         campaign_id,
+        event_id: campaign_id,
         session_id,
         has_email: Boolean(member_email),
         has_phone: Boolean(member_phone),

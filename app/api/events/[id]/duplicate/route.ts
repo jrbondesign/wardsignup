@@ -216,8 +216,10 @@ export async function POST(
       distinctId: user.id,
       event: "event_duplicated",
       properties: {
+        org_id: source.organization_id ?? null,
         source_event_id: sourceId,
         event_id: newId,
+        campaign_id: newId,
         shift_days: shiftDays,
         session_count: sessions.length,
         item_count: items.length,
