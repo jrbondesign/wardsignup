@@ -4,6 +4,7 @@ import { sendGuardedEmail } from "@/lib/email-send";
 import { getBrandDefinition, toPublicBrand } from "@/lib/brand/brands";
 import type { BrandId } from "@/lib/brand/types";
 import type { QueuedEmailRow } from "@/lib/email-queue";
+import { REALTIME_KINDS, isRealtimeKind } from "@/lib/email-queue-time";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -16,12 +17,16 @@ function drainLimit(): number {
 }
 
 /**
- * Drains email_queue just after our daily email budget resets at midnight
- * Arizona time (vercel.json "7 7 * * *": 07:07 UTC = 12:07 AM Phoenix). Queued
- * rows wait for 12:05 AM Arizona (lib/email-queue-time.ts). Resend's own
- * quota still resets at 00:00 UTC; the UTC day safety cap in
- * lib/email-deliver.ts keeps this drain under it, and anything it refuses
- * stays pending for the next night.
+ * Drains email_queue every hour at :07 (vercel.json "7 * * * *").
+ *
+ * - Near real time rows (welcome, new creator notice, feedback received;
+ *   REALTIME_KINDS) are only here when Resend was out of budget and Brevo
+ *   couldn't take them. They are due at once and are sent first, through
+ *   Brevo again if Resend is still full.
+ * - Batch rows (digests, feedback asks) wait for 12:05 AM Arizona
+ *   (lib/email-queue-time.ts), so the 12:07 AM run sends them.
+ * Both daily counters in lib/email-deliver.ts (Arizona day budget, UTC day
+ * safety cap) still apply; anything they refuse stays pending for a later run.
  * Each row is claimed (pending to sending) before it is sent, so overlapping
  * runs never send the same email twice. Rows go back to pending if Resend is
  * out of budget, and to failed after 3 errors.
@@ -43,24 +48,40 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: e instanceof Error ? e.message : "Config error" }, { status: 500 });
   }
 
-  const { data, error } = await admin
+  const nowIso = new Date().toISOString();
+  const limit = drainLimit();
+  // Near real time rows first, so a batch backlog can't use the budget ahead of a welcome.
+  const realtimeRes = await admin
     .from("email_queue")
     .select("*")
     .eq("status", "pending")
-    .lte("send_after", new Date().toISOString())
+    .in("kind", [...REALTIME_KINDS])
+    .lte("send_after", nowIso)
     .order("send_after", { ascending: true })
-    .limit(drainLimit());
+    .limit(limit);
+  const batchRes = realtimeRes.error
+    ? realtimeRes
+    : await admin
+        .from("email_queue")
+        .select("*")
+        .eq("status", "pending")
+        .not("kind", "in", `(${REALTIME_KINDS.join(",")})`)
+        .lte("send_after", nowIso)
+        .order("send_after", { ascending: true })
+        .limit(limit);
+  const error = realtimeRes.error || batchRes.error;
   if (error) {
     console.error("email-queue list error:", error);
     return NextResponse.json({ error: "Failed to list queue" }, { status: 500 });
   }
+  const data = [...((realtimeRes.data ?? []) as QueuedEmailRow[]), ...((batchRes.data ?? []) as QueuedEmailRow[])].slice(0, limit);
 
   let sent = 0;
   let failed = 0;
   let skipped = 0;
   let stoppedOverBudget = false;
 
-  for (const raw of (data ?? []) as QueuedEmailRow[]) {
+  for (const raw of data) {
     const { data: claimed } = await admin
       .from("email_queue")
       .update({ status: "sending", attempts: raw.attempts + 1 } as never)
@@ -87,6 +108,7 @@ export async function GET(request: NextRequest) {
       text: raw.text_body ?? undefined,
       replyTo: raw.reply_to ?? undefined,
       attachments: raw.attachments ?? undefined,
+      realtime: isRealtimeKind(raw.kind),
       fromQueue: true,
     });
 

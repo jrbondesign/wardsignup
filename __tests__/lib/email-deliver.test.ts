@@ -149,4 +149,46 @@ describe("Arizona day budget plus UTC day safety cap", () => {
     expect(resendUtcDayCap({ RESEND_UTC_DAY_CAP: "95" })).toBe(95);
     expect(resendUtcDayCap({ RESEND_UTC_DAY_CAP: "500" })).toBe(100);
   });
+
+  describe("near real time mail (welcome)", () => {
+    it("sends on Resend when both counters have room", async () => {
+      Object.assign(process.env, BREVO_ENV);
+      rpc.mockResolvedValue({ data: true, error: null });
+      resendSend.mockResolvedValue({ error: null });
+      expect(await deliverEmail(msg, { urgent: false, realtime: true })).toEqual({ ok: true, provider: "resend" });
+      expect(callsFor("email_resend_daily")).toHaveLength(1);
+      expect(callsFor("email_resend_phx_day")).toHaveLength(1);
+    });
+
+    it("Arizona budget full: goes to Brevo right away", async () => {
+      Object.assign(process.env, BREVO_ENV);
+      rpc.mockImplementation((_n: string, a: { p_action: string }) =>
+        Promise.resolve({ data: a.p_action !== "email_resend_phx_day", error: null }),
+      );
+      expect(await deliverEmail(msg, { urgent: false, realtime: true })).toEqual({ ok: true, provider: "brevo" });
+      expect(resendSend).not.toHaveBeenCalled();
+    });
+
+    it("UTC cap full: goes to Brevo right away", async () => {
+      Object.assign(process.env, BREVO_ENV);
+      rpc.mockImplementation((_n: string, a: { p_action: string }) =>
+        Promise.resolve({ data: a.p_action !== "email_resend_daily", error: null }),
+      );
+      expect(await deliverEmail(msg, { urgent: false, realtime: true })).toEqual({ ok: true, provider: "brevo" });
+      expect(resendSend).not.toHaveBeenCalled();
+    });
+
+    it("budget full and no Brevo: over budget (never pushes past our caps on Resend, unlike urgent)", async () => {
+      rpc.mockResolvedValue({ data: false, error: null });
+      expect(await deliverEmail(msg, { urgent: false, realtime: true })).toMatchObject({ ok: false, overBudget: true });
+      expect(resendSend).not.toHaveBeenCalled();
+    });
+
+    it("Resend 429: goes to Brevo", async () => {
+      Object.assign(process.env, BREVO_ENV);
+      rpc.mockResolvedValue({ data: true, error: null });
+      resendSend.mockResolvedValue({ error: { statusCode: 429, name: "daily_quota_exceeded", message: "quota" } });
+      expect(await deliverEmail(msg, { urgent: false, realtime: true })).toEqual({ ok: true, provider: "brevo" });
+    });
+  });
 });

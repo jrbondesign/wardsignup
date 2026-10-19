@@ -2,8 +2,14 @@ import {
   deferEnabled,
   deferSendWindowHours,
   inPostResetWindow,
+  isRealtimeKind,
   nextResetSendAfter,
 } from "@/lib/email-queue-time";
+
+it("near real time kinds", () => {
+  for (const k of ["welcome", "new_creator", "feedback_response"]) expect(isRealtimeKind(k)).toBe(true);
+  for (const k of ["digest", "feedback", "feedback_summary", "other", "", null, undefined]) expect(isRealtimeKind(k)).toBe(false);
+});
 
 describe("email queue timing (Arizona day)", () => {
   it("defaults to a 6 hour send window after Arizona midnight", () => {

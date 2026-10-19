@@ -52,8 +52,8 @@ it("11:59 PM and 12:00 AM Arizona are different days", async () => {
   expect(buckets).toEqual(["2026-10-19T07:00:00.000Z", "2026-10-20T07:00:00.000Z"]);
 });
 
-it("vercel.json: digest at 5:05 AM Arizona, queue drain at 12:07 AM Arizona", () => {
+it("vercel.json: digest at 5:05 AM Arizona, queue drain hourly at :07 (includes 12:07 AM Arizona)", () => {
   const byPath = Object.fromEntries((vercel as { crons: { path: string; schedule: string }[] }).crons.map((c) => [c.path, c.schedule]));
   expect(byPath["/api/cron/organizer-digest"]).toBe("5 12 * * *");
-  expect(byPath["/api/cron/email-queue"]).toBe("7 7 * * *");
+  expect(byPath["/api/cron/email-queue"]).toBe("7 * * * *");
 });

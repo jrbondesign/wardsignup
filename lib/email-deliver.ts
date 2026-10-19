@@ -157,18 +157,23 @@ export async function sendViaBrevo(
 
 /**
  * Deliver one email. `urgent` mail (sign in links, confirmations, invites,
- * reminders) may use Brevo when Resend is out of budget. Non urgent mail gets
- * `overBudget: true` back so the caller can queue it for the next Arizona day.
+ * reminders) may use Brevo when Resend is out of budget. `realtime` mail
+ * (welcome, new creator notice, feedback received) also uses Brevo then, but
+ * never goes past our budgets on Resend: with no Brevo it gets
+ * `overBudget: true` back so the caller can queue it for the hourly drain.
+ * Other non urgent mail gets `overBudget: true` back so the caller can queue
+ * it for the next Arizona day.
  */
 export async function deliverEmail(
   p: DeliverParams,
-  opts: { urgent: boolean },
+  opts: { urgent: boolean; realtime?: boolean },
 ): Promise<DeliverResult> {
+  const brevoOk = opts.urgent || Boolean(opts.realtime);
   const brevo = brevoConfig();
   const resendHasRoom = await consumeResendDailyBudget(p.brand.id);
 
   if (!resendHasRoom) {
-    if (opts.urgent && brevo) return sendViaBrevo(p, brevo);
+    if (brevoOk && brevo) return sendViaBrevo(p, brevo);
     if (!opts.urgent) return { ok: false, error: "Resend daily soft limit reached", overBudget: true };
     // Urgent with no fallback configured: let Resend try, it may still have room.
   }
@@ -198,7 +203,7 @@ export async function deliverEmail(
     err.name === "rate_limit_exceeded" ||
     err.name === "monthly_quota_exceeded";
   if (quota) {
-    if (opts.urgent && brevo) return sendViaBrevo(p, brevo);
+    if (brevoOk && brevo) return sendViaBrevo(p, brevo);
     if (!opts.urgent) return { ok: false, error: err.message || "Resend 429", overBudget: true };
   }
   return { ok: false, error: err.message || "send failed" };

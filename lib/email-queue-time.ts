@@ -1,7 +1,14 @@
 import { MS_DAY, phoenixDayStartUtc } from "@/lib/phoenix-time";
 
 /**
- * Timing rules for non urgent mail. Our daily email budget resets at midnight
+ * Timing rules for queued mail.
+ *
+ * Near real time mail (welcome, new creator notice, feedback received) is not
+ * held: it sends right away. Only if Resend is out of budget AND Brevo can't
+ * take it is it queued, due immediately, for the hourly email-queue drain
+ * (vercel.json "7 * * * *").
+ *
+ * Batch mail (digests, feedback asks, the weekly summary). Our daily email budget resets at midnight
  * Arizona time (00:00 America/Phoenix = 07:00 UTC). Non urgent mail sent in the
  * first hours of the Arizona day goes out right away; anything later is queued
  * until 12:05 AM Arizona the next day, when the email-queue cron drains it.
@@ -31,4 +38,14 @@ export function inPostResetWindow(now: Date, windowHours: number): boolean {
 /** 12:05 AM Arizona on the next Arizona day (07:05 UTC). */
 export function nextResetSendAfter(now: Date): Date {
   return new Date(phoenixDayStartUtc(now).getTime() + MS_DAY + 5 * 60 * 1000);
+}
+
+/**
+ * Kinds that must go out promptly. They are never held for 12:05 AM; when
+ * they have to queue they are due at once, and the drain sends them first.
+ */
+export const REALTIME_KINDS = ["welcome", "new_creator", "feedback_response"] as const;
+
+export function isRealtimeKind(kind: string | null | undefined): boolean {
+  return (REALTIME_KINDS as readonly string[]).includes(kind ?? "");
 }

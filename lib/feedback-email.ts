@@ -190,9 +190,9 @@ Q4. What's the #1 thing holding it back from being perfect?
 
   const send = await sendGuardedEmail({
     brand,
-    deferrable: true,
-      kind: "feedback",
-      category: "transactional",
+    realtime: true,
+    kind: "feedback_response",
+    category: "transactional",
     from: feedbackEmailFrom(brand),
     replyTo: creatorEmail,
     to: "bondesign@gmail.com",
