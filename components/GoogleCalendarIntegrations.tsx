@@ -220,6 +220,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
         gcal_missing_params: "The connection failed. Please try again.",
         gcal_invalid_state: "The connection session expired. Please try again.",
         gcal_org_not_enabled: "Google Calendar sync is not enabled for your organization.",
+        gcal_not_org_member: "You need to be an admin of this organization to connect Google Calendar.",
         gcal_no_refresh_token: "Google did not return a lasting sign-in. Click Reconnect and allow access again.",
         gcal_token_revoked: "Your previous Google Calendar access was revoked. Please disconnect your Google account from Google security settings, then try connecting again.",
         gcal_token_exchange_failed: "Could not complete the connection with Google. Please try again.",

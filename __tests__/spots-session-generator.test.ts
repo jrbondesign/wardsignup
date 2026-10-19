@@ -17,7 +17,7 @@ describe("generateSpotsSessions", () => {
       spotsSlotDuration: 15,
       spotsCapacity: 1,
       spotsSlots: [],
-    } as CreateFormState;
+    } as unknown as CreateFormState;
 
     const sessions = generateSpotsSessions(state as CreateFormState);
 
@@ -66,7 +66,7 @@ describe("generateSpotsSessions", () => {
       spotsSlotDuration: 20,
       spotsCapacity: 1,
       spotsSlots: [],
-    } as CreateFormState;
+    } as unknown as CreateFormState;
 
     const sessions = generateSpotsSessions(state as CreateFormState);
 
@@ -105,7 +105,7 @@ describe("generateSpotsSessions", () => {
       spotsAutoSplit: false,
       spotsCapacity: 5,
       spotsSlots: [],
-    } as CreateFormState;
+    } as unknown as CreateFormState;
 
     const sessions = generateSpotsSessions(state as CreateFormState);
 
@@ -139,7 +139,7 @@ describe("generateSpotsSessions", () => {
       spotsSlotDuration: 30,
       spotsCapacity: 1,
       spotsSlots: [],
-    } as CreateFormState;
+    } as unknown as CreateFormState;
 
     const sessions = generateSpotsSessions(state as CreateFormState);
 
@@ -164,7 +164,7 @@ describe("buildDayWindows", () => {
         { id: "2", date: "2026-10-02", start: "14:20", end: "16:00" },
         { id: "3", date: "2026-10-03", start: "09:00", end: "10:00" },
       ],
-    } as CreateFormState;
+    } as unknown as CreateFormState;
 
     const windows = buildDayWindows(state as CreateFormState);
 
