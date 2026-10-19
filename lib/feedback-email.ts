@@ -1,4 +1,20 @@
 import type { PublicBrand } from "@/lib/brand/types";
+import { PHOENIX_TZ, phoenixDateKey } from "@/lib/phoenix-time";
+
+/** "Oct 18, 2026, 6:58 PM MST" in Arizona time, for founder emails. */
+function formatPhoenixDateTime(iso: string): string {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return iso;
+  return d.toLocaleString("en-US", {
+    timeZone: PHOENIX_TZ,
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+}
 import { feedbackEmailFrom } from "@/lib/brand/email-from";
 import { escapeHtml } from "@/lib/html-escape";
 import { sendGuardedEmail } from "@/lib/email-send";
@@ -127,11 +143,11 @@ export async function sendFeedbackResponseNotification(params: {
   const retentionLabel = retention ? RETENTION_LABELS[retention] ?? retention : "—";
   const valueText = value?.trim() || "—";
   const blockerText = blocker?.trim() || "—";
-  const when = new Date(respondedAt).toISOString().slice(0, 16).replace("T", " ");
+  const when = formatPhoenixDateTime(respondedAt);
 
   const text = `New ${brand.name} feedback from ${creatorEmail}
 
-Responded: ${when} UTC
+Responded: ${when}
 
 Q1. How would you feel if you could no longer use ${brand.name}?
 → ${pmfLabel}
@@ -148,7 +164,7 @@ Q4. What's the #1 thing holding it back from being perfect?
   const html = `
     <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; max-width: 600px; margin: 0 auto; padding: 24px; color: #111827;">
       <h2 style="margin: 0 0 16px; font-size: 18px; font-weight: 600;">New ${escapeHtml(brand.name)} feedback from ${escapeHtml(creatorEmail)}</h2>
-      <p style="margin: 0 0 20px; font-size: 13px; color: #6b7280;">Responded: ${escapeHtml(when)} UTC</p>
+      <p style="margin: 0 0 20px; font-size: 13px; color: #6b7280;">Responded: ${escapeHtml(when)}</p>
       
       <div style="background: #f9fafb; border-left: 3px solid #0E96B0; padding: 16px; margin-bottom: 12px;">
         <p style="margin: 0 0 6px; font-size: 13px; font-weight: 500; color: #374151;">Q1. How would you feel if you could no longer use ${escapeHtml(brand.name)}?</p>
@@ -226,7 +242,7 @@ export function buildFeedbackDigestEmailHtml(params: {
   const rows = responses
     .map((r) => {
       const when = r.responded_at
-        ? new Date(r.responded_at).toISOString().slice(0, 10)
+        ? phoenixDateKey(r.responded_at)
         : "";
       const pmf = r.answer_pmf ? PMF_LABELS[r.answer_pmf] ?? r.answer_pmf : "—";
       const retention = r.answer_retention

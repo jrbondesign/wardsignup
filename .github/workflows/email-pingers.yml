@@ -7,7 +7,8 @@ name: Email Pingers
 
 on:
   schedule:
-    # :35 past the hour, offset from other pingers that fire on the hour
+    # :35 past the hour, offset from other pingers that fire on the hour.
+    # GitHub cron is UTC; hourly jobs land at :35 Phoenix time too (UTC-7, no DST).
     - cron: '35 * * * *'
   workflow_dispatch:
 

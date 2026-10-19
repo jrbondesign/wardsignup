@@ -15,6 +15,12 @@ export const maxDuration = 120;
  * plus independent creator feedback ask.
  * Secured with Authorization: Bearer CRON_SECRET.
  *
+ * Schedule: vercel.json "5 0 * * *" = 00:05 UTC = 5:05 PM Phoenix.
+ * The once-per-day claim stays on the UTC day ON PURPOSE: digests are timed
+ * to go out right after Resend's 00:00 UTC (5 PM Phoenix) quota reset. A
+ * Phoenix-day claim would let the first ping after Phoenix midnight send
+ * them at 12 AM Arizona time instead.
+ *
  * Feedback ask MUST run even when the organizer-digest day-claim is already
  * taken (or the digest path errors after claiming) — feedback ask has its
  * own brand-scoped claimCronRun.

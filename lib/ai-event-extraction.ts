@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { BrandId } from "@/lib/brand/types";
+import { phoenixDateKey, phoenixWeekday } from "@/lib/phoenix-time";
 
 export type AiItem = { label: string; quantity: number };
 
@@ -212,7 +213,10 @@ export async function extractEventFromDescription(
     apiKey: process.env.ANTHROPIC_API_KEY,
   });
 
-  const today = new Date().toISOString().split("T")[0];
+  // Phoenix calendar date (not UTC): after 5pm Arizona time UTC is already
+  // tomorrow, which made "this Sunday" resolve a week late on Saturday evenings.
+  const WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const today = `${WEEKDAYS[phoenixWeekday()]}, ${phoenixDateKey()} (Arizona time)`;
 
   const message = await client.messages.create({
     model: "claude-haiku-4-5",

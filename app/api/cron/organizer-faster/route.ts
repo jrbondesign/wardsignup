@@ -13,6 +13,9 @@ export const maxDuration = 120;
  * or register a 30-minute schedule in vercel.json on Pro.
  * Sends only when there are new signups since organizer_last_instant_notify_at.
  * Secured with Authorization: Bearer CRON_SECRET
+ * Pinged hourly at :35 by .github/workflows/email-pingers.yml (UTC hours; the
+ * hour bucket is the same instant in Phoenix since Arizona is a whole-hour
+ * offset).
  */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET?.trim();

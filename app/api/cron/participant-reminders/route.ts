@@ -41,6 +41,8 @@ export async function GET(request: NextRequest) {
   // pair that brand's from-domain with this deployment's key and be rejected.
   const brandId = resolveCronBrandId(request);
 
+  // Schedule: vercel.json "0 * * * *" (hourly, on the hour) plus the :35
+  // GitHub pinger. Hour buckets are the same instant in Phoenix and UTC.
   // Idempotency: one run per hour bucket. The reminder window is 23–25h, so a
   // hourly external ping is the intended cadence; a replay within the same
   // hour would re-send to anyone whose row hasn't been marked yet.
