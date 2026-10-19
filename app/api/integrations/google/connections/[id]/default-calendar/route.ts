@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuthFromRequest } from '@/lib/auth';
-import { isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
+import { isGcalSyncEnabledForOrgOrFlag } from '@/lib/org-feature-gates';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
 
 export const dynamic = 'force-dynamic';
@@ -58,7 +58,7 @@ export async function PATCH(
     }
 
     // Verify org is in allowlist
-    if (!isGcalSyncEnabledForOrg(conn.organization_id)) {
+    if (!(await isGcalSyncEnabledForOrgOrFlag(conn.organization_id))) {
       return NextResponse.json(
         { error: 'Calendar sync is not enabled for this organization.' },
         { status: 403 }

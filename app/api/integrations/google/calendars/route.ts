@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getAuthFromRequest } from '@/lib/auth';
-import { isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
+import { isGcalSyncEnabledForOrgOrFlag } from '@/lib/org-feature-gates';
 import { refreshAccessToken, listCalendars } from '@/lib/google-oauth';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
 import { isGoogleAuthFailure, markConnectionBroken } from '@/lib/google-calendar-health';
@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'org_id required' }, { status: 400 });
     }
 
-    if (!isGcalSyncEnabledForOrg(orgId)) {
+    if (!(await isGcalSyncEnabledForOrgOrFlag(orgId))) {
       return NextResponse.json(
         { error: 'Google Calendar sync is not enabled for this organization' },
         { status: 403 }

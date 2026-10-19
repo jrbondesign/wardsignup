@@ -6,7 +6,8 @@ import { userCanAdminCampaign } from "@/lib/campaign-access";
 import type { Campaign } from "@/lib/types";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { userFacingCalendarSyncError } from "@/lib/google-calendar-sync-format";
-import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from "@/lib/gcal-feature";
+import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
+import { isGcalSyncEnabledForOrgOrFlag } from "@/lib/org-feature-gates";
 import { getPostHogClient } from "@/lib/posthog-server";
 
 function hostBrand(request: NextRequest) {
@@ -60,7 +61,7 @@ export async function PATCH(
 
     // Require org allowlist check
     const orgId = (event as Campaign).organization_id;
-    if (!orgId || !isGcalSyncEnabledForOrg(orgId)) {
+    if (!orgId || !(await isGcalSyncEnabledForOrgOrFlag(orgId))) {
       return NextResponse.json(
         { error: "Calendar sync is not enabled for this organization" },
         { status: 403 }
@@ -269,7 +270,7 @@ export async function POST(
 
     // Require org allowlist check
     const orgId = (event as Campaign).organization_id;
-    if (!orgId || !isGcalSyncEnabledForOrg(orgId)) {
+    if (!orgId || !(await isGcalSyncEnabledForOrgOrFlag(orgId))) {
       return NextResponse.json(
         { error: "Calendar sync is not enabled for this organization" },
         { status: 403 }

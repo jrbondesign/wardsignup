@@ -38,7 +38,7 @@ import { isMissingSortOrderError, stripSortOrder } from "@/lib/session-sort-orde
 import { INITIAL_FORM_STATE, type CreateFormState, type ItemDraft } from "@/lib/create-form-state";
 import { formatTime, formatTimeRange } from "@/lib/utils";
 import { coverFileError, prepareCoverUpload } from "@/lib/cover-upload";
-import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
+import { useOrgFeatures } from "@/lib/use-org-features";
 import { COVER_SIZE_HINT, coverObjectPosition } from "@/lib/cover-position";
 import ActionMenu, { type ActionMenuItem } from "@/components/ActionMenu";
 import ConfirmDialog from "@/components/ConfirmDialog";
@@ -187,6 +187,7 @@ export default function EditEventPage() {
   const [eventDescription, setEventDescription] = useState("");
   const [eventTimezone, setEventTimezone] = useState("America/Phoenix");
   const [organizationId, setOrganizationId] = useState<string | null>(null);
+  const coverImagesEnabled = useOrgFeatures(organizationId).coverImages;
   const [sessions, setSessions] = useState<SessionData[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -1677,7 +1678,7 @@ export default function EditEventPage() {
             {/* Event details */}
             <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-4">
               <div className="p-4 md:p-8">
-                {isCoverImageEnabledForOrg(organizationId) && (
+                {coverImagesEnabled && (
                 <div className="relative">
                   <label className="cursor-pointer group block">
                     <div className="w-full aspect-[2/1] relative overflow-hidden bg-[#F4FAFB] flex items-center justify-center">

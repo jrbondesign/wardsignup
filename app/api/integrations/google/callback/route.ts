@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
-import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
+import { isGcalSyncFeatureEnabled } from '@/lib/gcal-feature';
+import { isGcalSyncEnabledForOrgOrFlag } from '@/lib/org-feature-gates';
 import { verifyState, exchangeCode, encryptToken, listCalendars } from '@/lib/google-oauth';
 import { persistGoogleCalendarConnection } from '@/lib/google-calendar-connection';
 import { clearConnectionBroken } from '@/lib/google-calendar-health';
@@ -82,7 +83,7 @@ export async function GET(request: Request) {
     };
 
     // Require org allowlist check
-    if (!isGcalSyncEnabledForOrg(state.orgId)) {
+    if (!(await isGcalSyncEnabledForOrgOrFlag(state.orgId))) {
       console.error('[google/callback] Org not in allowlist:', state.orgId);
       return failRedirect('gcal_org_not_enabled');
     }

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { getAuthFromRequest } from '@/lib/auth';
-import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
+import { isGcalSyncFeatureEnabled } from '@/lib/gcal-feature';
+import { isGcalSyncEnabledForOrgOrFlag } from '@/lib/org-feature-gates';
 import { buildAuthUrl, type OAuthState } from '@/lib/google-oauth';
 import { randomBytes } from 'crypto';
 
@@ -32,7 +33,7 @@ export async function GET(request: Request) {
     }
 
     // Require org allowlist check
-    if (!isGcalSyncEnabledForOrg(orgId)) {
+    if (!(await isGcalSyncEnabledForOrgOrFlag(orgId))) {
       return NextResponse.json(
         { error: 'Google Calendar sync is not enabled for this organization' },
         { status: 403 }

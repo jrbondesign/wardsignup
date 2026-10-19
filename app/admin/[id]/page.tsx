@@ -22,7 +22,7 @@ import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
 import { formatTime } from "@/lib/utils";
 import { downloadEventQr } from "@/lib/download-qr";
 import { coverFileError, prepareCoverUpload } from "@/lib/cover-upload";
-import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
+import { useOrgFeatures } from "@/lib/use-org-features";
 import CoverImageFrame, { COVER_OVERLAY_BUTTON } from "@/components/CoverImageFrame";
 import { COVER_SIZE_HINT } from "@/lib/cover-position";
 import ReconnectGoogleBanner from "@/components/event/ReconnectGoogleBanner";
@@ -101,6 +101,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
   const [justCreated, setJustCreated] = useState(false);
 
   const [event, setEvent] = useState<any>(null);
+  const orgFeatures = useOrgFeatures((event as { organization_id?: string | null } | null)?.organization_id ?? null);
   const [eventType, setEventType] = useState<"spots" | "items" | "rsvp">("spots");
   /** Set only after the creator / manager access check passes. */
   const [viewerCanManage, setViewerCanManage] = useState(false);
@@ -689,9 +690,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
 
   if (!event) return null;
 
-  const coverEnabled = isCoverImageEnabledForOrg(
-    (event as { organization_id?: string | null }).organization_id,
-  );
+  const coverEnabled = orgFeatures.coverImages;
 
   // Group by session_date when sessions have specific dates (missionary dinners, RSVP events),
   // otherwise group by day-of-week name (recurring spots without specific dates).
