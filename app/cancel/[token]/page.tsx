@@ -23,13 +23,12 @@ type PageState =
 export default function CancelSignupPage() {
   const params = useParams();
   const token = typeof params.token === "string" ? params.token : "";
-  const [state, setState] = useState<PageState>({ status: "loading" });
+  const [fetchedState, setState] = useState<PageState>({ status: "loading" });
+  // No token means there's nothing to look up; derive that instead of setting state in the effect.
+  const state: PageState = token ? fetchedState : { status: "not_found" };
 
   useEffect(() => {
-    if (!token) {
-      setState({ status: "not_found" });
-      return;
-    }
+    if (!token) return;
     fetch(`/api/signups/cancel/lookup?token=${encodeURIComponent(token)}`)
       .then((r) => r.json())
       .then((data) => {

@@ -2,7 +2,7 @@
 
 import EmailTypoHint from "@/components/EmailTypoHint";
 import { signerEmailHint } from "@/lib/reminder-copy";
-import { Fragment, use, useEffect, useState } from "react";
+import { Fragment, use, useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
@@ -104,20 +104,7 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
   });
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<{ day: number; year: number; month: number } | null>(null);
 
-  useEffect(() => { fetchData(); }, [eventId]);
-
-  // Single-session bypass: auto-select the only session so the form is ready immediately
-  useEffect(() => {
-    if ((eventType === "spots" || eventType === "rsvp") && sessions.length === 1) {
-      const only = sessions[0];
-      const headcount = (only.signups ?? []).length;
-      if (headcount < only.capacity) {
-        setSelectedSessions([only.id]);
-      }
-    }
-  }, [sessions, eventType]);
-
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       // RLS on campaigns is org-scoped post-PR-7, so anon visitors can no longer
       // do a direct table read. Visibility flags now ride along on the public RPC,
@@ -270,6 +257,15 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
       setEvent(eventData);
       setSessions(mergedSessions);
 
+      // Single-session bypass: auto-select the only session so the form is ready immediately
+      if (mergedSessions.length === 1) {
+        const only = mergedSessions[0];
+        const headcount = (only.signups ?? []).length;
+        if (headcount < only.capacity) {
+          setSelectedSessions([only.id]);
+        }
+      }
+
       // Initialize calendar to the month of the earliest upcoming session
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -290,7 +286,11 @@ export default function EventPage({ params }: { params: Promise<{ id: string }> 
     } finally {
       setLoading(false);
     }
-  };
+  }, [eventId]);
+
+  // fetchData only sets state after awaiting the network, which the rule can't see through.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- async fetch result sync, not a synchronous render cascade
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const toggleSessionSelection = (sessionId: string) => {
     setSelectedSessions((prev) =>

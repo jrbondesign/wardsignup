@@ -114,13 +114,12 @@ export default function SignupSuccessPage() {
   const posthog = usePostHog();
   const token = typeof params.token === "string" ? params.token : "";
   const eventId = searchParams.get("event") ?? "";
-  const [state, setState] = useState<PageState>({ status: "loading" });
+  const [fetchedState, setState] = useState<PageState>({ status: "loading" });
+  // No token means there's nothing to look up; derive that instead of setting state in the effect.
+  const state: PageState = token ? fetchedState : { status: "error" };
 
   useEffect(() => {
-    if (!token) {
-      setState({ status: "error" });
-      return;
-    }
+    if (!token) return;
     fetch(`/api/signups/cancel/lookup?token=${encodeURIComponent(token)}`)
       .then((r) => r.json())
       .then((data) => {
@@ -146,23 +145,6 @@ export default function SignupSuccessPage() {
       event_id: eventId,
     });
   };
-
-  useEffect(() => {
-    if (!token) {
-      setState({ status: "error" });
-      return;
-    }
-    fetch(`/api/signups/cancel/lookup?token=${encodeURIComponent(token)}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.error) {
-          setState({ status: "error" });
-        } else {
-          setState({ status: "ready", info: data });
-        }
-      })
-      .catch(() => setState({ status: "error" }));
-  }, [token]);
 
   return (
     <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-[#F4FAFB]">

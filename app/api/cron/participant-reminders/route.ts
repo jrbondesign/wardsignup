@@ -41,16 +41,6 @@ export async function GET(request: NextRequest) {
   // pair that brand's from-domain with this deployment's key and be rejected.
   const brandId = resolveCronBrandId(request);
 
-  // Idempotency: one run per hour bucket. The reminder window is 23–25h, so a
-  // hourly external ping is the intended cadence; a replay within the same
-  // hour would re-send to anyone whose row hasn't been marked yet.
-  // Brand-scoped claim: all 3 deployments are pinged hourly against the same
-  // shared Supabase; an unscoped key would let only the first arrival run.
-  const claim = await claimCronRun(`participant-reminders:${brandId}`, hourBucketDate());
-  if (!claim.claimed) {
-    return NextResponse.json({ ok: true, brandId, skipped: "already_ran_this_hour" });
-  }
-
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json(
       { error: "Service role not configured" },
@@ -68,10 +58,20 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  // Idempotency: one run per hour bucket. Reminders go out up to 25h before a slot, so an
+  // hourly external ping is the intended cadence; a replay within the same
+  // hour would re-send to anyone whose row hasn't been marked yet.
+  // Brand-scoped claim: all 3 deployments are pinged hourly against the same
+  // shared Supabase; an unscoped key would let only the first arrival run.
+  const claim = await claimCronRun(`participant-reminders:${brandId}`, hourBucketDate());
+  if (!claim.claimed) {
+    return NextResponse.json({ ok: true, brandId, skipped: "already_ran_this_hour" });
+  }
+
   // Bound the candidate set by session_date in SQL. Rows that can never be
   // reminded (past sessions, recurring slots with no date) are skipped but
   // never marked, so without this filter they accumulate until they fill the
-  // MAX_PER_RUN page and starve real upcoming reminders. The 23–25h window
+  // MAX_PER_RUN page and starve real upcoming reminders. The 0–25h window
   // means the session's local date is within ±2 days of today's UTC date for
   // any timezone; the per-row window check below stays authoritative.
   const dayMs = 24 * 60 * 60 * 1000;
