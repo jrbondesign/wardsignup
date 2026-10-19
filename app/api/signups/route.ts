@@ -1,3 +1,4 @@
+import { captureServerException } from "@/lib/posthog-server";
 import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
@@ -7,7 +8,7 @@ import { getClientIp } from "@/lib/request-ip";
 import { sendParticipantSignupConfirmation } from "@/lib/participant-email";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
-import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
+import { getPostHogClient } from "@/lib/posthog-server";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 

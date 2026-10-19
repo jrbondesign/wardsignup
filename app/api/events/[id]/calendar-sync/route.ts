@@ -1,3 +1,4 @@
+import { captureServerException } from "@/lib/posthog-server";
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthFromRequest } from "@/lib/auth";
 import { getBrandFromHost } from "@/lib/brand";
@@ -7,7 +8,7 @@ import type { Campaign } from "@/lib/types";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { userFacingCalendarSyncError } from "@/lib/google-calendar-sync-format";
 import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from "@/lib/gcal-feature";
-import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 function hostBrand(request: NextRequest) {
   const host =
