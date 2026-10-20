@@ -107,3 +107,21 @@ By contributing, you agree that your contributions will be licensed under the [M
 - **Feature requests** — open a GitHub issue with the `enhancement` label
 
 Thank you for helping make WardSignup better! 🙌
+
+## Database migrations: grants checklist
+
+Since Oct 30, 2026 Supabase no longer grants Data API access to new `public`
+tables automatically. Without an explicit GRANT, supabase-js, PostgREST and
+GraphQL return "permission denied". Every migration that creates a table or
+view must, in the same file:
+
+- [ ] `GRANT SELECT, INSERT, UPDATE, DELETE ON public.<table> TO service_role;`
+- [ ] Grant `authenticated` only the operations the app needs from a user session.
+- [ ] Grant `anon` only if logged-out visitors must reach it directly (prefer an RPC).
+- [ ] `ENABLE ROW LEVEL SECURITY` and add policies for any role you granted.
+- [ ] `GRANT EXECUTE` on any new function called through `.rpc()` to the roles that call it.
+- [ ] Run `supabase db reset` locally and exercise the new table before opening a PR.
+
+`20261020120000_explicit_data_api_grants.sql` sets default privileges for
+`service_role` and `authenticated`, but write the grants out anyway so each
+migration states its own access.
