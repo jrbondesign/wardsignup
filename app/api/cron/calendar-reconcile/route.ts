@@ -10,7 +10,7 @@ export const maxDuration = 60;
 
 /**
  * Reconcile cron — sync enabled campaigns with future sessions.
- * Runs hourly at :05 via GitHub Actions (.github/workflows/calendar-reconcile.yml), Bearer CRON_SECRET.
+ * Runs every 3 hours at :05 via GitHub Actions (.github/workflows/calendar-reconcile.yml), Bearer CRON_SECRET.
  * Hour buckets are timezone neutral (Arizona is a whole-hour UTC offset).
  * Bound to ~50 campaigns per run to stay under the 60s function limit.
  * Failed syncs (including ones that failed at signup time) are retried here; a dead
