@@ -117,7 +117,7 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
                   type="button"
                   onClick={() => {
                     navigator.clipboard.writeText(shareableLink);
-                    posthog?.capture("event_shared", { event_id: eventId });
+                    posthog?.capture("event_shared", { event_id: eventId, campaign_id: eventId, org_id: (event as { organization_id?: string | null } | null)?.organization_id ?? null });
                     setToastMessage("Link copied to clipboard!");
                     setShowToast(true);
                     setMoreMenuOpen(false);
@@ -215,7 +215,7 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
           type="button"
           onClick={() => {
             navigator.clipboard.writeText(shareableLink);
-            posthog?.capture("event_shared", { event_id: eventId });
+            posthog?.capture("event_shared", { event_id: eventId, campaign_id: eventId, org_id: (event as { organization_id?: string | null } | null)?.organization_id ?? null });
             setToastMessage("Link copied to clipboard!");
             setShowToast(true);
           }}

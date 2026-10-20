@@ -164,7 +164,9 @@ export async function POST(request: Request) {
       distinctId: user.id,
       event: "sessions_created",
       properties: {
+        org_id: campaign.organization_id ?? null,
         campaign_id,
+        event_id: campaign_id,
         session_count: sessions.length,
       },
     });

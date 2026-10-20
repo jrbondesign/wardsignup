@@ -3,6 +3,7 @@
 import { SessionWithSignups } from "@/components/event/event-page-shared";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
 import { type EventPageCtx } from "@/components/event/hooks/useEventPage";
+import { buildFunnelProps } from "@/lib/signup-funnel";
 
 export type LoadedEventPageCtx = Omit<EventPageCtx, "event"> & { event: NonNullable<EventPageCtx["event"]> };
 
@@ -14,6 +15,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     eventType,
     fetchData,
     formData,
+    funnelCtx,
     guestNames,
     itemFormData,
     posthog,
@@ -36,9 +38,11 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setSubmitting,
     showSignupsPublicly,
     submitting,
+    trackFormStarted,
   } = ctx;
 
   const toggleSessionSelection = (sessionId: string) => {
+    trackFormStarted("slots", "slot_selected");
     setSelectedSessions((prev) =>
       prev.includes(sessionId) ? prev.filter((id) => id !== sessionId) : [...prev, sessionId]
     );
@@ -77,7 +81,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         const d = await res.json();
         throw new Error(d.error || "Failed to sign up");
       }
-      posthog?.capture("item_signup_completed", { campaign_id: eventId, item_id: itemId, has_email: Boolean(itemFormData.email), quantity: itemFormData.quantity });
+      posthog?.capture("item_signup_completed", buildFunnelProps(funnelCtx, { item_id: itemId, has_email: Boolean(itemFormData.email.trim()), quantity: itemFormData.quantity }));
       setItemSuccess(true);
       setItemFormData({ name: "", email: "", note: "", quantity: 1 });
       setExpandedItem(null);
@@ -114,7 +118,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         const d = await res.json();
         throw new Error(d.error || "Failed to add your contribution");
       }
-      posthog?.capture("item_signup_completed", { campaign_id: eventId, custom: true });
+      posthog?.capture("item_signup_completed", buildFunnelProps(funnelCtx, { custom: true }));
       setCustomItem({ label: "", name: "", note: "" });
       fetchData();
     } catch (err: any) {
@@ -165,7 +169,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         throw new Error(firstFailure.error);
       }
 
-      posthog?.capture("signup_completed", { campaign_id: eventId, session_count: selectedSessions.length, has_email: Boolean(formData.email), has_phone: Boolean(formData.phone) });
+      posthog?.capture("signup_completed", buildFunnelProps(funnelCtx, { session_count: sessionsToSignUp.length, has_email: Boolean(formData.email.trim()), has_phone: Boolean(formData.phone.trim()) }));
 
       // Redirect to dedicated success page with the primary cancel_token.
       const cancelToken = json?.primary_cancel_token;

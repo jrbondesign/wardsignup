@@ -23,6 +23,8 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
     showSignupForm,
     signupSessionIds,
     submitting,
+    trackEmailEntered,
+    trackFormStarted,
   } = ctx;
 
   return (
@@ -57,7 +59,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
           </div>
         </div>
 
-        <form onSubmit={handleSignup} className="space-y-4">
+        <form onSubmit={handleSignup} onFocusCapture={() => trackFormStarted("slots")} className="space-y-4">
           <div>
             <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
               Your Name <span className="text-red-400">*</span>
@@ -74,6 +76,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
             </label>
             <input type="email" value={formData.email}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              onBlur={(e) => trackEmailEntered("slots", e.target.value)}
               placeholder="john@example.com"
               className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70" />
             <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />

@@ -25,6 +25,8 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
     setItemError,
     setItemFormData,
     showSignupsPublicly,
+    trackEmailEntered,
+    trackFormStarted,
   } = ctx;
 
   return (
@@ -116,7 +118,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
                       {itemError}
                     </div>
                   )}
-                  <form onSubmit={(e) => handleItemSignup(e, item.id)} className="space-y-3">
+                  <form onSubmit={(e) => handleItemSignup(e, item.id)} onFocusCapture={() => trackFormStarted("item")} className="space-y-3">
                     <div>
                       <label className="block text-[12px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1">
                         How many?
@@ -177,6 +179,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
                         type="email"
                         value={itemFormData.email}
                         onChange={(e) => setItemFormData((prev) => ({ ...prev, email: e.target.value }))}
+                        onBlur={(e) => trackEmailEntered("item", e.target.value)}
                         placeholder="you@example.com"
                         className="w-full text-sm text-[#0D2B35] px-[14px] py-[11px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
                         disabled={itemSubmitting}
@@ -231,7 +234,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
             ))}
           </div>
         )}
-        <form onSubmit={handleCustomItemSignup} className="px-5 py-4 space-y-3 bg-[#F4FAFB]">
+        <form onSubmit={handleCustomItemSignup} onFocusCapture={() => trackFormStarted("custom_item")} className="px-5 py-4 space-y-3 bg-[#F4FAFB]">
           {customError && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-sm">{customError}</div>
           )}

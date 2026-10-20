@@ -90,8 +90,10 @@ describe("EventPageClient in the browser", () => {
     render(ui({ initialPage: page, initialCover: null }));
     expect(screen.getByRole("heading", { name: "Temple Cleaning Saturday" })).toBeInTheDocument();
     expect(await screen.findByText(/Calendar/)).toBeInTheDocument();
-    // No cover fetch: the server already resolved it.
-    expect(global.fetch).not.toHaveBeenCalled();
+    // No cover fetch: the server already resolved it. The only browser fetch
+    // is the ward analytics context lookup for the signup funnel.
+    const fetched = (global.fetch as jest.Mock).mock.calls.map((c) => String(c[0]));
+    expect(fetched.filter((u) => !u.endsWith("/analytics-context"))).toEqual([]);
     expect(mockLoad).not.toHaveBeenCalled();
     await act(async () => {
       jest.advanceTimersByTime(1100);

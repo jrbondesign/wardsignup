@@ -5,6 +5,7 @@
  */
 
 import { MS_DAY, phoenixWeekKey, phoenixWeekStartUtc } from "@/lib/phoenix-time";
+import { isRealOrgId } from "@/lib/test-orgs";
 
 export { phoenixWeekStartUtc };
 
@@ -62,6 +63,8 @@ export function testCampaignIds(opts: {
   const isSkipUser = (userId: string | null | undefined) => !!userId && isSkip(emailByUserId.get(userId));
   const out = new Set<string>();
   for (const c of campaigns) {
+    // Real wards (e.g. Sweetwater Branch) always count, even when a founder account made the event.
+    if (isRealOrgId(c.organization_id)) continue;
     const orgOwner = c.organization_id ? orgOwnerById.get(c.organization_id) : null;
     if (isSkip(c.user_email) || isSkipUser(c.created_by) || isSkipUser(orgOwner)) out.add(c.id);
   }

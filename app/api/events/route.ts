@@ -201,7 +201,9 @@ export async function POST(request: Request) {
       distinctId: user.id,
       event: "event_created",
       properties: {
+        org_id: org.id,
         event_id: (data as { id?: string })?.id,
+        campaign_id: (data as { id?: string })?.id,
         event_type: resolvedEventType,
         brand_id: brand.id,
         has_description: Boolean(description),
