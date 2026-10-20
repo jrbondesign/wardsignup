@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { LoadingSpinner } from "./LoadingSpinner";
-import { createClientComponentClient } from "@/lib/auth";
 
 const MapContainer = dynamic(
   () => import("react-leaflet").then((mod) => mod.MapContainer),
@@ -49,20 +48,8 @@ export default function GeographyMap() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const supabase = createClientComponentClient();
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
-
-        if (!session) {
-          setError("Not authenticated");
-          setLoading(false);
-          return;
-        }
-
-        const res = await fetch("/api/geography", {
-          headers: { Authorization: `Bearer ${session.access_token}` },
-        });
+        // Same source and cache as the homepage map, so the two always match.
+        const res = await fetch("/api/geography/public");
 
         if (!res.ok) {
           const body = await res.json().catch(() => ({}));
