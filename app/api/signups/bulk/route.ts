@@ -8,7 +8,7 @@ import { sendParticipantBatchSignupConfirmation } from "@/lib/participant-email"
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { getPostHogClient } from "@/lib/posthog-server";
-import { orgIdForCampaign } from "@/lib/analytics-context";
+import { analyticsContextForCampaign } from "@/lib/analytics-context";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
 import { SupabaseTimeoutError, withSupabaseTimeout } from "@/lib/supabase-timeout";
@@ -291,20 +291,21 @@ export async function POST(request: Request) {
     const distinctId = request.headers.get("x-posthog-distinct-id") ?? `anon_signup_${crypto.randomUUID()}`;
     const slotCount = sessionIds.length;
     const successCount = successfulSessionIds.length;
-    // The org lookup and the capture run after the response is sent; after()
+    // The ward lookup and the capture run after the response is sent; after()
     // keeps the function alive so the event isn't dropped when it freezes.
     after(async () => {
       try {
-        const orgId = await withSupabaseTimeout(
-          orgIdForCampaign(admin, campaign_id),
-          "campaigns org lookup",
-        ).catch(() => null);
+        const { orgId, isTestOrg } = await withSupabaseTimeout(
+          analyticsContextForCampaign(admin, campaign_id),
+          "campaigns analytics context",
+        ).catch(() => ({ orgId: null, isTestOrg: null }));
         const posthog = getPostHogClient();
         posthog.capture({
           distinctId,
           event: "signup_batch_created",
           properties: {
             org_id: orgId,
+            is_test_org: isTestOrg,
             campaign_id,
             event_id: campaign_id,
             slot_count: slotCount,

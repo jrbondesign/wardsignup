@@ -5,7 +5,7 @@
 import { POST, maxDuration } from "@/app/api/signups/bulk/route";
 import { NextRequest } from "next/server";
 import { createSignupIfCapacityRpc } from "@/lib/supabase";
-import { orgIdForCampaign } from "@/lib/analytics-context";
+import { analyticsContextForCampaign } from "@/lib/analytics-context";
 
 // Queue after() callbacks so tests can check what runs before vs after the response.
 const afterQueue: Array<() => unknown> = [];
@@ -33,7 +33,7 @@ jest.mock("@/lib/posthog-server", () => ({
 }));
 
 jest.mock("@/lib/analytics-context", () => ({
-  orgIdForCampaign: jest.fn(),
+  analyticsContextForCampaign: jest.fn(),
 }));
 
 // Minimal admin client: every query resolves empty unless a test overrides rpc.
@@ -51,7 +51,7 @@ jest.mock("@supabase/supabase-js", () => ({
 }));
 
 const mockRpc = createSignupIfCapacityRpc as unknown as jest.Mock;
-const mockOrgId = orgIdForCampaign as unknown as jest.Mock;
+const mockOrgId = analyticsContextForCampaign as unknown as jest.Mock;
 
 function bulkRequest(body: Record<string, unknown> = {}) {
   return new NextRequest("http://localhost:3000/api/signups/bulk", {
@@ -82,7 +82,7 @@ describe("/api/signups/bulk", () => {
     mockRpc.mockImplementation(({ p_session_id }: { p_session_id: string }) =>
       Promise.resolve({ data: { id: `id-${p_session_id}`, cancel_token: `tok-${p_session_id}` }, error: null }),
     );
-    mockOrgId.mockResolvedValue("11111111-1111-4111-8111-111111111111");
+    mockOrgId.mockResolvedValue({ orgId: "11111111-1111-4111-8111-111111111111", isTestOrg: false });
   });
 
   afterEach(() => {
@@ -113,6 +113,7 @@ describe("/api/signups/bulk", () => {
       event: "signup_batch_created",
       properties: {
         org_id: "11111111-1111-4111-8111-111111111111",
+        is_test_org: false,
         campaign_id: "camp-1",
         event_id: "camp-1",
         slot_count: 2,
@@ -129,7 +130,7 @@ describe("/api/signups/bulk", () => {
     await POST(bulkRequest());
     await runAfter();
     expect(mockCapture).toHaveBeenCalledWith(
-      expect.objectContaining({ properties: expect.objectContaining({ org_id: null }) }),
+      expect.objectContaining({ properties: expect.objectContaining({ org_id: null, is_test_org: null }) }),
     );
   });
 
