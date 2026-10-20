@@ -110,6 +110,14 @@ describe("loadPublicEventPage", () => {
     rpc.mockClear();
     await loadPublicEventPage(client, EVENT_ID);
     expect(rpc.mock.calls.map((c) => c[0])).toEqual(["get_public_campaign"]);
+
+    // Retries the RPC after the back off, so a migration applied later is picked up.
+    const now = Date.now();
+    const spy = jest.spyOn(Date, "now").mockReturnValue(now + 6 * 60 * 1000);
+    rpc.mockClear();
+    await loadPublicEventPage(client, EVENT_ID);
+    expect(rpc.mock.calls[0][0]).toBe("get_public_event_page");
+    spy.mockRestore();
   });
 
   it("legacy items path reads only campaign_items and item_signups_public", async () => {

@@ -169,9 +169,11 @@ async function loadLegacy(client: PublicEventClient, eventId: string): Promise<P
   return buildPublicEventPage({ event, sessions, signups });
 }
 
-// Set once PostgREST says the RPC does not exist, so a not yet migrated
-// database costs one extra request per page view at most, not one per load.
-let rpcMissing = false;
+// Set when PostgREST says the RPC does not exist, so a not yet migrated
+// database costs one extra request now and then, not one per load. Expires
+// so a long lived server instance picks the RPC up once it is applied.
+const RPC_MISSING_RETRY_MS = 5 * 60 * 1000;
+let rpcMissingUntil = 0;
 
 function isMissingFunction(error: unknown): boolean {
   const code = (error as { code?: string } | null)?.code;
@@ -180,7 +182,7 @@ function isMissingFunction(error: unknown): boolean {
 
 /** Test hook: forget a remembered missing RPC. */
 export function resetPublicEventPageRpcCache(): void {
-  rpcMissing = false;
+  rpcMissingUntil = 0;
 }
 
 /** Load the public event page. Returns null when the event does not exist; throws on load failure. */
@@ -188,13 +190,13 @@ export async function loadPublicEventPage(
   client: PublicEventClient,
   eventId: string
 ): Promise<PublicEventPageData | null> {
-  if (!rpcMissing) {
+  if (Date.now() >= rpcMissingUntil) {
     const { data, error } = await client.rpc("get_public_event_page", { campaign_id: eventId });
     if (!error) {
       if (data == null) return null;
       return buildPublicEventPage(data as PublicEventPagePayload);
     }
-    if (isMissingFunction(error)) rpcMissing = true;
+    if (isMissingFunction(error)) rpcMissingUntil = Date.now() + RPC_MISSING_RETRY_MS;
   }
   // Missing function (not migrated yet) or any RPC failure: use the old path.
   return loadLegacy(client, eventId);
