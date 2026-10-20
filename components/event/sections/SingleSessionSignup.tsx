@@ -4,6 +4,7 @@ import { DAYS } from "@/components/event/event-page-shared";
 import { formatTime } from "@/lib/utils";
 import EmailTypoHint from "@/components/EmailTypoHint";
 import { signerEmailHint } from "@/lib/reminder-copy";
+import SignerEmailHint from "@/components/event/SignerEmailHint";
 import { type EventPageView } from "@/components/event/hooks/deriveEventPageView";
 
 /** Inline signup form for single-session events. */
@@ -129,9 +130,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
                 className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70"
                 disabled={submitting} />
               <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />
-              <p className="mt-1.5 text-[11px] text-[#5A8399] leading-snug">
-                {signerEmailHint(sessions, signupSessionIds)}
-              </p>
+              <SignerEmailHint text={signerEmailHint(sessions, signupSessionIds)} />
             </div>
             <div>
               <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
