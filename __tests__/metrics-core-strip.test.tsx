@@ -1,5 +1,5 @@
 import { describe, it, expect } from "@jest/globals";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, act } from "@testing-library/react";
 import { readFileSync } from "fs";
 import path from "path";
 import { CoreMetricsStrip, CoreTrendCharts } from "@/components/metrics/CoreMetricsStrip";
@@ -56,6 +56,86 @@ describe("core metrics strip", () => {
       </>,
     );
     expect(container.textContent).not.toMatch(/[–—]/);
+  });
+});
+
+describe("weekly trend chart tooltips", () => {
+  // Thursday Oct 15, 2026, 10 AM Phoenix: the week of Oct 12 is in progress.
+  const now = "2026-10-15T17:00:00Z";
+  const last = weeks.length - 1;
+
+  it("hover shows the Phoenix week range and exact value; leaving hides it", () => {
+    render(<CoreTrendCharts core={core} now={now} />);
+    const hit = screen.getByTestId("chart-signups-hit-3");
+    fireEvent.mouseEnter(hit);
+    const tip = screen.getByTestId("chart-signups-tooltip");
+    expect(tip.getAttribute("role")).toBe("tooltip");
+    expect(tip.textContent).toContain("Aug 17 to Aug 23");
+    expect(tip.textContent).toContain("Signups");
+    expect(tip.textContent).toContain("65");
+    expect(tip.textContent).not.toContain("in progress");
+    fireEvent.mouseLeave(hit.parentElement!.parentElement!);
+    expect(screen.queryByTestId("chart-signups-tooltip")).toBeNull();
+  });
+
+  it("wards tooltip shows new wards and the running total, current week in progress", () => {
+    render(<CoreTrendCharts core={core} now={now} />);
+    fireEvent.click(screen.getByTestId(`chart-wards-hit-${last}`));
+    const tip = screen.getByTestId("chart-wards-tooltip");
+    expect(tip.textContent).toContain("Oct 12 to Oct 18");
+    expect(tip.textContent).toContain("in progress");
+    expect(tip.textContent).toContain("New wards6");
+    expect(tip.textContent).toContain("Total wards40");
+  });
+
+  it("capture rate tooltip shows the rate and the 70% goal", () => {
+    render(<CoreTrendCharts core={core} now={now} />);
+    fireEvent.click(screen.getByTestId(`chart-email-capture-hit-${last - 1}`));
+    const tip = screen.getByTestId("chart-email-capture-tooltip");
+    expect(tip.textContent).toContain("Oct 5 to Oct 11");
+    expect(tip.textContent).toContain("69.8% (67 of 96)");
+    expect(tip.textContent).toContain("Goal70.0%");
+  });
+
+  it("tap shows it, tap elsewhere hides it", () => {
+    render(
+      <div>
+        <button data-testid="elsewhere">x</button>
+        <CoreTrendCharts core={core} now={now} />
+      </div>,
+    );
+    fireEvent.click(screen.getByTestId("chart-visitors-hit-2"));
+    expect(screen.getByTestId("chart-visitors-tooltip")).toBeTruthy();
+    act(() => {
+      screen.getByTestId("elsewhere").dispatchEvent(new Event("pointerdown", { bubbles: true }));
+    });
+    expect(screen.queryByTestId("chart-visitors-tooltip")).toBeNull();
+  });
+
+  it("keyboard focus shows it, Escape and blur hide it, with accessible labels", () => {
+    render(<CoreTrendCharts core={core} now={now} />);
+    const hit = screen.getByTestId(`chart-wards-hit-${last}`);
+    expect(hit.getAttribute("tabindex")).toBe("0");
+    expect(hit.getAttribute("aria-label")).toBe("Oct 12 to Oct 18, in progress. New wards: 6. Total wards: 40.");
+    fireEvent.focus(hit);
+    const tip = screen.getByTestId("chart-wards-tooltip");
+    expect(hit.getAttribute("aria-describedby")).toBe(tip.id);
+    fireEvent.keyDown(hit, { key: "Escape" });
+    expect(screen.queryByTestId("chart-wards-tooltip")).toBeNull();
+    fireEvent.focus(hit);
+    fireEvent.blur(hit);
+    expect(screen.queryByTestId("chart-wards-tooltip")).toBeNull();
+  });
+
+  it("tooltip copy has no dashes", () => {
+    const { container } = render(<CoreTrendCharts core={core} now={now} />);
+    for (const id of ["chart-signups", "chart-visitors", "chart-wards", "chart-email-capture"]) {
+      fireEvent.click(screen.getByTestId(`${id}-hit-${last}`));
+    }
+    expect(container.textContent).not.toMatch(/[–—]/);
+    for (const el of container.querySelectorAll("[aria-label]")) {
+      expect(el.getAttribute("aria-label")).not.toMatch(/[–—-]/);
+    }
   });
 });
 
