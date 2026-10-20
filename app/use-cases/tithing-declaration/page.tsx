@@ -232,7 +232,7 @@ export default async function TithingDeclarationPage() {
             Make one section of times and rename it &ldquo;Bishop&rdquo;. Use Duplicate section and rename the copy &ldquo;1st Counselor&rdquo;, then do the same for the 2nd Counselor, and adjust each leader&rsquo;s times. Members see each leader&rsquo;s times under his name on one link. When each time is set to 1 spot, a time closes as soon as someone takes it, so two families never land in the same slot.
           </p>
           <p className="text-[17px] text-[#2E5566] leading-[1.75]">
-            A daily summary of new signups goes to the contact set on the event. If each leader wants his own emails, make a separate sheet for each.
+            A daily summary of new signups goes to the contact set on the event. If each leader wants his own summary, make a separate sheet with him as the contact.
           </p>
         </div>
       </section>
