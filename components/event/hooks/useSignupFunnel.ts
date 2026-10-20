@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { SignupFunnelTracker, type FunnelContext, type SignupFormKind } from "@/lib/signup-funnel";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { SignupFunnelTracker, buildFunnelProps, type FunnelContext, type SignupFormKind } from "@/lib/signup-funnel";
+import { isEmailNudgeEligibleSheet, readEmailNudgeVariant, type EmailNudgeVariant } from "@/lib/email-nudge";
 import { type EventPageState } from "./useEventPageState";
 
 /**
@@ -62,14 +63,32 @@ export function useSignupFunnel(ctx: EventPageState) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loading, event, orgIdResolved, orgId, isTestOrg, eventType, items.length, sessions.length, funnel]);
 
+  // ---- Email nudge experiment (flag email-capture-next, lib/email-nudge.ts).
+  // The flag is read once, on signup_form_started, on spots / rsvp sheets
+  // only; that read is the exposure. null = flags not loaded or PostHog
+  // error: control, no exposure.
+  const nudgeVariantRef = useRef<{ eventId: string; variant: EmailNudgeVariant | null } | null>(null);
+  const nudgeVariant = (): EmailNudgeVariant | null =>
+    nudgeVariantRef.current?.eventId === eventId ? nudgeVariantRef.current.variant : null;
+  const captureNudge = (name: string) => {
+    try {
+      posthog?.capture(name, buildFunnelProps(funnelCtx, { variant: nudgeVariant() ?? "control", form: "slots" }));
+    } catch {
+      // Analytics must never break the signup page.
+    }
+  };
+
   const trackFormStarted = (form: SignupFormKind, trigger: "field_focus" | "slot_selected" = "field_focus") => {
-    funnel.formStarted(funnelCtx, form, trigger);
+    const started = funnel.formStarted(funnelCtx, form, trigger);
+    if (started && form === "slots" && isEmailNudgeEligibleSheet(eventType)) {
+      nudgeVariantRef.current = { eventId, variant: readEmailNudgeVariant(posthog as never) };
+    }
   };
   const trackEmailEntered = (form: SignupFormKind, email: string) => {
     funnel.emailEntered(funnelCtx, form, email);
   };
 
-  return { funnelCtx, trackFormStarted, trackEmailEntered };
+  return { funnelCtx, trackFormStarted, trackEmailEntered, nudgeVariant, captureNudge };
 }
 
 export type SignupFunnel = ReturnType<typeof useSignupFunnel>;

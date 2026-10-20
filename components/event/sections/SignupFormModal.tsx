@@ -4,6 +4,7 @@ import { DAYS } from "@/components/event/event-page-shared";
 import { formatTime } from "@/lib/utils";
 import EmailTypoHint from "@/components/EmailTypoHint";
 import { signerEmailHint } from "@/lib/reminder-copy";
+import EmailNudgePrompt from "@/components/EmailNudgePrompt";
 import SignerEmailHint from "@/components/event/SignerEmailHint";
 import { type EventPageView } from "@/components/event/hooks/deriveEventPageView";
 
@@ -14,11 +15,16 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
     error,
     formData,
     guestNameFields,
+    emailInputRef,
+    handleNudgeAdd,
+    handleNudgeSkip,
     handleSignup,
+    nudgeOpen,
     selectedSessions,
     sessions,
     setError,
     setFormData,
+    setNudgeOpen,
     setShowSignupForm,
     showSignupForm,
     signupSessionIds,
@@ -74,7 +80,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
             <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
               Email <span className="text-[#5A8399] font-normal">(optional)</span>
             </label>
-            <input type="email" value={formData.email}
+            <input type="email" value={formData.email} ref={emailInputRef}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
               onBlur={(e) => trackEmailEntered("slots", e.target.value)}
               placeholder="john@example.com"
@@ -109,9 +115,10 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
             </div>
           )}
 
+          {nudgeOpen && <EmailNudgePrompt onAdd={handleNudgeAdd} onSkip={handleNudgeSkip} disabled={submitting} />}
           <div className="flex gap-3 pt-2">
             <button type="button"
-              onClick={() => { setShowSignupForm(false); setError(""); }}
+              onClick={() => { setShowSignupForm(false); setError(""); setNudgeOpen(false); }}
               className="flex-1 text-sm font-semibold px-4 py-3 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#2E5566] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all">
               Back
             </button>

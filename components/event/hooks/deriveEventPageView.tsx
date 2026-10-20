@@ -4,13 +4,21 @@ import { SessionWithSignups } from "@/components/event/event-page-shared";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
 import { type EventPageCtx } from "@/components/event/hooks/useEventPage";
 import { buildFunnelProps } from "@/lib/signup-funnel";
+import {
+  EMAIL_NUDGE_EVENTS,
+  hasSkippedEmailNudge,
+  rememberEmailNudgeSkip,
+  shouldShowEmailNudge,
+} from "@/lib/email-nudge";
 
 export type LoadedEventPageCtx = Omit<EventPageCtx, "event"> & { event: NonNullable<EventPageCtx["event"]> };
 
 /** Signup handlers and values computed from a loaded event: grouped sessions, single-session mode and guest fields. */
 export function deriveEventPageView(ctx: LoadedEventPageCtx) {
   const {
+    captureNudge,
     customItem,
+    emailInputRef,
     eventId,
     eventType,
     fetchData,
@@ -18,6 +26,8 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     funnelCtx,
     guestNames,
     itemFormData,
+    nudgeShownRef,
+    nudgeVariant,
     posthog,
     router,
     selectedCalendarDate,
@@ -33,6 +43,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setItemFormData,
     setItemSubmitting,
     setItemSuccess,
+    setNudgeOpen,
     setSelectedCalendarDate,
     setSelectedSessions,
     setSubmitting,
@@ -128,14 +139,35 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     }
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSignup = async (e?: React.FormEvent, opts: { skipNudge?: boolean } = {}) => {
+    e?.preventDefault();
     // For single-session events (rsvp/spots with one session), auto-use that session
     const sessionsToSignUp = isSingleSession && sessions.length === 1
       ? [sessions[0].id]
       : selectedSessions;
     if (sessionsToSignUp.length === 0) { setError("Please select at least one slot"); return; }
     if (!formData.name.trim()) { setError("Please enter your name"); return; }
+
+    // Test arm only: one nudge per signup when a dated slot has no email.
+    // Never blocks: Skip submits right away.
+    if (
+      !opts.skipNudge &&
+      shouldShowEmailNudge({
+        variant: nudgeVariant(),
+        sheetType: eventType,
+        email: formData.email,
+        sessions,
+        selectedIds: sessionsToSignUp,
+        shownThisSignup: nudgeShownRef.current,
+        skippedBefore: hasSkippedEmailNudge(),
+      })
+    ) {
+      nudgeShownRef.current += 1;
+      setNudgeOpen(true);
+      captureNudge(EMAIL_NUDGE_EVENTS.shown);
+      return;
+    }
+    setNudgeOpen(false);
 
     setSubmitting(true);
     setError("");
@@ -185,6 +217,18 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleNudgeAdd = () => {
+    setNudgeOpen(false);
+    captureNudge(EMAIL_NUDGE_EVENTS.add);
+    emailInputRef.current?.focus();
+  };
+  const handleNudgeSkip = () => {
+    setNudgeOpen(false);
+    rememberEmailNudgeSkip();
+    captureNudge(EMAIL_NUDGE_EVENTS.skip);
+    void handleSignup(undefined, { skipNudge: true });
   };
 
   const handleCalendarDateClick = (day: number, year: number, month: number) => {
@@ -314,6 +358,8 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     handleItemSignup,
     handleCustomItemSignup,
     handleSignup,
+    handleNudgeAdd,
+    handleNudgeSkip,
     handleCalendarDateClick,
     filteredSessions,
     sessionHeadcount,
