@@ -17,7 +17,7 @@ WardSignup runs on **Arizona time (America/Phoenix, UTC-7 all year, no DST)**.
 | `/api/cron/email-queue` | vercel.json | `7 * * * *` (was `7 0 * * *`, 5:07 PM daily) | hourly at :07 (the 12:07 AM run sends the batch rows) | each run (row claims) |
 | `/api/cron/participant-reminders` | vercel.json + email-pingers.yml | `0 * * * *`, `35 * * * *` | hourly at :00 and :35 | hour |
 | `/api/cron/organizer-faster` | email-pingers.yml | `35 * * * *` | hourly at :35 | hour |
-| `/api/cron/calendar-reconcile` | calendar-reconcile.yml | `5 * * * *` | hourly at :05 | hour |
+| `/api/cron/calendar-reconcile` | calendar-reconcile.yml | `5 */3 * * *` (was hourly) | every 3 hours at :05 | hour |
 
 ## Email budget and hold (Phoenix day)
 

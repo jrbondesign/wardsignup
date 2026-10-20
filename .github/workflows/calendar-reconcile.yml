@@ -2,8 +2,11 @@ name: Calendar Reconcile
 
 on:
   schedule:
-    # Run hourly at :05 past the hour (UTC; also :05 Phoenix time, UTC-7 no DST)
-    - cron: '5 * * * *'
+    # Every 3 hours at :05 (UTC; also :05 Phoenix time, UTC-7 no DST). Was hourly;
+    # spaced out to cut load on the small Supabase instance (see
+    # docs/INCIDENT_2026-10-19_SUPABASE_STALL.md). Edits made in the browser can
+    # take up to 3 hours to reach Google Calendar; "Sync now" is immediate.
+    - cron: '5 */3 * * *'
   workflow_dispatch:
 
 jobs:
