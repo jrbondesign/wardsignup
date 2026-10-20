@@ -10,6 +10,7 @@ import { formatTime } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
 import { usePublicCover } from "@/lib/use-public-cover";
+import { printAfterPaint } from "@/lib/deferred-print";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -215,7 +216,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
             </a>
             <button
               type="button"
-              onClick={() => window.print()}
+              onClick={() => printAfterPaint()}
               className="text-sm font-semibold px-5 py-2 rounded-xl bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_3px_10px_rgba(14,150,176,0.30)] hover:-translate-y-0.5 hover:shadow-[0_5px_16px_rgba(14,150,176,0.40)] transition-all"
             >
               Print / Save as PDF
