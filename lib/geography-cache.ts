@@ -1,5 +1,5 @@
 import { createServiceRoleClient } from "@/lib/supabase-admin";
-import { TEST_ORG_IDS, TEST_OWNER_EMAILS } from "@/lib/test-orgs";
+import { isRealOrgId, TEST_ORG_IDS, TEST_OWNER_EMAILS } from "@/lib/test-orgs";
 import {
   GEOGRAPHY_HOGQL,
   GEOGRAPHY_SNAPSHOT,
@@ -49,13 +49,14 @@ export async function getTestCampaignIds(): Promise<string[]> {
     if (orgIds.length) filters.push(`organization_id.in.(${orgIds.join(",")})`);
     const { data, error } = await admin
       .from("campaigns" as never)
-      .select("id")
+      .select("id, organization_id")
       .or(filters.join(","));
     if (error) {
       console.warn("geography test campaigns:", error.message);
       return [];
     }
-    return ((data ?? []) as { id: string }[])
+    return ((data ?? []) as { id: string; organization_id: string | null }[])
+      .filter((r) => !isRealOrgId(r.organization_id))
       .map((r) => String(r.id))
       .filter((id) => UUID_RE.test(id));
   } catch (err) {
