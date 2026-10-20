@@ -11,6 +11,11 @@ import { getPostHogClient } from "@/lib/posthog-server";
 import { orgIdForCampaign } from "@/lib/analytics-context";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
+import { SupabaseTimeoutError, withSupabaseTimeout } from "@/lib/supabase-timeout";
+
+// Each Supabase call is capped at ~10s, so a healthy request finishes well
+// inside this; a stalled database now fails fast instead of hanging to 300s.
+export const maxDuration = 30;
 
 function hashIp(ip: string): string {
   const salt = process.env.RATE_LIMIT_IP_SALT || "wardsignup_signup_rate";
@@ -78,11 +83,10 @@ export async function POST(request: Request) {
 
       // Honor allow_guests just like the single-signup route.
       if (sanitizedGuests.length > 0) {
-        const { data: campaignData } = await admin
-          .from("campaigns")
-          .select("allow_guests")
-          .eq("id", campaign_id)
-          .single();
+        const { data: campaignData } = await withSupabaseTimeout(
+          admin.from("campaigns").select("allow_guests").eq("id", campaign_id).single(),
+          "campaigns allow_guests",
+        );
         const allowGuests = campaignData == null || (campaignData as { allow_guests?: boolean }).allow_guests !== false;
         if (!allowGuests) guest_names = [];
       }
@@ -94,13 +98,16 @@ export async function POST(request: Request) {
       const ipHash = hashIp(ip);
       const maxPerHour = getSignupRateLimitPerIpPerHour();
 
-      const { data: allowed, error: rateErr } = await admin.rpc(
+      const { data: allowed, error: rateErr } = await withSupabaseTimeout(
+        admin.rpc(
+          "try_consume_signup_rate",
+          {
+            p_ip_hash: ipHash,
+            p_bucket: bucket.toISOString(),
+            p_max: maxPerHour,
+          } as never,
+        ),
         "try_consume_signup_rate",
-        {
-          p_ip_hash: ipHash,
-          p_bucket: bucket.toISOString(),
-          p_max: maxPerHour,
-        } as never,
       );
 
       if (rateErr) {
@@ -120,14 +127,17 @@ export async function POST(request: Request) {
 
     // Sequential to surface per-slot capacity errors cleanly.
     for (const sessionId of sessionIds) {
-      const { data, error } = await createSignupIfCapacityRpc({
-        p_session_id: sessionId,
-        p_campaign_id: campaign_id,
-        p_member_name: member_name.trim(),
-        p_member_email: member_email ?? null,
-        p_member_phone: member_phone ?? null,
-        p_guest_names: guest_names,
-      });
+      const { data, error } = await withSupabaseTimeout(
+        createSignupIfCapacityRpc({
+          p_session_id: sessionId,
+          p_campaign_id: campaign_id,
+          p_member_name: member_name.trim(),
+          p_member_email: member_email ?? null,
+          p_member_phone: member_phone ?? null,
+          p_guest_names: guest_names,
+        }),
+        "create_signup_if_capacity",
+      );
 
       if (error) {
         const mapped = mapSignupRpcError(error);
@@ -158,10 +168,20 @@ export async function POST(request: Request) {
     // Persist the optional note on every successful signup (best-effort).
     const signupNote = typeof rawNote === "string" ? rawNote.trim() : "";
     if (signupNote && admin && successfulSignupIds.length > 0) {
-      await admin
-        .from("signups")
-        .update({ signup_note: signupNote } as never)
-        .in("id", successfulSignupIds);
+      // The signups already exist, so a slow note save is logged rather than
+      // reported as a failed signup.
+      try {
+        await withSupabaseTimeout(
+          admin
+            .from("signups")
+            .update({ signup_note: signupNote } as never)
+            .in("id", successfulSignupIds),
+          "signups note update",
+        );
+      } catch (e) {
+        if (!(e instanceof SupabaseTimeoutError)) throw e;
+        console.error("Bulk signup note save:", e);
+      }
     }
 
     // One combined confirmation email covering every slot (+ one leader
@@ -172,15 +192,21 @@ export async function POST(request: Request) {
       // promise can be frozen mid-send once the response is returned on Vercel.
       after(async () => {
         try {
-          const { data: campaign, error: cErr } = await admin!
-            .from("campaigns")
-            .select("id, name, brand_id, public_host, event_timezone, event_end_date, leader_name, leader_email, user_email, organizer_instant_notify_enabled, leader_signup_email_enabled")
-            .eq("id", campaign_id)
-            .single();
-          const { data: sessions, error: sErr } = await admin!
-            .from("sessions")
-            .select("id, day_of_week, time, end_time, session_date")
-            .in("id", successfulSessionIds);
+          const { data: campaign, error: cErr } = await withSupabaseTimeout(
+            admin!
+              .from("campaigns")
+              .select("id, name, brand_id, public_host, event_timezone, event_end_date, leader_name, leader_email, user_email, organizer_instant_notify_enabled, leader_signup_email_enabled")
+              .eq("id", campaign_id)
+              .single(),
+            "campaigns confirmation fetch",
+          );
+          const { data: sessions, error: sErr } = await withSupabaseTimeout(
+            admin!
+              .from("sessions")
+              .select("id, day_of_week, time, end_time, session_date")
+              .in("id", successfulSessionIds),
+            "sessions confirmation fetch",
+          );
           if (cErr || sErr || !campaign || !sessions) {
             if (cErr) console.error("Bulk confirmation campaign fetch:", cErr);
             if (sErr) console.error("Bulk confirmation sessions fetch:", sErr);
@@ -263,20 +289,34 @@ export async function POST(request: Request) {
     }
 
     const distinctId = request.headers.get("x-posthog-distinct-id") ?? `anon_signup_${crypto.randomUUID()}`;
-    const posthog = getPostHogClient();
-    const orgId = await orgIdForCampaign(admin, campaign_id);
-    posthog.capture({
-      distinctId,
-      event: "signup_batch_created",
-      properties: {
-        org_id: orgId,
-        campaign_id,
-        event_id: campaign_id,
-        slot_count: sessionIds.length,
-        success_count: successfulSessionIds.length,
-        has_email: Boolean(member_email),
-        has_phone: Boolean(member_phone),
-      },
+    const slotCount = sessionIds.length;
+    const successCount = successfulSessionIds.length;
+    // The org lookup and the capture run after the response is sent; after()
+    // keeps the function alive so the event isn't dropped when it freezes.
+    after(async () => {
+      try {
+        const orgId = await withSupabaseTimeout(
+          orgIdForCampaign(admin, campaign_id),
+          "campaigns org lookup",
+        ).catch(() => null);
+        const posthog = getPostHogClient();
+        posthog.capture({
+          distinctId,
+          event: "signup_batch_created",
+          properties: {
+            org_id: orgId,
+            campaign_id,
+            event_id: campaign_id,
+            slot_count: slotCount,
+            success_count: successCount,
+            has_email: Boolean(member_email),
+            has_phone: Boolean(member_phone),
+          },
+        });
+        await posthog.flush();
+      } catch (e) {
+        console.error("signup_batch_created capture:", e);
+      }
     });
 
     return NextResponse.json({
@@ -285,6 +325,13 @@ export async function POST(request: Request) {
       success_count: successfulSessionIds.length,
     });
   } catch (error) {
+    if (error instanceof SupabaseTimeoutError) {
+      console.error("Bulk signup timed out:", error.message);
+      return NextResponse.json(
+        { error: "Signups are taking longer than usual. Please try again in a moment." },
+        { status: 503 },
+      );
+    }
     console.error("Error creating bulk signup:", error);
     return NextResponse.json(
       { error: "Internal server error" },
