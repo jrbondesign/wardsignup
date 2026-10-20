@@ -92,7 +92,6 @@ describe("email capture rate", () => {
 
 describe("testCampaignIds real wards", () => {
   it("keeps a Sweetwater Branch event made by a founder account", () => {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { testCampaignIds: ids } = require("@/lib/email-capture-rate");
     const out = ids({
       campaigns: [
