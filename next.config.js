@@ -64,6 +64,14 @@ const nextConfig = {
         source: "/:path*",
         headers: securityHeaders,
       },
+      {
+        // Public event pages show members' names. Keep them out of search
+        // indexes (crawlers must still be allowed to fetch them to see this,
+        // so /event is NOT disallowed in robots.ts). Covers /event/[id],
+        // /event/[id]/flyer and any subpath.
+        source: "/event/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
     ];
   },
   async rewrites() {

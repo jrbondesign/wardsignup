@@ -39,7 +39,7 @@ describe("MadeWithFooter", () => {
 });
 
 describe("event page footer", () => {
-  const src = require("fs").readFileSync(require("path").join(__dirname, "../app/event/[id]/page.tsx"), "utf8");
+  const src = require("fs").readFileSync(require("path").join(__dirname, "../components/event/EventPageClient.tsx"), "utf8");
   it("replaces the share line with the Made with line", () => {
     expect(src).not.toContain("Know someone who could use this?");
     expect((src.match(/<MadeWithFooter/g) || []).length).toBe(1);
