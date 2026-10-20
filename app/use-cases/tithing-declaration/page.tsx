@@ -102,7 +102,7 @@ export default async function TithingDeclarationPage() {
       {
         "@type": "HowToStep",
         "name": "Track appointments",
-        "text": "View all scheduled appointments in your dashboard. Members automatically receive confirmation and reminder emails."
+        "text": "View all scheduled appointments in your dashboard. Members who leave an email get a confirmation, and a reminder about a day before."
       }
     ]
   };
@@ -199,7 +199,7 @@ export default async function TithingDeclarationPage() {
                   Track appointments
                 </h3>
                 <p className="text-[16px] text-[#5A8399] leading-[1.7]">
-                  View all scheduled appointments in your dashboard. Members automatically receive confirmation and reminder emails.
+                  View all scheduled appointments in your dashboard. Members who leave an email get a confirmation, and a reminder about a day before.
                 </p>
               </div>
             </div>
@@ -232,7 +232,7 @@ export default async function TithingDeclarationPage() {
             Make one section of times and rename it &ldquo;Bishop&rdquo;. Use Duplicate section and rename the copy &ldquo;1st Counselor&rdquo;, then do the same for the 2nd Counselor, and adjust each leader&rsquo;s times. Members see each leader&rsquo;s times under his name on one link. When each time is set to 1 spot, a time closes as soon as someone takes it, so two families never land in the same slot.
           </p>
           <p className="text-[17px] text-[#2E5566] leading-[1.75]">
-            A daily summary of new signups goes to the contact set on the event. If each leader wants his own summary, make a separate sheet with him as the contact.
+            A daily summary of new signups goes to the contact set on the event and to the account owner who created it. If each leader wants his own summary, make a separate sheet with him as the contact. The account owner still gets each sheet&rsquo;s summary.
           </p>
           <div className="mt-12 pt-8 border-t border-[#0E96B0]/10 text-left">
             <h3 className="font-serif text-[20px] text-[#0D2B35] mb-3">
@@ -279,7 +279,7 @@ export default async function TithingDeclarationPage() {
                 { feature: "Real-time availability", paper: "No — paper gets outdated", digital: "Yes — updates instantly" },
                 { feature: "Double-booking risk", paper: "High — manual tracking", digital: "Zero — slots close when full" },
                 { feature: "Confirmation emails", paper: "No", digital: "Yes — automatic" },
-                { feature: "Reminder emails", paper: "No", digital: "Yes — 24 hours before" },
+                { feature: "Reminder emails", paper: "No", digital: "Yes, by email if provided" },
                 { feature: "Accessible from anywhere", paper: "No — foyer only", digital: "Yes — share one link" },
                 { feature: "Setup time", paper: "Print, post, hope people see it", digital: "10 minutes to live" },
               ].map((row, i) => (
