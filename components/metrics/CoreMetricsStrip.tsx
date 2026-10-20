@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useId, useRef, useState } from "react";
 import type { CoreMetric, CoreWeekly } from "@/lib/core-metrics";
+import { buildChartTooltip, tooltipAriaLabel } from "@/lib/chart-tooltip";
 import { TREND_ARROW, formatWeekRange, formatWeekStart, pctChange } from "@/lib/metrics-weeks";
 
 const TREND_CLASS = { up: "text-[#1a9b6c]", down: "text-[#d0623b]", flat: "text-[#8a94a6]" } as const;
@@ -109,9 +111,23 @@ export function CoreMetricsStrip({ core }: { core: CoreWeekly }) {
   );
 }
 
-type ChartSeries = { values: (number | null)[]; color: string; kind: "bar" | "line"; label: string; axis?: "left" | "right" };
+type ChartSeries = {
+  values: (number | null)[];
+  color: string;
+  kind: "bar" | "line";
+  label: string;
+  axis?: "left" | "right";
+  /** Label in the tooltip when the legend label carries an axis hint. */
+  tooltipLabel?: string;
+  /** Per week detail shown in the tooltip, e.g. "83 of 118". */
+  details?: (string | null)[];
+};
 
-/** Small inline SVG weekly chart: bars and/or lines, optional goal line. */
+/**
+ * Small inline SVG weekly chart: bars and/or lines, optional goal line.
+ * Each week has a hit column: hover (mouse), tap (touch) or keyboard focus shows a
+ * tooltip with the Phoenix week range and exact values; tap elsewhere or Escape hides it.
+ */
 export function WeeklyTrendChart({
   title,
   weeks,
@@ -120,6 +136,7 @@ export function WeeklyTrendChart({
   unit = "",
   yMax,
   testId,
+  now,
 }: {
   title: string;
   weeks: string[];
@@ -129,7 +146,23 @@ export function WeeklyTrendChart({
   /** Fixed left axis top (e.g. 100 for percentages). */
   yMax?: number;
   testId?: string;
+  /** Clock for the "in progress" week (tests). */
+  now?: Date | string;
 }) {
+  const [active, setActive] = useState<number | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const tipId = useId();
+
+  // Tap or click anywhere outside this chart hides its tooltip.
+  useEffect(() => {
+    if (active == null) return;
+    const onDown = (e: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setActive(null);
+    };
+    document.addEventListener("pointerdown", onDown);
+    return () => document.removeEventListener("pointerdown", onDown);
+  }, [active]);
+
   const W = 300;
   const H = 120;
   const pad = { l: 30, r: 30, t: 10, b: 20 };
@@ -144,6 +177,31 @@ export function WeeklyTrendChart({
   const x = (i: number) => pad.l + i * step + step / 2;
   const y = (v: number, max: number) => pad.t + ih - (ih * v) / max;
   const fmt = (v: number) => `${Number.isInteger(v) ? v : v.toFixed(1)}${unit}`;
+  const valueKind = unit === "%" ? "rate" : "count";
+  const tipFor = (i: number) =>
+    buildChartTooltip({
+      weeks,
+      index: i,
+      series: series.map((s) => ({
+        label: s.tooltipLabel ?? s.label,
+        values: s.values,
+        kind: valueKind,
+        details: s.details,
+      })),
+      goal: goal ? { value: goal.value, kind: valueKind } : undefined,
+      now,
+    });
+  const tip = active == null ? null : tipFor(active);
+  // Keep the tooltip inside the card near the edges.
+  const tipPos =
+    active == null
+      ? null
+      : active < weeks.length / 4
+        ? { left: `${(x(active) / W) * 100}%`, transform: "translateX(-12px)" }
+        : active >= (weeks.length * 3) / 4
+          ? { left: `${(x(active) / W) * 100}%`, transform: "translateX(calc(-100% + 12px))" }
+          : { left: `${(x(active) / W) * 100}%`, transform: "translateX(-50%)" };
+
   return (
     <div className="bg-[#F9FCFD] rounded-xl border border-[rgba(14,150,176,0.12)] p-4" data-testid={testId}>
       <div className="text-[12px] font-semibold text-[#0D2B35] mb-1">{title}</div>
@@ -156,80 +214,142 @@ export function WeeklyTrendChart({
         ))}
         {goal && <span className="inline-flex items-center gap-1">┄ {goal.label}</span>}
       </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-label={title}>
-        <line x1={pad.l} x2={W - pad.r} y1={pad.t + ih} y2={pad.t + ih} stroke="#d5e6ec" />
-        <text x={pad.l - 4} y={pad.t + 4} fontSize="9" textAnchor="end" fill="#7A9BAE">{fmt(maxL)}</text>
-        <text x={pad.l - 4} y={pad.t + ih} fontSize="9" textAnchor="end" fill="#7A9BAE">0</text>
-        {right.length > 0 && (
-          <text x={W - pad.r + 4} y={pad.t + 4} fontSize="9" textAnchor="start" fill="#7A9BAE">{fmt(maxR)}</text>
-        )}
-        {series.map((s, si) => {
-          const max = s.axis === "right" ? maxR : maxL;
-          if (s.kind === "bar") {
-            const bars = series.filter((t) => t.kind === "bar");
-            const bi = bars.indexOf(s);
-            const bw = (step * 0.7) / bars.length;
+      <div
+        ref={wrapRef}
+        className="relative"
+        onKeyDown={(e) => {
+          if (e.key === "Escape") setActive(null);
+        }}
+        onMouseLeave={() => setActive(null)}
+      >
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="group" aria-label={title}>
+          <line x1={pad.l} x2={W - pad.r} y1={pad.t + ih} y2={pad.t + ih} stroke="#d5e6ec" />
+          <text x={pad.l - 4} y={pad.t + 4} fontSize="9" textAnchor="end" fill="#7A9BAE">{fmt(maxL)}</text>
+          <text x={pad.l - 4} y={pad.t + ih} fontSize="9" textAnchor="end" fill="#7A9BAE">0</text>
+          {right.length > 0 && (
+            <text x={W - pad.r + 4} y={pad.t + 4} fontSize="9" textAnchor="start" fill="#7A9BAE">{fmt(maxR)}</text>
+          )}
+          {active != null && (
+            <rect
+              x={pad.l + active * step}
+              y={pad.t}
+              width={step}
+              height={ih}
+              fill="#0E96B0"
+              opacity={0.08}
+              pointerEvents="none"
+              data-testid={testId ? `${testId}-highlight` : undefined}
+            />
+          )}
+          {series.map((s, si) => {
+            const max = s.axis === "right" ? maxR : maxL;
+            if (s.kind === "bar") {
+              const bars = series.filter((t) => t.kind === "bar");
+              const bi = bars.indexOf(s);
+              const bw = (step * 0.7) / bars.length;
+              return (
+                <g key={si} pointerEvents="none">
+                  {s.values.map((v, i) =>
+                    v == null ? null : (
+                      <rect
+                        key={i}
+                        x={x(i) - (step * 0.7) / 2 + bi * bw}
+                        y={y(v, max)}
+                        width={Math.max(1, bw - 1)}
+                        height={Math.max(0, pad.t + ih - y(v, max))}
+                        rx={1.5}
+                        fill={s.color}
+                      />
+                    ),
+                  )}
+                </g>
+              );
+            }
+            const pts = s.values
+              .map((v, i) => (v == null ? null : `${x(i).toFixed(1)},${y(v, max).toFixed(1)}`))
+              .filter(Boolean)
+              .join(" ");
             return (
-              <g key={si}>
+              <g key={si} pointerEvents="none">
+                <polyline points={pts} fill="none" stroke={s.color} strokeWidth={2} />
                 {s.values.map((v, i) =>
                   v == null ? null : (
-                    <rect
-                      key={i}
-                      x={x(i) - (step * 0.7) / 2 + bi * bw}
-                      y={y(v, max)}
-                      width={Math.max(1, bw - 1)}
-                      height={Math.max(0, pad.t + ih - y(v, max))}
-                      rx={1.5}
-                      fill={s.color}
-                    >
-                      <title>{`${formatWeekRange(weeks[i]!)}: ${fmt(v)}`}</title>
-                    </rect>
+                    <circle key={i} cx={x(i)} cy={y(v, max)} r={active === i ? 4 : 2.5} fill={s.color} />
                   ),
                 )}
               </g>
             );
-          }
-          const pts = s.values
-            .map((v, i) => (v == null ? null : `${x(i).toFixed(1)},${y(v, max).toFixed(1)}`))
-            .filter(Boolean)
-            .join(" ");
-          return (
-            <g key={si}>
-              <polyline points={pts} fill="none" stroke={s.color} strokeWidth={2} />
-              {s.values.map((v, i) =>
-                v == null ? null : (
-                  <circle key={i} cx={x(i)} cy={y(v, max)} r={2.5} fill={s.color}>
-                    <title>{`${formatWeekRange(weeks[i]!)}: ${fmt(v)}`}</title>
-                  </circle>
-                ),
+          })}
+          {goal && (
+            <line
+              x1={pad.l}
+              x2={W - pad.r}
+              y1={y(goal.value, maxL)}
+              y2={y(goal.value, maxL)}
+              stroke="#d0623b"
+              strokeDasharray="4 3"
+              strokeWidth={1.2}
+              pointerEvents="none"
+            />
+          )}
+          {[0, weeks.length - 1].map((i) => (
+            <text key={i} x={x(i)} y={H - 6} fontSize="9" textAnchor="middle" fill="#7A9BAE">
+              {formatWeekStart(weeks[i]!)}
+            </text>
+          ))}
+          {/* Hit columns: one per week, full height, focusable. */}
+          {weeks.map((w, i) => (
+            <rect
+              key={w}
+              x={pad.l + i * step}
+              y={pad.t}
+              width={step}
+              height={ih}
+              fill="transparent"
+              tabIndex={0}
+              role="button"
+              aria-label={tooltipAriaLabel(tipFor(i))}
+              aria-describedby={active === i ? tipId : undefined}
+              data-testid={testId ? `${testId}-hit-${i}` : undefined}
+              className="cursor-pointer outline-none focus-visible:stroke-[#08647E] focus-visible:[stroke-width:1.5]"
+              onMouseEnter={() => setActive(i)}
+              onFocus={() => setActive(i)}
+              onBlur={() => setActive((cur) => (cur === i ? null : cur))}
+              onClick={() => setActive(i)}
+            />
+          ))}
+        </svg>
+        {tip && tipPos && (
+          <div
+            id={tipId}
+            role="tooltip"
+            data-testid={testId ? `${testId}-tooltip` : undefined}
+            className="absolute top-0 z-10 pointer-events-none min-w-[160px] max-w-[260px] rounded-lg border border-[rgba(14,150,176,0.22)] bg-white px-3 py-2 shadow-[0_4px_16px_rgba(8,100,126,0.14)] text-[12px] text-[#0D2B35]"
+            style={{ ...tipPos, top: "-6px", translate: "0 -100%" }}
+          >
+            <div className="flex items-center gap-2 font-semibold whitespace-nowrap">
+              {tip.range}
+              {tip.inProgress && (
+                <span className="rounded-full bg-[#E6F4F7] px-1.5 py-[1px] text-[10px] font-semibold text-[#08647E]">in progress</span>
               )}
-            </g>
-          );
-        })}
-        {goal && (
-          <line
-            x1={pad.l}
-            x2={W - pad.r}
-            y1={y(goal.value, maxL)}
-            y2={y(goal.value, maxL)}
-            stroke="#d0623b"
-            strokeDasharray="4 3"
-            strokeWidth={1.2}
-          />
+            </div>
+            {tip.rows.map((r) => (
+              <div key={r.label} className="flex justify-between gap-3 tabular-nums whitespace-nowrap">
+                <span className="text-[#5A8399]">{r.label}</span>
+                <span className="font-semibold">{r.value}</span>
+              </div>
+            ))}
+          </div>
         )}
-        {[0, weeks.length - 1].map((i) => (
-          <text key={i} x={x(i)} y={H - 6} fontSize="9" textAnchor="middle" fill="#7A9BAE">
-            {formatWeekStart(weeks[i]!)}
-          </text>
-        ))}
-      </svg>
+      </div>
     </div>
   );
 }
 
 /** Weekly trend charts for the core strip (Phoenix weeks, about 12 weeks). */
-export function CoreTrendCharts({ core }: { core: CoreWeekly }) {
+export function CoreTrendCharts({ core, now }: { core: CoreWeekly; now?: Date | string }) {
   const get = (k: CoreMetric["key"]) => core.metrics.find((m) => m.key === k)?.values ?? [];
+  const details = (k: CoreMetric["key"]) => core.metrics.find((m) => m.key === k)?.details;
   return (
     <div
       className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6"
@@ -238,37 +358,57 @@ export function CoreTrendCharts({ core }: { core: CoreWeekly }) {
       <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-1">Weekly trends</div>
       <p className="text-[13px] text-[#5A8399] mb-4 max-w-3xl">
         Last {core.weeks.length} weeks, Monday to Sunday in Phoenix time. The latest week is still in progress.
+        Hover, tap or tab to a week for exact numbers.
       </p>
       <div className="grid sm:grid-cols-2 gap-4">
         <WeeklyTrendChart
           testId="chart-signups"
+          now={now}
           title="Signups (submissions)"
           weeks={core.weeks}
           series={[{ label: "Signups", values: get("slotSignups"), color: "#0E96B0", kind: "bar" }]}
         />
         <WeeklyTrendChart
           testId="chart-visitors"
+          now={now}
           title="Unique visitors"
           weeks={core.weeks}
           series={[{ label: "Visitors", values: get("visitors"), color: "#5BB8CC", kind: "bar" }]}
         />
         <WeeklyTrendChart
           testId="chart-wards"
+          now={now}
           title="New wards and total wards"
           weeks={core.weeks}
           series={[
-            { label: "New wards (left)", values: get("newWards"), color: "#0E96B0", kind: "bar" },
-            { label: "Total wards (right)", values: core.totalWards, color: "#08647E", kind: "line", axis: "right" },
+            { label: "New wards (left)", tooltipLabel: "New wards", values: get("newWards"), color: "#0E96B0", kind: "bar" },
+            {
+              label: "Total wards (right)",
+              tooltipLabel: "Total wards",
+              values: core.totalWards,
+              color: "#08647E",
+              kind: "line",
+              axis: "right",
+            },
           ]}
         />
         <WeeklyTrendChart
           testId="chart-email-capture"
+          now={now}
           title="Email capture rate"
           weeks={core.weeks}
           unit="%"
           yMax={100}
           goal={{ value: EMAIL_CAPTURE_GOAL_PCT, label: `${EMAIL_CAPTURE_GOAL_PCT}% goal` }}
-          series={[{ label: "Capture rate", values: get("emailCaptureRate"), color: "#0E96B0", kind: "line" }]}
+          series={[
+            {
+              label: "Capture rate",
+              values: get("emailCaptureRate"),
+              details: details("emailCaptureRate"),
+              color: "#0E96B0",
+              kind: "line",
+            },
+          ]}
         />
       </div>
     </div>
