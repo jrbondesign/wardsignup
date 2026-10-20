@@ -17,6 +17,9 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
 
   return {
     title,
+    // Public event pages list members' names: never index them. Paired with
+    // the X-Robots-Tag header for /event/:path* in next.config.js.
+    robots: { index: false, follow: false },
     openGraph: {
       title,
       description,
