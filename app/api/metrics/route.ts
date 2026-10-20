@@ -20,6 +20,8 @@ import {
   phoenixWeekKeyToUtc,
 } from "@/lib/metrics-weeks";
 import { buildCoreWeekly, lastWeekKeys } from "@/lib/core-metrics";
+import { fetchAllRows } from "@/lib/supabase-paging";
+import { computeWardFirstEvents, type OrgWithAttribution, type WardCampaign } from "@/lib/new-wards";
 
 /** Every week on the founder metrics page is Monday to Sunday in Phoenix time. */
 const toWeekKey = phoenixWeekKey;
@@ -158,35 +160,44 @@ export async function GET(request: NextRequest) {
   let brandCampaignIds: string[] | null = null;
   let brandUserIds: string[] | null = null;
   if (brandFilter) {
-    const [{ data: brandCampaigns }, { data: brandProfiles }] = await Promise.all([
-      admin.from("campaigns").select("id").eq("brand_id", brandFilter),
-      admin.from("organizer_profiles").select("user_id").eq("brand_id", brandFilter),
+    const [brandCampaigns, brandProfiles] = await Promise.all([
+      fetchAllRows<{ id: string }>(
+        () => admin.from("campaigns").select("id").eq("brand_id", brandFilter),
+        { label: "brand campaigns" },
+      ),
+      fetchAllRows<{ user_id: string }>(
+        () => admin.from("organizer_profiles").select("user_id").eq("brand_id", brandFilter),
+        { label: "brand organizer_profiles", orderBy: ["user_id"] },
+      ),
     ]);
-    brandCampaignIds = (brandCampaigns ?? []).map((r: { id: string }) => r.id);
-    brandUserIds = (brandProfiles ?? []).map((r: { user_id: string }) => r.user_id);
+    brandCampaignIds = brandCampaigns.map((r) => r.id);
+    brandUserIds = brandProfiles.map((r) => r.user_id);
   } else {
     // For the "all" tab, scope users to those with any organizer_profile — same methodology
     // as brand tabs — so the numbers are additive rather than inflated by bare auth accounts
     // that have no brand affiliation yet.
-    const { data: allProfiles } = await admin
-      .from("organizer_profiles")
-      .select("user_id");
-    const profileUserIdSet = new Set(
-      (allProfiles ?? []).map((r: { user_id: string }) => r.user_id),
+    const allProfiles = await fetchAllRows<{ user_id: string }>(
+      () => admin.from("organizer_profiles").select("user_id"),
+      { label: "organizer_profiles", orderBy: ["user_id"] },
     );
+    const profileUserIdSet = new Set(allProfiles.map((r) => r.user_id));
     // Keep brandUserIds as a de-duped array of all profiled user IDs
     brandUserIds = [...profileUserIdSet];
   }
 
   // Creators = organization owners. Co-admins (invited into someone else's org) and
   // signed-in users who never set up an org are reported separately, not as creators.
-  const { data: memberRows } = await admin
-    .from("organization_members")
-    .select("user_id, role, status, organizations!inner(brand_id)")
-    .eq("status", "accepted");
+  const memberRows = await fetchAllRows<unknown>(
+    () =>
+      admin
+        .from("organization_members")
+        .select("user_id, role, status, organizations!inner(brand_id)")
+        .eq("status", "accepted"),
+    { label: "organization_members" },
+  );
   const ownerIds = new Set<string>();
   const memberIds = new Set<string>();
-  for (const r of (memberRows ?? []) as unknown as {
+  for (const r of memberRows as {
     user_id: string;
     role: string;
     organizations: { brand_id: string } | { brand_id: string }[];
@@ -210,18 +221,18 @@ export async function GET(request: NextRequest) {
     { count: totalInvites },
     { data: capRaw, error: capErr },
     { data: creatorRpc, error: creatorErr },
-    { data: growthCampaigns },
-    { data: growthSignups },
+    growthCampaigns,
+    growthSignups,
     { data: recentSignupsRaw },
     listUsersResult,
     { count: signupsWithEmail },
     { count: signupsWithPhone },
-    { data: inviteEmailsRaw },
-    { data: signupEmailsRaw },
-    { data: campaignsSlim },
-    { data: sessionCampaignRows },
-    { data: signupCampaignRows },
-    { data: inviteInviterRows },
+    inviteEmailsRaw,
+    signupEmailsRaw,
+    campaignsSlim,
+    sessionCampaignRows,
+    signupCampaignRows,
+    inviteInviterRows,
   ] = await Promise.all([
     brandCampaignIds !== null
       ? admin.from("campaigns").select("id", { count: "exact", head: true }).in("id", brandCampaignIds)
@@ -237,12 +248,20 @@ export async function GET(request: NextRequest) {
       : admin.from("event_invites").select("id", { count: "exact", head: true }),
     admin.rpc("metrics_total_capacity", { p_brand_id: brandFilter }),
     admin.rpc("metrics_creator_breakdown", { p_brand_id: brandFilter }),
-    brandCampaignIds !== null
-      ? admin.from("campaigns").select("created_at").in("id", brandCampaignIds).gte("created_at", oldestIso)
-      : admin.from("campaigns").select("created_at").gte("created_at", oldestIso),
-    brandCampaignIds !== null
-      ? admin.from("signups").select("signed_up_at").in("campaign_id", brandCampaignIds).gte("signed_up_at", oldestIso)
-      : admin.from("signups").select("signed_up_at").gte("signed_up_at", oldestIso),
+    fetchAllRows<{ created_at: string }>(
+      () => {
+        const q = admin.from("campaigns").select("created_at").gte("created_at", oldestIso);
+        return brandCampaignIds !== null ? q.in("id", brandCampaignIds) : q;
+      },
+      { label: "growth campaigns" },
+    ),
+    fetchAllRows<{ signed_up_at: string }>(
+      () => {
+        const q = admin.from("signups").select("signed_up_at").gte("signed_up_at", oldestIso);
+        return brandCampaignIds !== null ? q.in("campaign_id", brandCampaignIds) : q;
+      },
+      { label: "growth signups" },
+    ),
     brandCampaignIds !== null
       ? admin.from("signups").select("member_name, signed_up_at, campaigns(name)").in("campaign_id", brandCampaignIds).order("signed_up_at", { ascending: false }).limit(10)
       : admin.from("signups").select("member_name, signed_up_at, campaigns(name)").order("signed_up_at", { ascending: false }).limit(10),
@@ -253,24 +272,48 @@ export async function GET(request: NextRequest) {
     brandCampaignIds !== null
       ? admin.from("signups").select("id", { count: "exact", head: true }).in("campaign_id", brandCampaignIds).not("member_phone", "is", null)
       : admin.from("signups").select("id", { count: "exact", head: true }).not("member_phone", "is", null),
-    brandCampaignIds !== null
-      ? admin.from("event_invites").select("invitee_email").in("campaign_id", brandCampaignIds)
-      : admin.from("event_invites").select("invitee_email"),
-    brandCampaignIds !== null
-      ? admin.from("signups").select("member_email").in("campaign_id", brandCampaignIds).not("member_email", "is", null)
-      : admin.from("signups").select("member_email").not("member_email", "is", null),
-    brandCampaignIds !== null
-      ? admin.from("campaigns").select("id, created_at, created_by, user_email, organization_id").in("id", brandCampaignIds)
-      : admin.from("campaigns").select("id, created_at, created_by, user_email, organization_id"),
-    brandCampaignIds !== null
-      ? admin.from("sessions").select("campaign_id").in("campaign_id", brandCampaignIds)
-      : admin.from("sessions").select("campaign_id"),
-    brandCampaignIds !== null
-      ? admin.from("signups").select("campaign_id").in("campaign_id", brandCampaignIds)
-      : admin.from("signups").select("campaign_id"),
-    brandCampaignIds !== null
-      ? admin.from("event_invites").select("inviter_id").in("campaign_id", brandCampaignIds)
-      : admin.from("event_invites").select("inviter_id"),
+    fetchAllRows<{ invitee_email: string }>(
+      () => {
+        const q = admin.from("event_invites").select("invitee_email");
+        return brandCampaignIds !== null ? q.in("campaign_id", brandCampaignIds) : q;
+      },
+      { label: "event_invites.invitee_email" },
+    ),
+    fetchAllRows<{ member_email: string }>(
+      () => {
+        const q = admin.from("signups").select("member_email").not("member_email", "is", null);
+        return brandCampaignIds !== null ? q.in("campaign_id", brandCampaignIds) : q;
+      },
+      { label: "signups.member_email" },
+    ),
+    fetchAllRows<SlimCampaign & { organization_id: string | null }>(
+      () => {
+        const q = admin.from("campaigns").select("id, created_at, created_by, user_email, organization_id");
+        return brandCampaignIds !== null ? q.in("id", brandCampaignIds) : q;
+      },
+      { label: "campaigns slim" },
+    ),
+    fetchAllRows<{ campaign_id: string }>(
+      () => {
+        const q = admin.from("sessions").select("campaign_id");
+        return brandCampaignIds !== null ? q.in("campaign_id", brandCampaignIds) : q;
+      },
+      { label: "sessions.campaign_id" },
+    ),
+    fetchAllRows<{ campaign_id: string }>(
+      () => {
+        const q = admin.from("signups").select("campaign_id");
+        return brandCampaignIds !== null ? q.in("campaign_id", brandCampaignIds) : q;
+      },
+      { label: "signups.campaign_id" },
+    ),
+    fetchAllRows<{ inviter_id: string }>(
+      () => {
+        const q = admin.from("event_invites").select("inviter_id");
+        return brandCampaignIds !== null ? q.in("campaign_id", brandCampaignIds) : q;
+      },
+      { label: "event_invites.inviter_id" },
+    ),
   ]);
 
   if (capErr) {
@@ -295,14 +338,12 @@ export async function GET(request: NextRequest) {
   const totalCapacity = num(capRaw);
 
   const campaignWeekMap: Record<string, number> = {};
-  for (const c of growthCampaigns ?? []) {
-    const row = c as { created_at: string };
+  for (const row of growthCampaigns) {
     const w = toWeekKey(row.created_at);
     campaignWeekMap[w] = (campaignWeekMap[w] ?? 0) + 1;
   }
   const signupWeekMap: Record<string, number> = {};
-  for (const s of growthSignups ?? []) {
-    const row = s as { signed_up_at: string };
+  for (const row of growthSignups) {
     const w = toWeekKey(row.signed_up_at);
     signupWeekMap[w] = (signupWeekMap[w] ?? 0) + 1;
   }
@@ -326,7 +367,7 @@ export async function GET(request: NextRequest) {
   // Counted in the week of their first event. Owners with no event yet are
   // "lookie-loos" and reported separately.
   const firstEventAt = new Map<string, string>();
-  for (const row of (campaignsSlim ?? []) as SlimCampaign[]) {
+  for (const row of campaignsSlim) {
     if (!row.created_by) continue;
     const prev = firstEventAt.get(row.created_by);
     if (!prev || row.created_at < prev) firstEventAt.set(row.created_by, row.created_at);
@@ -418,7 +459,7 @@ export async function GET(request: NextRequest) {
 
   const campaignsByCreatorId = new Map<string, Set<string>>();
   const campaignsByOwnerEmail = new Map<string, Set<string>>();
-  for (const row of (campaignsSlim ?? []) as SlimCampaign[]) {
+  for (const row of campaignsSlim) {
     if (row.created_by) {
       let s = campaignsByCreatorId.get(row.created_by);
       if (!s) {
@@ -439,10 +480,10 @@ export async function GET(request: NextRequest) {
   }
 
   const sessionCampaignIds = new Set(
-    (sessionCampaignRows ?? []).map((r: { campaign_id: string }) => r.campaign_id).filter(Boolean),
+    sessionCampaignRows.map((r) => r.campaign_id).filter(Boolean),
   );
   const signupCampaignIds = new Set(
-    (signupCampaignRows ?? []).map((r: { campaign_id: string }) => r.campaign_id).filter(Boolean),
+    signupCampaignRows.map((r) => r.campaign_id).filter(Boolean),
   );
 
   function campaignIdsForUser(u: User): Set<string> {
@@ -477,19 +518,15 @@ export async function GET(request: NextRequest) {
   }
 
   const inviteEmailSet = new Set(
-    (inviteEmailsRaw ?? ([] as { invitee_email: string }[])).map((r) =>
-      r.invitee_email.toLowerCase(),
-    ),
+    inviteEmailsRaw.map((r) => r.invitee_email.toLowerCase()),
   );
   const signupEmailSet = new Set(
-    (signupEmailsRaw ?? ([] as { member_email: string }[])).map((r) =>
-      r.member_email.toLowerCase(),
-    ),
+    signupEmailsRaw.map((r) => r.member_email.toLowerCase()),
   );
   const invitesConverted = [...inviteEmailSet].filter((e) => signupEmailSet.has(e)).length;
 
   const inviterIds = new Set(
-    (inviteInviterRows ?? []).map((r: { inviter_id: string }) => r.inviter_id).filter(Boolean),
+    inviteInviterRows.map((r) => r.inviter_id).filter(Boolean),
   );
 
   const newUsersWeek = authUserList.filter((u) => joinedAt(u) >= sevenDaysAgo);
@@ -596,67 +633,54 @@ export async function GET(request: NextRequest) {
 
   // Calculate New Wards metric (wards = organizations with first published event)
   // A ward's first published event is the earliest campaign with at least one session.
-  const { data: orgsWithCampaigns } = await admin
-    .from("organizations")
-    .select("id, first_touch_utm_source, first_touch_utm_medium, first_touch_utm_campaign, first_touch_ref, created_by, owner_id");
-  
-  const { data: campaignsWithSessions } = await admin
-    .from("campaigns")
-    .select("id, organization_id, created_at")
-    .not("organization_id", "is", null);
+  // Every query here is paged: there are well over 1,000 sessions, and an unpaged
+  // select stops at row 1,000 (which once showed 16 total wards instead of 50).
+  const [orgsWithCampaigns, campaignsWithSessions, allSessionCampaignRows] = await Promise.all([
+    fetchAllRows<OrgWithAttribution>(
+      () =>
+        admin
+          .from("organizations")
+          .select("id, first_touch_utm_source, first_touch_utm_medium, first_touch_utm_campaign, first_touch_ref, created_by, owner_id"),
+      { label: "organizations" },
+    ),
+    fetchAllRows<WardCampaign>(
+      () =>
+        admin
+          .from("campaigns")
+          .select("id, organization_id, created_at")
+          .not("organization_id", "is", null),
+      { label: "ward campaigns" },
+    ),
+    // The "all" tab already loaded every session's campaign_id above; reuse it.
+    brandCampaignIds === null
+      ? Promise.resolve(sessionCampaignRows)
+      : fetchAllRows<{ campaign_id: string }>(
+          () => admin.from("sessions").select("campaign_id"),
+          { label: "ward sessions.campaign_id" },
+        ),
+  ]);
 
-  const { data: sessionsData } = await admin
-    .from("sessions")
-    .select("campaign_id");
-
-  const campaignsWithSessionsSet = new Set(
-    (sessionsData ?? []).map((s: { campaign_id: string }) => s.campaign_id)
-  );
-
-  type OrgWithAttribution = {
-    id: string;
-    first_touch_utm_source: string | null;
-    first_touch_utm_medium: string | null;
-    first_touch_utm_campaign: string | null;
-    first_touch_ref: string | null;
-    created_by: string;
-    owner_id: string | null;
-  };
+  const campaignsWithSessionsSet = new Set(allSessionCampaignRows.map((s) => s.campaign_id));
 
   // Team / test sheets: classified by the ward's CURRENT owner (falls back to the
   // creator for sheets with no ward). One rule for New wards, email capture and the strip.
   const emailByUserId = new Map(allAuthUsers.map((u) => [u.id, u.email ?? null]));
   const wardOwnerById = new Map(
-    ((orgsWithCampaigns ?? []) as OrgWithAttribution[]).map((o) => [o.id, o.owner_id ?? o.created_by ?? null]),
+    orgsWithCampaigns.map((o) => [o.id, o.owner_id ?? o.created_by ?? null]),
   );
   const teamSheets = teamSheetIds({
-    sheets: (campaignsSlim ?? []) as (SlimCampaign & { organization_id: string | null })[],
+    sheets: campaignsSlim,
     wardOwnerById,
     emailByUserId,
     isTeam: (e) => isTeamEmail(e, skipEmails),
   });
 
-  const orgFirstEventMap = new Map<string, { date: string; orgData: OrgWithAttribution }>();
-  
-  for (const campaign of (campaignsWithSessions ?? []) as { id: string; organization_id: string; created_at: string }[]) {
-    if (!campaignsWithSessionsSet.has(campaign.id)) continue;
-    const orgId = campaign.organization_id;
-    if (!orgId) continue;
-
-    const existing = orgFirstEventMap.get(orgId);
-    if (!existing || campaign.created_at < existing.date) {
-      const orgData = (orgsWithCampaigns ?? []).find((o: OrgWithAttribution) => o.id === orgId);
-      if (!orgData) continue;
-
-      // Team ward: its current owner is a team or test account.
-      if (teamSheets.has(campaign.id)) continue;
-
-      orgFirstEventMap.set(orgId, { 
-        date: campaign.created_at,
-        orgData: orgData as OrgWithAttribution
-      });
-    }
-  }
+  const orgFirstEventMap = computeWardFirstEvents({
+    orgs: orgsWithCampaigns,
+    campaigns: campaignsWithSessions,
+    campaignsWithSessions: campaignsWithSessionsSet,
+    teamSheets,
+  });
 
   // Phoenix calendar months (YYYY-MM).
   const toMonthKey = phoenixMonthKey;
@@ -730,24 +754,16 @@ export async function GET(request: NextRequest) {
   // member_email / all signups. Paged so the 1000 row API cap never truncates it.
   // Fetch enough weeks for the core trend chart; the card below still shows 8 completed weeks.
   const captureWindowIso = emailCaptureWindowStart(nowDate, CORE_TREND_WEEKS - 1).toISOString();
-  const captureRows: CaptureSignupRow[] = [];
-  for (let from = 0; ; from += 1000) {
-    let q = admin
-      .from("signups")
-      .select("signed_up_at, member_email, campaign_id")
-      .gte("signed_up_at", captureWindowIso);
-    if (brandCampaignIds !== null) q = q.in("campaign_id", brandCampaignIds);
-    const { data: page, error: pageErr } = await q
-      .order("signed_up_at", { ascending: true })
-      .order("id", { ascending: true })
-      .range(from, from + 999);
-    if (pageErr) {
-      console.error("metrics email capture:", pageErr);
-      break;
-    }
-    captureRows.push(...((page ?? []) as CaptureSignupRow[]));
-    if (!page || page.length < 1000) break;
-  }
+  const captureRows = await fetchAllRows<CaptureSignupRow>(
+    () => {
+      const q = admin
+        .from("signups")
+        .select("signed_up_at, member_email, campaign_id")
+        .gte("signed_up_at", captureWindowIso);
+      return brandCampaignIds !== null ? q.in("campaign_id", brandCampaignIds) : q;
+    },
+    { label: "email capture signups", orderBy: ["signed_up_at", "id"] },
+  );
   // Exclude team / test sheets the same way New wards does (ward's current owner).
   const emailCapture = computeEmailCaptureRate(captureRows, nowDate, 8, teamSheets);
   const captureTrend = computeEmailCaptureRate(captureRows, nowDate, CORE_TREND_WEEKS - 1, teamSheets);
