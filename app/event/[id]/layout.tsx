@@ -1,17 +1,29 @@
 import { createClient } from "@supabase/supabase-js";
+import { getServerEventPage } from "@/lib/public-event-page-server";
 
-export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+async function eventTitleAndDescription(id: string) {
+  // Shared with the page through React cache(), so this is the same read.
+  const page = await getServerEventPage(id);
+  if (page !== undefined) {
+    return { name: page?.event.name, description: page?.event.description };
+  }
+  // Server load was slow or failed: keep the old metadata read so link
+  // previews still get the real title. Org-scoped RLS on campaigns blocks anon
+  // `select * from campaigns`; the public RPC exposes only public-safe columns.
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
   );
-  // Org-scoped RLS on campaigns blocks anon `select * from campaigns`; the public
-  // RPC is SECURITY DEFINER and exposes only the public-safe columns.
   const { data } = await supabase.rpc("get_public_campaign", { campaign_id: id } as never);
-  const row = Array.isArray(data) ? data[0] : data;
-  const title = (row as { name?: string } | null)?.name ?? "Ward Signup";
-  const description = (row as { description?: string | null } | null)?.description ?? "Sign up for an available time slot.";
+  const row = (Array.isArray(data) ? data[0] : data) as { name?: string; description?: string | null } | null;
+  return { name: row?.name, description: row?.description };
+}
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params;
+  const row = await eventTitleAndDescription(id);
+  const title = row.name ?? "Ward Signup";
+  const description = row.description ?? "Sign up for an available time slot.";
 
   const fbAppId = process.env.NEXT_PUBLIC_FB_APP_ID;
 
