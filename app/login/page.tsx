@@ -31,6 +31,7 @@ export default function LoginPage() {
     
     // Hide Google sign-in for invite flows
     if (next && next.startsWith("/orgs/accept")) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- ?next= is read from window.location after mount to avoid SSR mismatch
       setIsInviteFlow(true);
     }
     
@@ -200,6 +201,7 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-[460px] bg-white rounded-3xl shadow-[0_20px_60px_rgba(8,100,126,0.16)] p-11 animate-[fadeUp_0.5s_ease_both]">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 justify-center mb-8 no-underline">
+          {/* eslint-disable-next-line @next/next/no-img-element -- brand logo is a small static asset; keep plain img to avoid changing rendering */}
           <img
             src={brand.logoSrc}
             alt={brand.logoAlt}

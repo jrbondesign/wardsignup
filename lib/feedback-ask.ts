@@ -1,6 +1,7 @@
 import type { createServiceRoleClient } from "@/lib/supabase-admin";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
-import { claimCronRun, dayBucketDate } from "@/lib/rate-limit";
+import { claimCronRun } from "@/lib/rate-limit";
+import { phoenixDayStartUtc, phoenixWeekday } from "@/lib/phoenix-time";
 import { getPostHogClient } from "@/lib/posthog-server";
 import {
   buildFeedbackDigestEmailHtml,
@@ -62,7 +63,7 @@ export type FeedbackAskSummary = {
  * Daily pass: find engaged creators (own a campaign with >=1 signup, created
  * at least FEEDBACK_ASK_DELAY_DAYS ago) who haven't been asked for feedback on
  * this brand yet, and send each a tokenized one-time feedback ask email.
- * Idempotent per UTC day via claimCronRun; once-per-user via the
+ * Idempotent per Arizona day via claimCronRun; once-per-user via the
  * (user_id, brand_id) unique constraint on feedback_requests.
  */
 export async function runFeedbackAskPass(
@@ -73,7 +74,7 @@ export async function runFeedbackAskPass(
     return { ran: false, sent: 0, paused: true };
   }
 
-  const claim = await claimCronRun(`feedback-ask:${brandId}`, dayBucketDate());
+  const claim = await claimCronRun(`feedback-ask:${brandId}`, phoenixDayStartUtc());
   if (!claim.claimed) return { ran: false, sent: 0 };
 
   const cutoff = new Date(
@@ -288,7 +289,7 @@ export type FeedbackDigestSummary = {
  * to bondesign@gmail.com when submitted. This function remains for backwards
  * compatibility but is not called from any active cron.
  *
- * Historical: Weekly pass (Mondays UTC): email the founder all new responses for this
+ * Historical: Weekly pass (Mondays, Phoenix time): email the founder all new responses for this
  * brand, then mark them triaged so next week's digest only shows new ones.
  * A failed send leaves rows as 'responded' and retries next Monday.
  */
@@ -296,11 +297,13 @@ export async function runFeedbackDigestPass(
   admin: Admin,
   brandId: string,
 ): Promise<FeedbackDigestSummary> {
-  if (new Date().getUTCDay() !== 1 && !process.env.FEEDBACK_DIGEST_FORCE) {
+  // WardSignup weeks are Monday to Sunday in Phoenix: run on Phoenix Monday,
+  // once per Phoenix day.
+  if (phoenixWeekday() !== 1 && !process.env.FEEDBACK_DIGEST_FORCE) {
     return { ran: false, responses: 0 };
   }
 
-  const claim = await claimCronRun(`feedback-digest:${brandId}`, dayBucketDate());
+  const claim = await claimCronRun(`feedback-digest:${brandId}`, phoenixDayStartUtc());
   if (!claim.claimed) return { ran: false, responses: 0 };
 
   const { data, error } = await admin

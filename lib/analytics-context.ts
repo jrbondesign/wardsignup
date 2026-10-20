@@ -3,7 +3,7 @@
  * must not fail or slow a signup beyond a couple of indexed lookups.
  */
 
-import { isTestOrgId, isTestOwnerEmail } from "@/lib/test-orgs";
+import { isRealOrgId, isTestOrgId, isTestOwnerEmail } from "@/lib/test-orgs";
 
 type QueryResult = PromiseLike<{ data: unknown; error: unknown }>;
 type MinimalAdmin = {
@@ -65,6 +65,9 @@ export async function analyticsContextForCampaign(
     const row = data as { organization_id?: unknown; user_email?: unknown; created_by?: unknown };
     const orgId = typeof row.organization_id === "string" && UUID_RE.test(row.organization_id) ? row.organization_id : null;
 
+    // Confirmed real wards are never test, even when a founder account
+    // created some of their events (Sweetwater Branch).
+    if (isRealOrgId(orgId)) return { orgId, isTestOrg: false };
     if (isTestOrgId(orgId)) return { orgId, isTestOrg: true };
     if (isTestOwnerEmail(typeof row.user_email === "string" ? row.user_email : null)) return { orgId, isTestOrg: true };
 

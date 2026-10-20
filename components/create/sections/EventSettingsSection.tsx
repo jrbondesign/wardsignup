@@ -38,6 +38,18 @@ export default function EventSettingsSection({ state, set }: Props) {
           <p className="text-[12px] text-[#5A8399] mb-2">
             Assign a leader and they&apos;ll get the daily digest of new signups for this event. This needs your daily digest turned on under Notifications.
           </p>
+          <p className="text-[12px] text-[#5A8399] mb-2" data-testid="leader-coadmin-helper">
+            The leader gets emails only. To let someone help manage this event,{" "}
+            <a
+              href="/settings/organization#co-admins"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-semibold text-[#0E96B0] underline underline-offset-2"
+            >
+              add them as a co-admin
+            </a>
+            .
+          </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <input
               type="text"

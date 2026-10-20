@@ -2,28 +2,59 @@ import {
   deferEnabled,
   deferSendWindowHours,
   inPostResetWindow,
+  isRealtimeKind,
+  realtimeRetrySendAfter,
   nextResetSendAfter,
 } from "@/lib/email-queue-time";
 
-describe("email queue timing", () => {
-  it("defaults to a 6 hour send window after 00:00 UTC", () => {
+it("near real time kinds", () => {
+  for (const k of ["welcome", "new_creator", "feedback_response"]) expect(isRealtimeKind(k)).toBe(true);
+  for (const k of ["digest", "feedback", "feedback_summary", "other", "", null, undefined]) expect(isRealtimeKind(k)).toBe(false);
+});
+
+describe("email queue timing (Arizona day)", () => {
+  it("defaults to a 6 hour send window after Arizona midnight", () => {
     expect(deferSendWindowHours({})).toBe(6);
     expect(deferSendWindowHours({ EMAIL_DEFER_SEND_WINDOW_HOURS: "2" })).toBe(2);
   });
-  it("knows when it is early in the UTC day", () => {
-    expect(inPostResetWindow(new Date("2026-10-12T00:05:00Z"), 6)).toBe(true);
-    expect(inPostResetWindow(new Date("2026-10-11T15:09:00Z"), 6)).toBe(false);
+  it("knows when it is early in the Arizona day", () => {
+    // 12:05 AM Arizona
+    expect(inPostResetWindow(new Date("2026-10-12T07:05:00Z"), 6)).toBe(true);
+    // 5:05 AM Arizona (digest time)
+    expect(inPostResetWindow(new Date("2026-10-12T12:05:00Z"), 6)).toBe(true);
+    // 6:00 AM Arizona, window closed
+    expect(inPostResetWindow(new Date("2026-10-12T13:00:00Z"), 6)).toBe(false);
+    // 5:05 PM Arizona, which used to be the reset, is no longer early
+    expect(inPostResetWindow(new Date("2026-10-13T00:05:00Z"), 6)).toBe(false);
+    // 11:59 PM Arizona
+    expect(inPostResetWindow(new Date("2026-10-13T06:59:00Z"), 6)).toBe(false);
   });
-  it("queues until 00:05 UTC the next day (5:05pm Phoenix)", () => {
+  it("queues until 12:05 AM Arizona the next Arizona day", () => {
+    // 8:09 AM Arizona Oct 11 -> 12:05 AM Arizona Oct 12
     expect(nextResetSendAfter(new Date("2026-10-11T15:09:00Z")).toISOString()).toBe(
-      "2026-10-12T00:05:00.000Z",
+      "2026-10-12T07:05:00.000Z",
     );
-    expect(nextResetSendAfter(new Date("2026-12-31T23:59:00Z")).toISOString()).toBe(
-      "2027-01-01T00:05:00.000Z",
+    // 6:30 PM Arizona Oct 11 (already Oct 12 in UTC) -> still Oct 12 Arizona midnight
+    expect(nextResetSendAfter(new Date("2026-10-12T01:30:00Z")).toISOString()).toBe(
+      "2026-10-12T07:05:00.000Z",
+    );
+    // 11:59 PM Arizona Dec 31 -> Jan 1
+    expect(nextResetSendAfter(new Date("2027-01-01T06:59:00Z")).toISOString()).toBe(
+      "2027-01-01T07:05:00.000Z",
+    );
+    // right at Arizona midnight -> the following night
+    expect(nextResetSendAfter(new Date("2026-10-12T07:00:00Z")).toISOString()).toBe(
+      "2026-10-13T07:05:00.000Z",
     );
   });
   it("can be turned off", () => {
     expect(deferEnabled({})).toBe(true);
     expect(deferEnabled({ EMAIL_DEFER_NON_URGENT: "off" })).toBe(false);
   });
+});
+
+it("near real time retry backoff: next run, then 115 minutes", () => {
+  const now = new Date("2026-10-12T16:07:00Z");
+  expect(realtimeRetrySendAfter(now, 1).toISOString()).toBe("2026-10-12T16:07:00.000Z");
+  expect(realtimeRetrySendAfter(now, 2).toISOString()).toBe("2026-10-12T18:02:00.000Z");
 });

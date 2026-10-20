@@ -2,7 +2,7 @@
  * @jest-environment node
  */
 
-import { isProtectedPath } from "@/lib/supabase/middleware";
+import { hasAuthCookie, isProtectedPath } from "@/lib/supabase/middleware";
 
 describe("isProtectedPath", () => {
   it("marks organizer routes as protected", () => {
@@ -23,5 +23,17 @@ describe("isProtectedPath", () => {
     expect(isProtectedPath("/event/abc")).toBe(false);
     expect(isProtectedPath("/privacy")).toBe(false);
     expect(isProtectedPath("/terms")).toBe(false);
+  });
+});
+
+describe("hasAuthCookie", () => {
+  it("finds the Supabase auth cookie, chunked or not", () => {
+    expect(hasAuthCookie([{ name: "sb-abc-auth-token" }])).toBe(true);
+    expect(hasAuthCookie([{ name: "sb-abc-auth-token.0" }])).toBe(true);
+  });
+
+  it("ignores other cookies", () => {
+    expect(hasAuthCookie([])).toBe(false);
+    expect(hasAuthCookie([{ name: "ph_phc_x_posthog" }])).toBe(false);
   });
 });

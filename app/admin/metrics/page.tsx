@@ -7,6 +7,9 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 import Navigation from "@/components/Navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import type { CoreWeekly } from "@/lib/core-metrics";
+import { formatMonthLabel, formatWeekRange } from "@/lib/metrics-weeks";
+import { CoreMetricsStrip, CoreTrendCharts } from "@/components/metrics/CoreMetricsStrip";
 
 type EmailCaptureWeekRow = { weekStart: string; total: number; withEmail: number; ratePct: number | null };
 
@@ -80,6 +83,8 @@ interface MetricsData {
     completedWeeks: EmailCaptureWeekRow[];
     rolling4Week?: { weeks: number; total: number; withEmail: number; ratePct: number | null };
   };
+  /** This week vs last week core strip and its weekly trend series (Phoenix weeks). */
+  core?: CoreWeekly;
   totalUsers: number;
   newUsersThisWeek: number;
   activeUsersThisWeek: number;
@@ -149,12 +154,9 @@ interface MetricsData {
   authUsersFetchComplete: boolean;
 }
 
+/** "Oct 12 to Oct 18" for a Phoenix Monday key. */
 function weekLabel(mondayStr: string) {
-  const [y, m, d] = mondayStr.split("-").map(Number);
-  const mon = new Date(y, m - 1, d);
-  const sun = new Date(y, m - 1, d + 6);
-  const opts: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
-  return `${mon.toLocaleDateString([], opts)} – ${sun.toLocaleDateString([], opts)}`;
+  return formatWeekRange(mondayStr);
 }
 
 function pct(n: number) {
@@ -193,7 +195,7 @@ export default function MetricsPage() {
 
       const json = await res.json();
       setData(json);
-      setRefreshed(new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }));
+      setRefreshed(new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", timeZone: "America/Phoenix" }));
       setLoading(false);
     };
     load();
@@ -223,7 +225,7 @@ export default function MetricsPage() {
               </Link>
               <h1 className="font-serif text-[32px] text-[#0D2B35]">Founder metrics</h1>
               <p className="text-[15px] text-[#5A8399] mt-1 max-w-2xl">
-                New creators per week (org owners who created their first event) for GTM tracking. Weeks are UTC Monday–Sunday.
+                New creators per week (org owners who created their first event) for GTM tracking. Weeks run Monday to Sunday in Phoenix time.
               </p>
             </div>
             {refreshed && (
@@ -241,6 +243,10 @@ export default function MetricsPage() {
             </div>
           ) : data && (
             <div className="space-y-6">
+
+              {/* Core strip: this week vs last week, then weekly trend charts */}
+              {data.core && <CoreMetricsStrip core={data.core} />}
+              {data.core && <CoreTrendCharts core={data.core} />}
 
               {/* Hero — new creators (calendar week) */}
               <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-2xl border border-[rgba(14,150,176,0.22)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6 sm:p-8">
@@ -282,7 +288,7 @@ export default function MetricsPage() {
                     </div>
                     <div className="text-[12px] text-[#5A8399] mt-2">
                       {data.northStar.wowLastCompletedWeekPct == null
-                        ? "WoW: — (no prior week to compare)"
+                        ? "WoW: no prior week to compare"
                         : `WoW vs prior week: ${data.northStar.wowLastCompletedWeekPct >= 0 ? "+" : ""}${data.northStar.wowLastCompletedWeekPct.toFixed(0)}%`}
                     </div>
                   </div>
@@ -392,13 +398,13 @@ export default function MetricsPage() {
                           return (
                             <tr key={row.month} className="border-b border-[rgba(14,150,176,0.06)] last:border-0">
                               <td className="py-3 pr-4 text-[13px] text-[#5A8399]">
-                                {new Date(row.month + "-01").toLocaleDateString([], { month: "short", year: "numeric" })}
+                                {formatMonthLabel(row.month)}
                               </td>
                               <td className="py-3 px-3 text-right text-[14px] font-semibold text-[#0E96B0] tabular-nums">
-                                {row.count > 0 ? row.count : <span className="text-[#C8DDE6] font-normal">—</span>}
+                                {row.count > 0 ? row.count : <span className="text-[#C8DDE6] font-normal">0</span>}
                               </td>
                               <td className="py-3 pl-3 text-[12px] text-[#5A8399]">
-                                {topSources || <span className="text-[#C8DDE6]">—</span>}
+                                {topSources || <span className="text-[#C8DDE6]">None</span>}
                               </td>
                             </tr>
                           );
@@ -409,7 +415,7 @@ export default function MetricsPage() {
                 </div>
 
                 <p className="mt-5 text-[11px] text-[#7A9BAE] leading-relaxed border-t border-[rgba(14,150,176,0.10)] pt-4">
-                  <strong>Exclusions:</strong> Test/team accounts (jonathan@wardsignup.com, jon@jrbond.com, bondesign@gmail.com, plus any in CREATOR_NOTIFY_SKIP_EMAILS) are excluded.
+                  <strong>Exclusions:</strong> A ward is a team or test ward when its current owner is a team account: anyone at jrbond.com, wardsignup.com or mail.grokbot.com, bondesign@gmail.com and its plus addresses, jrbond@me.com, plus any in CREATOR_NOTIFY_SKIP_EMAILS.
                   <strong className="ml-3">Stakes:</strong> Stake data is not tracked in the database, so stakes per month cannot be reported.
                 </p>
               </div>
@@ -430,7 +436,7 @@ export default function MetricsPage() {
                     </p>
                     <div className="grid sm:grid-cols-3 gap-6 mb-6">
                       <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
-                        <div className="text-[13px] text-[#5A8399] mb-2 font-medium">This week so far</div>
+                        <div className="text-[13px] text-[#5A8399] mb-2 font-medium">This week so far ({weekLabel(ec.thisWeek.weekStart)})</div>
                         <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
                           {formatCaptureRate(ec.thisWeek)}
                         </div>
@@ -440,7 +446,7 @@ export default function MetricsPage() {
                       </div>
                       {lastDone && (
                         <div className="bg-gradient-to-br from-[#E6F7FB] to-white rounded-xl border border-[rgba(14,150,176,0.22)] p-6">
-                          <div className="text-[13px] text-[#5A8399] mb-2 font-medium">Last completed week</div>
+                          <div className="text-[13px] text-[#5A8399] mb-2 font-medium">Last completed week ({weekLabel(lastDone.weekStart)})</div>
                           <div className="text-[56px] font-semibold text-[#0E96B0] leading-none tabular-nums">
                             {formatCaptureRate(lastDone)}
                           </div>
@@ -467,7 +473,7 @@ export default function MetricsPage() {
                         <table className="w-full">
                           <thead>
                             <tr className="text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] border-b border-[rgba(14,150,176,0.10)]">
-                              <th className="text-left pb-3 pr-4 font-semibold">Week of</th>
+                              <th className="text-left pb-3 pr-4 font-semibold">Week (Mon to Sun)</th>
                               <th className="text-right pb-3 px-3 font-semibold">Signups</th>
                               <th className="text-right pb-3 px-3 font-semibold">With email</th>
                               <th className="text-right pb-3 pl-3 font-semibold">Rate</th>
@@ -477,7 +483,7 @@ export default function MetricsPage() {
                             {[...ec.completedWeeks].reverse().map((w) => (
                               <tr key={w.weekStart} className="border-b border-[rgba(14,150,176,0.06)] last:border-0">
                                 <td className="py-3 pr-4 text-[13px] text-[#5A8399]">
-                                  {new Date(`${w.weekStart}T12:00:00Z`).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "UTC" })}
+                                  {weekLabel(w.weekStart)}
                                 </td>
                                 <td className="py-3 px-3 text-right text-[13px] text-[#0D2B35] tabular-nums">{w.total}</td>
                                 <td className="py-3 px-3 text-right text-[13px] text-[#0D2B35] tabular-nums">{w.withEmail}</td>
@@ -502,7 +508,7 @@ export default function MetricsPage() {
                     {data.northStar.weeklyMemberSignups.toLocaleString()}
                   </div>
                   <p className="text-[12px] text-[#5A8399] mt-2 leading-snug">
-                    Public signups claiming slots—lags creator growth; shows link distribution.
+                    Signup submissions on sheets. Lags creator growth and shows link distribution.
                   </p>
                 </div>
                 <div className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-5">
@@ -513,7 +519,7 @@ export default function MetricsPage() {
                     {(data.growth[data.growth.length - 1]?.newEvents ?? 0).toLocaleString()}
                   </div>
                   <p className="text-[12px] text-[#5A8399] mt-2 leading-snug">
-                    Campaigns created in the current UTC week.
+                    Sheets created in the current week (Phoenix time).
                   </p>
                 </div>
                 <div className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-5">
@@ -525,7 +531,7 @@ export default function MetricsPage() {
                     {data.newAccountsByProviderThisWeek.email.toLocaleString()}
                   </div>
                   <p className="text-[12px] text-[#5A8399] mt-2 leading-snug">
-                    Same window as rolling new-account count—useful for comparing to calendar week.
+                    Same window as the rolling new account count, useful for comparing to the calendar week.
                   </p>
                 </div>
               </div>
@@ -590,13 +596,13 @@ export default function MetricsPage() {
                         <tr key={row.week} className="border-b border-[rgba(14,150,176,0.06)] last:border-0">
                           <td className="py-3 pr-4 text-[13px] text-[#5A8399]">{weekLabel(row.week)}</td>
                           <td className="py-3 px-3 text-right text-[14px] font-semibold text-[#0E96B0] tabular-nums">
-                            {row.newCreatorAccounts > 0 ? row.newCreatorAccounts : <span className="text-[#C8DDE6] font-normal">—</span>}
+                            {row.newCreatorAccounts > 0 ? row.newCreatorAccounts : <span className="text-[#C8DDE6] font-normal">0</span>}
                           </td>
                           <td className="py-3 px-3 text-right text-[14px] font-semibold text-[#0D2B35] tabular-nums">
-                            {row.newSignups > 0 ? row.newSignups : <span className="text-[#C8DDE6] font-normal">—</span>}
+                            {row.newSignups > 0 ? row.newSignups : <span className="text-[#C8DDE6] font-normal">0</span>}
                           </td>
                           <td className="py-3 pl-3 text-right text-[14px] font-semibold text-[#0D2B35] tabular-nums">
-                            {row.newEvents > 0 ? row.newEvents : <span className="text-[#C8DDE6] font-normal">—</span>}
+                            {row.newEvents > 0 ? row.newEvents : <span className="text-[#C8DDE6] font-normal">0</span>}
                           </td>
                         </tr>
                       ))}
@@ -637,7 +643,7 @@ export default function MetricsPage() {
                   What organizers have done in the app, among{" "}
                   {data.authUsersListed.toLocaleString()} creators (org owners)
                   {data.authUsersFetchComplete === false ? " (partial fetch)" : ""}.
-                  &quot;Invites sent&quot; counts only <strong className="text-[#2E5566] font-semibold">in-app email invites</strong> stored in the database—not copy-link, SMS, or WhatsApp shares.
+                  &quot;Invites sent&quot; counts only <strong className="text-[#2E5566] font-semibold">in-app email invites</strong> stored in the database, not copy link, SMS, or WhatsApp shares.
                 </p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-[13px]">
@@ -765,9 +771,9 @@ export default function MetricsPage() {
                   {[
                     { label: "Total", value: data.totalUsers },
                     { label: "New (rolling 7d)", value: data.newUsersThisWeek },
-                    { label: "Active (1d)", value: data.activeUsersLast1Day },
-                    { label: "Active (7d)", value: data.activeUsersLast7Days },
-                    { label: "Active (30d)", value: data.activeUsersLast30Days },
+                    { label: "Signed in (1d)", value: data.activeUsersLast1Day },
+                    { label: "Signed in (7d)", value: data.activeUsersLast7Days },
+                    { label: "Signed in (30d)", value: data.activeUsersLast30Days },
                   ].map((item) => (
                     <div key={item.label} className="flex-1 min-w-[90px] bg-[#F4FAFB] rounded-xl px-4 py-4 text-center">
                       <div className="text-[36px] font-semibold text-[#0D2B35] leading-none">{item.value}</div>
@@ -802,13 +808,13 @@ export default function MetricsPage() {
               {/* Last login recency + stale accounts */}
               <div className="grid sm:grid-cols-2 gap-6">
                 <div className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6">
-                  <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-5">Last login — recency</div>
+                  <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-5">Last login recency</div>
                   <table className="w-full text-[13px]">
                     <tbody className="divide-y divide-[rgba(14,150,176,0.08)]">
                       {[
                         ["Last 24 hours", data.loginRecencyBuckets.within1Day],
-                        ["2–7 days ago", data.loginRecencyBuckets.day2to7],
-                        ["8–30 days ago", data.loginRecencyBuckets.day8to30],
+                        ["2 to 7 days ago", data.loginRecencyBuckets.day2to7],
+                        ["8 to 30 days ago", data.loginRecencyBuckets.day8to30],
                         ["Older than 30 days", data.loginRecencyBuckets.olderThan30d],
                         ["Never logged in", data.loginRecencyBuckets.neverLoggedIn],
                       ].map(([label, n]) => (
@@ -891,7 +897,7 @@ export default function MetricsPage() {
                           <td className="py-2.5 text-[13px] font-medium text-[#0D2B35] max-w-0 w-full truncate overflow-hidden">{s.member_name}</td>
                           <td className="py-2.5 pl-3 text-[13px] text-[#5A8399] max-w-0 w-full truncate overflow-hidden">{s.event_name}</td>
                           <td className="py-2.5 pl-3 text-right text-[12px] text-[#5A8399] whitespace-nowrap">
-                            {new Date(s.signed_up_at).toLocaleDateString([], { month: "short", day: "numeric" })}
+                            {new Date(s.signed_up_at).toLocaleDateString([], { month: "short", day: "numeric", timeZone: "America/Phoenix" })}
                           </td>
                         </tr>
                       ))}

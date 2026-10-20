@@ -1,8 +1,9 @@
-import { TEST_OWNER_EMAILS, TEST_ORG_IDS, isTestOrgId, isTestOwnerEmail } from "@/lib/test-orgs";
+import { REAL_ORG_IDS, TEST_OWNER_EMAILS, TEST_ORG_IDS, isRealOrgId, isTestOrgId, isTestOwnerEmail } from "@/lib/test-orgs";
 import { analyticsContextForCampaign } from "@/lib/analytics-context";
 
 const ORG = "11111111-2222-4333-8444-555555555555";
 const CAMPAIGN = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+const SWEETWATER = "d3832817-8aa6-4ba1-96ab-9b0e23d5af4c";
 const CREATOR = "c0000000-0000-4000-8000-000000000001";
 const OWNER = "c0000000-0000-4000-8000-000000000002";
 
@@ -63,7 +64,19 @@ describe("test-orgs list", () => {
     expect(isTestOwnerEmail(null)).toBe(false);
   });
 
-  it("has no org ids listed yet (Sweetwater not confirmed)", () => {
+  it("lists the three Sweetwater Branch orgs as real wards", () => {
+    expect([...REAL_ORG_IDS].sort()).toEqual([
+      "37e69b6d-ae9e-4e1e-8587-47173392d408",
+      "ab5867a1-c1a3-452e-a265-8419ed34bdb4",
+      "d3832817-8aa6-4ba1-96ab-9b0e23d5af4c",
+    ]);
+    expect(isRealOrgId(SWEETWATER.toUpperCase())).toBe(true);
+    expect(isRealOrgId(ORG)).toBe(false);
+    expect(isRealOrgId(null)).toBe(false);
+    expect(isTestOrgId(SWEETWATER)).toBe(false);
+  });
+
+  it("has no test org ids listed yet", () => {
     expect(TEST_ORG_IDS.size).toBe(0);
     expect(isTestOrgId(ORG)).toBe(false);
     expect(isTestOrgId("d3832817-8aa6-4ba1-96ab-9b0e23d5af4c")).toBe(false);
@@ -107,6 +120,17 @@ describe("analyticsContextForCampaign", () => {
       emails: { [CREATOR]: "clerk@example.org", [OWNER]: "clerk@example.org" },
     });
     await expect(analyticsContextForCampaign(admin, CAMPAIGN)).resolves.toMatchObject({ isTestOrg: false });
+  });
+
+  it("is false for a Sweetwater Branch ward even when a founder email created the event", async () => {
+    const { admin, calls } = fakeAdmin({
+      campaign: campaignRow({ organization_id: SWEETWATER, user_email: "bondesign@gmail.com" }),
+      org: orgRow(),
+      emails: { [CREATOR]: "jon@jrbond.com", [OWNER]: "jonathan@wardsignup.com" },
+    });
+    await expect(analyticsContextForCampaign(admin, CAMPAIGN)).resolves.toEqual({ orgId: SWEETWATER, isTestOrg: false });
+    // Decided from the org id alone: no owner or user lookups.
+    expect(calls).toEqual(["campaigns"]);
   });
 
   it("is null when the campaign lookup fails or finds nothing", async () => {

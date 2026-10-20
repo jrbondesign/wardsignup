@@ -220,11 +220,12 @@ export async function POST(request: NextRequest) {
     });
 
     // Send welcome email (must succeed before we mark welcome_sent)
-    // Non urgent: queued until just after the UTC quota reset when sent late in the UTC day.
+    // Near real time: sends now (Resend, or Brevo when Resend is out of budget).
+    // Only if neither can take it is it queued for the hourly drain.
     const welcomeSend = await sendGuardedEmail({
       brand,
       category: "transactional",
-      deferrable: true,
+      realtime: true,
       kind: "welcome",
       from: welcomeEmailFrom(brand),
       replyTo: welcomeReplyTo,

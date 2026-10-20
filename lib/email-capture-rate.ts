@@ -4,8 +4,9 @@
  * Monday to Sunday weeks in America/Phoenix (UTC-7, no DST).
  */
 
-const PHOENIX_OFFSET_MS = -7 * 60 * 60 * 1000;
-const MS_DAY = 24 * 60 * 60 * 1000;
+import { MS_DAY, phoenixWeekKey, phoenixWeekStartUtc } from "@/lib/phoenix-time";
+
+export { phoenixWeekStartUtc };
 
 export type CaptureSignupRow = { signed_up_at: string; member_email: string | null; campaign_id?: string | null };
 
@@ -67,18 +68,9 @@ export function testCampaignIds(opts: {
   return out;
 }
 
-/** UTC instant of Phoenix midnight on the Monday of the week containing `at`. */
-export function phoenixWeekStartUtc(at: Date): Date {
-  const local = new Date(at.getTime() + PHOENIX_OFFSET_MS);
-  const day = local.getUTCDay();
-  const sinceMonday = day === 0 ? 6 : day - 1;
-  local.setUTCDate(local.getUTCDate() - sinceMonday);
-  local.setUTCHours(0, 0, 0, 0);
-  return new Date(local.getTime() - PHOENIX_OFFSET_MS);
-}
-
+/** Phoenix Monday key for a week start instant (shared helper in lib/phoenix-time). */
 function weekKey(startUtc: Date): string {
-  return new Date(startUtc.getTime() + PHOENIX_OFFSET_MS).toISOString().slice(0, 10);
+  return phoenixWeekKey(startUtc);
 }
 
 export function hasEmail(email: string | null | undefined): boolean {
