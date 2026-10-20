@@ -144,7 +144,7 @@ describe("metrics page keeps existing sections", () => {
   it("still has the email capture card, map, funnel, activation, accounts, creators and weekly history", () => {
     for (const s of [
       'data-testid="email-capture-card"',
-      "<GeographyMap />",
+      "<PublicGeographyMap />",
       "Weekly history since launch",
       ">Funnel<",
       ">Activation<",

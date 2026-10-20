@@ -1,4 +1,5 @@
 import { createServiceRoleClient } from "@/lib/supabase-admin";
+import { isRealOrgId, TEST_ORG_IDS, TEST_OWNER_EMAILS } from "@/lib/test-orgs";
 import {
   GEOGRAPHY_HOGQL,
   GEOGRAPHY_SNAPSHOT,
@@ -31,9 +32,54 @@ function hasServiceRole(): boolean {
   );
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Event ids that belong to test wards (same definition as lib/test-orgs:
+ * founder/team accounts or a listed test org id). Their activity is left out
+ * of the map so the public count only reflects real wards.
+ */
+export async function getTestCampaignIds(): Promise<string[]> {
+  if (!hasServiceRole()) return [];
+  try {
+    const admin = createServiceRoleClient();
+    const emails = [...TEST_OWNER_EMAILS];
+    const orgIds = [...TEST_ORG_IDS];
+    const filters = [`user_email.in.(${emails.join(",")})`];
+    if (orgIds.length) filters.push(`organization_id.in.(${orgIds.join(",")})`);
+    const { data, error } = await admin
+      .from("campaigns" as never)
+      .select("id, organization_id")
+      .or(filters.join(","));
+    if (error) {
+      console.warn("geography test campaigns:", error.message);
+      return [];
+    }
+    return ((data ?? []) as { id: string; organization_id: string | null }[])
+      .filter((r) => !isRealOrgId(r.organization_id))
+      .map((r) => String(r.id))
+      .filter((id) => UUID_RE.test(id));
+  } catch (err) {
+    console.warn("geography test campaigns failed:", err);
+    return [];
+  }
+}
+
+export function buildGeographyQuery(excludeCampaignIds: string[]): string {
+  const ids = excludeCampaignIds.filter((id) => UUID_RE.test(id));
+  if (ids.length === 0) return GEOGRAPHY_HOGQL;
+  const list = ids.map((id) => `'${id}'`).join(", ");
+  return GEOGRAPHY_HOGQL.replace(
+    "AND properties.$geoip_city_name IS NOT NULL",
+    `AND coalesce(toString(properties.campaign_id), toString(properties.event_id), '') NOT IN (${list})
+    AND properties.$geoip_city_name IS NOT NULL`,
+  );
+}
+
 export async function fetchLiveGeographyFromPostHog(): Promise<GeographyCity[] | null> {
   const apiKey = process.env.POSTHOG_PERSONAL_API_KEY?.trim();
   if (!apiKey) return null;
+  const query = buildGeographyQuery(await getTestCampaignIds());
 
   const response = await fetch(
     `${POSTHOG_HOST}/api/projects/${POSTHOG_PROJECT_ID}/query/`,
@@ -46,7 +92,7 @@ export async function fetchLiveGeographyFromPostHog(): Promise<GeographyCity[] |
       body: JSON.stringify({
         query: {
           kind: "HogQLQuery",
-          query: GEOGRAPHY_HOGQL,
+          query,
         },
       }),
       // Daily cadence — avoid hammering PostHog from concurrent page loads.
