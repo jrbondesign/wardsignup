@@ -35,9 +35,9 @@ function hasServiceRole(): boolean {
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Event ids that belong to test units (same definition as lib/test-orgs:
+ * Event ids that belong to test wards (same definition as lib/test-orgs:
  * founder/team accounts or a listed test org id). Their activity is left out
- * of the map so the public count only reflects real units.
+ * of the map so the public count only reflects real wards.
  */
 export async function getTestCampaignIds(): Promise<string[]> {
   if (!hasServiceRole()) return [];
