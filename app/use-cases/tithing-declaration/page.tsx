@@ -234,6 +234,21 @@ export default async function TithingDeclarationPage() {
           <p className="text-[17px] text-[#2E5566] leading-[1.75]">
             A daily summary of new signups goes to the contact set on the event. If each leader wants his own summary, make a separate sheet with him as the contact.
           </p>
+          <div className="mt-12 pt-8 border-t border-[#0E96B0]/10 text-left">
+            <h3 className="font-serif text-[20px] text-[#0D2B35] mb-3">
+              Print a flyer or a paper backup
+            </h3>
+            <p className="text-[16px] text-[#2E5566] leading-[1.7] mb-3">
+              Open your event from your dashboard and choose <strong>Print flyer</strong> to print a flyer with your sign up QR code and times already on it. Post it in the foyer or the bulletin so members can book from their phone.
+            </p>
+            <p className="text-[16px] text-[#2E5566] leading-[1.7]">
+              For members who still want paper,{" "}
+              <a href="/tithing-declaration-sign-up-sheet.pdf" className="text-[#0E96B0] hover:text-[#08647E] underline">
+                download a free printable tithing declaration sign up sheet (PDF)
+              </a>
+              .
+            </p>
+          </div>
         </div>
       </section>
 
@@ -426,22 +441,6 @@ export default async function TithingDeclarationPage() {
             </svg>
             Get Started
           </Link>
-
-          <div className="mt-12 pt-8 border-t border-[#0E96B0]/10 text-left">
-            <h3 className="font-serif text-[20px] text-[#0D2B35] mb-3">
-              Print a flyer or a paper backup
-            </h3>
-            <p className="text-[16px] text-[#2E5566] leading-[1.7] mb-3">
-              Open your event from your dashboard and choose Print flyer to print a flyer with your sign up QR code and times already on it. Post it in the foyer or the bulletin so members can book from their phone.
-            </p>
-            <p className="text-[16px] text-[#2E5566] leading-[1.7]">
-              For members who still want paper,{" "}
-              <a href="/tithing-declaration-sign-up-sheet.pdf" className="text-[#0E96B0] hover:text-[#08647E] underline">
-                download a free printable tithing declaration sign up sheet (PDF)
-              </a>
-              .
-            </p>
-          </div>
         </div>
       </section>
 
