@@ -1,12 +1,12 @@
 "use client";
 
-import { useEventPageState, type EventPageState } from "./useEventPageState";
+import { useEventPageState, type EventPageInit, type EventPageState } from "./useEventPageState";
 import { useEventPageData, type EventPageData } from "./useEventPageData";
 
 /** Everything the public event page and its sections read. */
-export function useEventPage(params: Promise<{ id: string }>) {
-  const h0 = useEventPageState(params);
-  const h1 = useEventPageData(h0);
+export function useEventPage(eventId: string, init: EventPageInit = {}) {
+  const h0 = useEventPageState(eventId, init);
+  const h1 = useEventPageData(h0, init);
   return { ...h0, ...h1 } as EventPageState & EventPageData;
 }
 
