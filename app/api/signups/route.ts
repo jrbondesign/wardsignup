@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
-import { createSignupIfCapacityRpc } from "@/lib/supabase";
+import { createSignupIfCapacityRpc, mapSignupRpcError } from "@/lib/supabase";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { getClientIp } from "@/lib/request-ip";
 import { sendParticipantSignupConfirmation } from "@/lib/participant-email";
@@ -110,30 +110,9 @@ export async function POST(request: Request) {
     });
 
     if (error) {
-      const msg =
-        typeof error === "object" && error !== null && "message" in error
-          ? String((error as { message?: string }).message ?? "")
-          : "";
-      if (msg.includes("SESSION_FULL")) {
-        return NextResponse.json(
-          { error: "This slot is already full" },
-          { status: 400 }
-        );
-      }
-      if (msg.includes("SESSION_NOT_FOUND")) {
-        return NextResponse.json({ error: "Slot not found" }, { status: 404 });
-      }
-      if (msg.includes("CAMPAIGN_MISMATCH")) {
-        return NextResponse.json(
-          { error: "Session does not belong to this event" },
-          { status: 400 }
-        );
-      }
-      console.error("Supabase signup RPC error:", error);
-      return NextResponse.json(
-        { error: "Failed to create signup" },
-        { status: 500 }
-      );
+      const mapped = mapSignupRpcError(error);
+      if (!mapped.known) console.error("Supabase signup RPC error:", error);
+      return NextResponse.json({ error: mapped.message }, { status: mapped.status });
     }
 
     if (!data) {
@@ -143,29 +122,26 @@ export async function POST(request: Request) {
       );
     }
 
-    // Persist the optional note (non-critical; don't fail the signup if this errors)
+    // Optional note + first-touch attribution in one non-critical update:
+    // log failures but never fail the signup over them.
+    const signupId = (data as Record<string, unknown>).id as string | undefined;
     const signupNote = typeof rawNote === "string" ? rawNote.trim() : "";
-    if (signupNote && admin) {
-      const signupId = (data as Record<string, unknown>).id as string | undefined;
-      if (signupId) {
-        await admin.from("signups").update({ signup_note: signupNote } as never).eq("id", signupId);
-      }
-    }
+    if (admin && signupId) {
+      const extraFields: Record<string, string> = {};
+      if (signupNote) extraFields.signup_note = signupNote;
+      if (first_touch_utm_source) extraFields.first_touch_utm_source = first_touch_utm_source;
+      if (first_touch_utm_medium) extraFields.first_touch_utm_medium = first_touch_utm_medium;
+      if (first_touch_utm_campaign) extraFields.first_touch_utm_campaign = first_touch_utm_campaign;
+      if (first_touch_ref) extraFields.first_touch_ref = first_touch_ref;
 
-    // Update signup with attribution data if provided (non-critical)
-    if (admin && (first_touch_utm_source || first_touch_utm_medium || first_touch_utm_campaign || first_touch_ref)) {
-      const signupId = (data as Record<string, unknown>).id as string | undefined;
-      if (signupId) {
-        const attributionUpdate: Record<string, string> = {};
-        if (first_touch_utm_source) attributionUpdate.first_touch_utm_source = first_touch_utm_source;
-        if (first_touch_utm_medium) attributionUpdate.first_touch_utm_medium = first_touch_utm_medium;
-        if (first_touch_utm_campaign) attributionUpdate.first_touch_utm_campaign = first_touch_utm_campaign;
-        if (first_touch_ref) attributionUpdate.first_touch_ref = first_touch_ref;
-        
-        await admin
+      if (Object.keys(extraFields).length > 0) {
+        const { error: extraError } = await admin
           .from("signups")
-          .update(attributionUpdate as never)
+          .update(extraFields as never)
           .eq("id", signupId);
+        if (extraError) {
+          console.error("Signup note/attribution update failed:", extraError);
+        }
       }
     }
 
@@ -258,6 +234,8 @@ export async function POST(request: Request) {
         has_phone: Boolean(member_phone),
       },
     });
+    // Keep the function alive until the event is delivered.
+    after(() => posthog.flush());
 
     const cancelToken = (data as Record<string, unknown>).cancel_token as string | null | undefined;
     return NextResponse.json({ signup: data, cancel_token: cancelToken ?? null });

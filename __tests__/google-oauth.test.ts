@@ -8,6 +8,8 @@ import {
   encryptToken,
   decryptToken,
   buildAuthUrl,
+  sanitizeReturnPath,
+  DEFAULT_RETURN_PATH,
   type OAuthState,
 } from "@/lib/google-oauth";
 import { randomBytes } from "crypto";
@@ -226,5 +228,26 @@ describe("buildAuthUrl", () => {
     expect(() => buildAuthUrl(state)).toThrow("GOOGLE_OAUTH_CLIENT_ID not set");
 
     process.env.GOOGLE_OAUTH_CLIENT_ID = saved;
+  });
+});
+
+describe("sanitizeReturnPath", () => {
+  it("keeps same-origin relative paths", () => {
+    expect(sanitizeReturnPath("/settings/organization?tab=gcal#x")).toBe(
+      "/settings/organization?tab=gcal#x",
+    );
+  });
+
+  it.each([
+    null,
+    "",
+    "//evil.com",
+    "/\\evil.com",
+    "https://evil.com/path",
+    "javascript:alert(1)",
+    "relative/path",
+    "/\t/evil.com",
+  ])("falls back to the default for %p", (input) => {
+    expect(sanitizeReturnPath(input as string | null)).toBe(DEFAULT_RETURN_PATH);
   });
 });

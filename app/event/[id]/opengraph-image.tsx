@@ -69,6 +69,7 @@ export default async function EventOGImage({ params }: { params: Promise<{ id: s
         {/* Cover image background */}
         {coverBase64 && (
           <img
+            alt=""
             src={coverBase64}
             style={{
               position: "absolute",
@@ -97,6 +98,7 @@ export default async function EventOGImage({ params }: { params: Promise<{ id: s
 
         {/* Logo */}
         <img
+          alt=""
           src={logoBase64}
           width={90}
           height={90}

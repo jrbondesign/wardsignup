@@ -70,7 +70,7 @@ export async function notifyFounderIfFirstEvent(opts: {
     const sent = await sendGuardedEmail({
       brand,
       category: "transactional",
-      deferrable: true,
+      realtime: true,
       kind: "new_creator",
       from: creatorNotifyEmailFrom(brand),
       to: FOUNDER_NOTIFY_TO,

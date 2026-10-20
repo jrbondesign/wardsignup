@@ -60,9 +60,17 @@ export default function OrgMembersSection({ organizationId, isOwner }: Props) {
   };
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- loads members from the API; load() is shared with the invite/transfer handlers
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [organizationId]);
+
+  // The settings page renders this section only after it finishes loading, so the
+  // browser's own #co-admins jump has already missed. Scroll here once on mount.
+  useEffect(() => {
+    if (typeof window === "undefined" || window.location.hash !== "#co-admins") return;
+    document.getElementById("co-admins")?.scrollIntoView?.({ block: "start" });
+  }, []);
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -201,7 +209,7 @@ export default function OrgMembersSection({ organizationId, isOwner }: Props) {
   );
 
   return (
-    <section className="mt-8 bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">
+    <section id="co-admins" className="scroll-mt-20 mt-8 bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">
       <h2 className="font-serif text-[20px] text-[#0D2B35] mb-1">Co-admins</h2>
       <p className="text-[13px] text-[#5A8399] mb-5">
         Co-admins can edit and delete events, manage signups, and view analytics. Only the owner can invite or remove co-admins.

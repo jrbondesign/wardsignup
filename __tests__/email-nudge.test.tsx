@@ -146,36 +146,51 @@ describe("EmailNudgePrompt", () => {
 });
 
 describe("public event page wiring", () => {
-  const src = readFileSync(join(process.cwd(), "app/event/[id]/page.tsx"), "utf8");
+  // The public page is split into hooks and sections (EventPageClient):
+  // the flag read lives in useSignupFunnel, the submit check and the nudge
+  // handlers in deriveEventPageView, and the two slot forms are
+  // SingleSessionSignup (inline) and SignupFormModal.
+  const read = (f: string) => readFileSync(join(process.cwd(), f), "utf8");
+  const funnelSrc = read("components/event/hooks/useSignupFunnel.ts");
+  const viewSrc = read("components/event/hooks/deriveEventPageView.tsx");
+  const formSrcs = [
+    read("components/event/sections/SingleSessionSignup.tsx"),
+    read("components/event/sections/SignupFormModal.tsx"),
+  ];
+  const allSrc = [funnelSrc, viewSrc, read("components/event/hooks/useEmailNudge.ts"), ...formSrcs].join("\n");
 
   it("reads the flag only on signup_form_started, on spots / rsvp sheets", () => {
-    expect(src).toContain("const started = funnel.formStarted(funnelCtx, form, trigger);");
-    expect(src).toContain('if (started && form === "slots" && isEmailNudgeEligibleSheet(eventType)) {');
-    expect(src.match(/readEmailNudgeVariant\(/g)).toHaveLength(1);
+    expect(funnelSrc).toContain("const started = funnel.formStarted(funnelCtx, form, trigger);");
+    expect(funnelSrc).toContain('if (started && form === "slots" && isEmailNudgeEligibleSheet(eventType)) {');
+    expect(allSrc.match(/readEmailNudgeVariant\(/g)).toHaveLength(1);
   });
 
   it("checks the nudge on submit, before the signup request, and Skip submits right away", () => {
-    const nudgeIdx = src.indexOf("shouldShowEmailNudge({");
-    const fetchIdx = src.indexOf('fetch("/api/signups/bulk"');
+    const nudgeIdx = viewSrc.indexOf("shouldShowEmailNudge({");
+    const fetchIdx = viewSrc.indexOf('fetch("/api/signups/bulk"');
     expect(nudgeIdx).toBeGreaterThan(-1);
     expect(nudgeIdx).toBeLessThan(fetchIdx);
-    expect(src).toContain("void handleSignup(undefined, { skipNudge: true });");
-    expect(src).toContain("rememberEmailNudgeSkip();");
+    expect(viewSrc).toContain("void handleSignup(undefined, { skipNudge: true });");
+    expect(viewSrc).toContain("rememberEmailNudgeSkip();");
   });
 
   it("Add email focuses the email field in either form", () => {
-    expect(src).toContain("emailInputRef.current?.focus();");
-    expect(src.match(/ref=\{emailInputRef\}/g)).toHaveLength(2);
-    expect(src.match(/\{nudgeOpen && <EmailNudgePrompt /g)).toHaveLength(2);
+    expect(viewSrc).toContain("emailInputRef.current?.focus();");
+    for (const src of formSrcs) {
+      expect(src.match(/ref=\{emailInputRef\}/g)).toHaveLength(1);
+      expect(src.match(/\{nudgeOpen && <EmailNudgePrompt /g)).toHaveLength(1);
+    }
   });
 
   it("nudge events carry org_id, campaign_id and the variant, never the email", () => {
-    expect(src).toContain('buildFunnelProps(funnelCtx, { variant: nudgeVariant() ?? "control", form: "slots" })');
-    const block = src.slice(src.indexOf("const captureNudge"), src.indexOf("const trackFormStarted"));
+    expect(funnelSrc).toContain('buildFunnelProps(funnelCtx, { variant: nudgeVariant() ?? "control", form: "slots" })');
+    const block = funnelSrc.slice(funnelSrc.indexOf("const captureNudge"), funnelSrc.indexOf("const trackFormStarted"));
     expect(block).not.toMatch(/formData|email:/);
   });
 
   it("keeps the #89 hint unchanged in both forms (control)", () => {
-    expect(src.match(/\{signerEmailHint\(sessions, signupSessionIds\)\}/g)).toHaveLength(2);
+    for (const src of formSrcs) {
+      expect(src.match(/\{signerEmailHint\(sessions, signupSessionIds\)\}/g)).toHaveLength(1);
+    }
   });
 });

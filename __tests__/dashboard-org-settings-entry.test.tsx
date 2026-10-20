@@ -8,8 +8,13 @@ import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
 import "@testing-library/jest-dom";
 
 const capture = jest.fn();
+// Stable client, like the real hook (it returns the provider's single client).
+// The dashboard's load effect depends on it: a new object per render re-ran the
+// effect on every render, an endless fetch and setEvents loop that made this
+// file hang or pass depending on scheduling.
+const mockPosthog = { capture: (...a: unknown[]) => capture(...a), identify: jest.fn() };
 jest.mock("posthog-js/react", () => ({
-  usePostHog: () => ({ capture, identify: jest.fn() }),
+  usePostHog: () => mockPosthog,
 }));
 
 // Stable router: the dashboard's load effect depends on it, like the real hook.
@@ -26,7 +31,11 @@ jest.mock("next/image", () => ({
 
 // Chainable stand in for the dashboard's campaigns query.
 let campaignsResult: { data: unknown[]; error: null } = { data: [], error: null };
+let campaignsQueries = 0;
+// get_dashboard_events RPC result; default "missing" so the old path runs.
+let rpcResult: { data: unknown; error: unknown } = { data: null, error: { code: "PGRST202" } };
 function campaignsChain() {
+  campaignsQueries += 1;
   const chain: Record<string, unknown> = {};
   for (const m of ["select", "eq", "order"]) chain[m] = () => chain;
   chain.then = (resolve: (v: unknown) => unknown) => Promise.resolve(campaignsResult).then(resolve);
@@ -41,6 +50,7 @@ jest.mock("@/lib/auth", () => ({
       signOut: async () => ({}),
     },
     from: () => campaignsChain(),
+    rpc: async () => rpcResult,
   }),
 }));
 
@@ -78,6 +88,8 @@ const flush = () => act(async () => { await Promise.resolve(); });
 beforeEach(() => {
   capture.mockClear();
   campaignsResult = { data: [], error: null };
+  campaignsQueries = 0;
+  rpcResult = { data: null, error: { code: "PGRST202" } };
 });
 
 describe("OrgSettingsEntry", () => {
@@ -215,5 +227,37 @@ describe("Dashboard header", () => {
     expect(newEvent).toHaveAttribute("href", "/create");
     expect(newEvent).toHaveClass("bg-gradient-to-br", "from-[#22C8D8]", "via-[#0E96B0]", "to-[#08647E]", "text-white");
     await flush();
+    // The load effect runs once; a re-render must not refetch (that loop is what hung this test).
+    expect(campaignsQueries).toBe(1);
+  });
+  it("uses the one call dashboard RPC when it exists (no table reads) and shows its counts", async () => {
+    mockOrgList(1);
+    rpcResult = {
+      data: {
+        org: { id: "org1", name: "Ward From RPC", needs_naming: false, brand_id: "wardsignup" },
+        events: [
+          {
+            id: "e9",
+            name: "Temple Night",
+            created_at: "2026-10-01T00:00:00Z",
+            event_type: "spots",
+            event_date: null,
+            event_dates: null,
+            session_dates: ["2026-11-01"],
+            total_capacity: 10,
+            total_signups: 4,
+            item_count: 0,
+            item_signups: 0,
+            unclaimed_items: 0,
+          },
+        ],
+      },
+      error: null,
+    };
+    renderDashboard();
+    expect(await screen.findByText("Ward From RPC", { selector: "h1" })).toBeInTheDocument();
+    expect(screen.getByText("Temple Night")).toBeInTheDocument();
+    expect(screen.getByText("40%", { exact: false })).toBeInTheDocument();
+    expect(campaignsQueries).toBe(0);
   });
 });

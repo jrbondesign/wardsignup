@@ -83,29 +83,31 @@ function AcceptInner() {
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           setStatus("error");
+          let type: ErrorType = "generic";
           if (res.status === 404) {
-            setErrorType("invite_not_found");
+            type = "invite_not_found";
             setErrorMessage("This invitation was not found.");
           } else if (res.status === 410) {
             const msg = data?.error ?? "";
             if (msg.includes("expired")) {
-              setErrorType("invite_expired");
+              type = "invite_expired";
               setErrorMessage("This invitation has expired.");
             } else if (msg.includes("revoked")) {
-              setErrorType("invite_revoked");
+              type = "invite_revoked";
               setErrorMessage("This invitation has been revoked.");
             } else if (msg.includes("already")) {
-              setErrorType("invite_already_used");
+              type = "invite_already_used";
               setErrorMessage("This invitation has already been used.");
             } else {
-              setErrorType("generic");
+              type = "generic";
               setErrorMessage(data?.error ?? "Failed to load invitation.");
             }
           } else {
-            setErrorType("generic");
+            type = "generic";
             setErrorMessage(data?.error ?? "Failed to load invitation.");
           }
-          posthog?.capture("invite_error", { type: errorType ?? "generic" });
+          setErrorType(type);
+          posthog?.capture("invite_error", { type });
           return;
         }
 
