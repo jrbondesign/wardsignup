@@ -89,3 +89,20 @@ describe("email capture rate", () => {
     expect(r.completedWeeks[7]).toEqual({ weekStart: "2026-10-05", total: 1, withEmail: 0, ratePct: 0 });
   });
 });
+
+describe("testCampaignIds real wards", () => {
+  it("keeps a Sweetwater Branch event made by a founder account", () => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { testCampaignIds: ids } = require("@/lib/email-capture-rate");
+    const out = ids({
+      campaigns: [
+        { id: "c1", created_by: null, user_email: "jonathan@wardsignup.com", organization_id: "ab5867a1-c1a3-452e-a265-8419ed34bdb4" },
+        { id: "c2", created_by: null, user_email: "jonathan@wardsignup.com", organization_id: "00000000-0000-0000-0000-000000000000" },
+      ],
+      orgOwnerById: new Map(),
+      emailByUserId: new Map(),
+      skipEmails: new Set(["jonathan@wardsignup.com"]),
+    });
+    expect([...out]).toEqual(["c2"]);
+  });
+});
