@@ -10,6 +10,8 @@ import {
   rememberEmailNudgeSkip,
   shouldShowEmailNudge,
 } from "@/lib/email-nudge";
+import { formatSessionSlotLabel } from "@/lib/slot-label";
+import { saveSignupSuccessInfo } from "@/lib/signup-success-handoff";
 
 export type LoadedEventPageCtx = Omit<EventPageCtx, "event"> & { event: NonNullable<EventPageCtx["event"]> };
 
@@ -19,6 +21,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     captureNudge,
     customItem,
     emailInputRef,
+    event,
     eventId,
     eventType,
     fetchData,
@@ -206,6 +209,24 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
       // Redirect to dedicated success page with the primary cancel_token.
       const cancelToken = json?.primary_cancel_token;
       if (cancelToken) {
+        // Same fields /api/signups/cancel/lookup returns for the primary slot,
+        // so the success page can render immediately.
+        const primarySessionId = (slotResults.find((res) => !res.error) ?? slotResults[0])?.session_id;
+        const primary = sessions.find((s) => s.id === primarySessionId);
+        if (primary) {
+          saveSignupSuccessInfo(cancelToken, {
+            member_name: formData.name.trim(),
+            guest_names: event.allow_guests === false ? [] : cleanGuests.slice(0, 10),
+            campaign_name: event.name,
+            slot_label: formatSessionSlotLabel(primary, { eventTimezone: event.event_timezone ?? null }),
+            event_url: `${window.location.origin}/event/${eventId}`,
+            session_date: primary.session_date ?? null,
+            session_time: primary.time ?? null,
+            session_end_time: primary.end_time ?? null,
+            event_timezone: event.event_timezone ?? null,
+            event_end_date: event.event_end_date ?? null,
+          });
+        }
         router.push(`/signup-success/${cancelToken}?event=${eventId}`);
       } else {
         router.push(`/event/${eventId}`);

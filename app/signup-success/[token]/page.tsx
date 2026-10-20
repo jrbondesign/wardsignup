@@ -1,23 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { usePostHog } from "posthog-js/react";
 import { withUtm } from "@/lib/utm";
+import {
+  parseSignupSuccessInfo,
+  readSignupSuccessRaw,
+  type SignupSuccessInfo,
+} from "@/lib/signup-success-handoff";
 
-type SignupInfo = {
-  member_name: string;
-  guest_names: string[];
-  campaign_name: string;
-  slot_label: string;
-  event_url: string;
-  session_date: string | null;
-  session_time: string | null;
-  session_end_time: string | null;
-  event_timezone: string | null;
-  event_end_date: string | null;
-};
+type SignupInfo = SignupSuccessInfo;
+
+const noopSubscribe = () => () => {};
 
 // e.g. "17:00" → "18:00"
 function addOneHour(time: string): string {
@@ -116,7 +112,17 @@ export default function SignupSuccessPage() {
   const eventId = searchParams.get("event") ?? "";
   const [fetchedState, setState] = useState<PageState>({ status: "loading" });
   // No token means there's nothing to look up; derive that instead of setting state in the effect.
-  const state: PageState = token ? fetchedState : { status: "error" };
+  const lookupState: PageState = token ? fetchedState : { status: "error" };
+  // Details handed over by the event page right after signup; when present the
+  // confirmation renders at once and the lookup only gates the cancel link.
+  const handoffRaw = useSyncExternalStore(
+    noopSubscribe,
+    () => (token ? readSignupSuccessRaw(token) : null),
+    () => null,
+  );
+  const handoff = useMemo(() => parseSignupSuccessInfo(handoffRaw), [handoffRaw]);
+  const state: PageState = handoff ? { status: "ready", info: handoff } : lookupState;
+  const cancelReady = lookupState.status === "ready";
 
   useEffect(() => {
     if (!token) return;
@@ -223,13 +229,19 @@ export default function SignupSuccessPage() {
               Sign up for another slot
             </Link>
 
-            {/* Cancel link */}
-            <Link
-              href={`/cancel/${token}`}
-              className="text-[13px] text-[#5A8399] hover:text-[#0E96B0] transition-colors"
-            >
-              Need to cancel? Remove my signup
-            </Link>
+            {/* Cancel link: space is reserved until the lookup confirms it */}
+            {cancelReady ? (
+              <Link
+                href={`/cancel/${token}`}
+                className="text-[13px] text-[#5A8399] hover:text-[#0E96B0] transition-colors"
+              >
+                Need to cancel? Remove my signup
+              </Link>
+            ) : (
+              <span aria-hidden="true" className="invisible text-[13px]" data-testid="cancel-link-placeholder">
+                Need to cancel? Remove my signup
+              </span>
+            )}
 
             {/* Run your own CTA */}
             <div className="mt-6 pt-6 border-t border-[#0E96B0]/10">
