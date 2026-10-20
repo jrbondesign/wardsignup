@@ -17,7 +17,7 @@ function formatCaptureRate(w: Pick<EmailCaptureWeekRow, "ratePct">): string {
   return w.ratePct === null ? "n/a" : `${w.ratePct.toFixed(1)}%`;
 }
 
-const GeographyMap = dynamic(() => import("@/components/GeographyMap"), {
+const PublicGeographyMap = dynamic(() => import("@/components/PublicGeographyMap"), {
   ssr: false,
   loading: () => (
     <div className="flex items-center justify-center py-12">
@@ -619,7 +619,7 @@ export default function MetricsPage() {
                 <p className="text-[13px] text-[#5A8399] mb-5 max-w-3xl">
                   Where users are accessing WardSignup from, based on PostHog GeoIP data. Marker size indicates number of unique users per city.
                 </p>
-                <GeographyMap />
+                <PublicGeographyMap />
               </div>
 
               <details className="group rounded-2xl border border-[rgba(14,150,176,0.2)] bg-[#FAFCFD] open:bg-white open:shadow-[0_2px_12px_rgba(8,100,126,0.06)]">
