@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { resolveGeographyPayload } from "@/lib/geography-cache";
 
 export const maxDuration = 60;
-/** Daily cadence — response cache aligns with cron refresh. */
-export const revalidate = 86400;
+/** Hourly: the DB cache refreshes daily, so the public copy catches up within an hour. */
+export const revalidate = 3600;
 
 /**
  * Public geography endpoint for homepage "Our Community" map.
@@ -22,7 +22,7 @@ export async function GET() {
     const payload = await resolveGeographyPayload();
     return NextResponse.json(payload, {
       headers: {
-        "Cache-Control": "public, s-maxage=86400, stale-while-revalidate=3600",
+        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=600",
       },
     });
   } catch (error) {

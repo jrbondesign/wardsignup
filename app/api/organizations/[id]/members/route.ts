@@ -8,7 +8,7 @@ import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { buildBrandSignatureFooterHtml } from "@/lib/site-footer";
 import { getPostHogClient } from "@/lib/posthog-server";
-import { isTestOrgId, isTestOwnerEmail } from "@/lib/test-orgs";
+import { isRealOrgId, isTestOrgId, isTestOwnerEmail } from "@/lib/test-orgs";
 
 const TOKEN_TTL_DAYS = 14;
 
@@ -265,7 +265,7 @@ export async function POST(
         event: "coadmin_invite_sent",
         properties: {
           org_id: org.id,
-          is_test_org: isTestOwnerEmail(user.email) || isTestOrgId(org.id),
+          is_test_org: !isRealOrgId(org.id) && (isTestOwnerEmail(user.email) || isTestOrgId(org.id)),
           brand_id: org.brand_id,
         },
       });
