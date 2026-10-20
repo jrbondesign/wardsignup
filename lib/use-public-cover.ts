@@ -8,11 +8,19 @@ export interface PublicCover {
   position: string;
 }
 
-/** Cover for a public event page, or null when the cover feature is off for its org. */
-export function usePublicCover(eventId: string | null | undefined): PublicCover | null {
-  const [cover, setCover] = useState<PublicCover | null>(null);
+/**
+ * Cover for a public event page, or null when the cover feature is off for its org.
+ * Pass `initial` (object or null) when the server already resolved it; the
+ * browser fetch is then skipped.
+ */
+export function usePublicCover(
+  eventId: string | null | undefined,
+  initial?: PublicCover | null
+): PublicCover | null {
+  const [cover, setCover] = useState<PublicCover | null>(initial ?? null);
+  const serverResolved = initial !== undefined;
   useEffect(() => {
-    if (!eventId) return;
+    if (!eventId || serverResolved) return;
     let cancelled = false;
     fetch(`/api/events/${eventId}/cover`)
       .then((r) => (r.ok ? r.json() : {}))
@@ -25,6 +33,6 @@ export function usePublicCover(eventId: string | null | undefined): PublicCover 
     return () => {
       cancelled = true;
     };
-  }, [eventId]);
+  }, [eventId, serverResolved]);
   return cover;
 }
