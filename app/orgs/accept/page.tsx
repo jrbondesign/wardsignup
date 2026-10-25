@@ -8,12 +8,16 @@ import Navigation from "@/components/Navigation";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { maskEmail } from "@/lib/email-mask";
 import { usePostHog } from "posthog-js/react";
+import CallingField from "@/components/CallingField";
+import { joinCalling, splitCalling } from "@/lib/callings";
+import { acceptInviteWithCalling } from "@/lib/invite-accept";
 
 type Status =
   | "loading_invite"
   | "needs_magic_link"
   | "sending_link"
   | "link_sent"
+  | "ready_to_accept"
   | "accepting"
   | "accepted"
   | "wrong_account"
@@ -45,7 +49,9 @@ function AcceptInner() {
   const [userEmail, setUserEmail] = useState<string>("");
   const [errorType, setErrorType] = useState<ErrorType | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>("");
-  const [organizationId, setOrganizationId] = useState<string>("");
+  const [accessToken, setAccessToken] = useState<string>("");
+  const [callingChoice, setCallingChoice] = useState<string>("");
+  const [callingOther, setCallingOther] = useState<string>("");
 
   useEffect(() => {
     // Remove token from URL for security (after reading it)
@@ -151,47 +157,67 @@ function AcceptInner() {
         inviterDisplayName: infoData.inviterDisplayName,
       });
 
-      // Correct account - accept the invite
-      setStatus("accepting");
-      const acceptRes = await fetch("/api/organizations/accept", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ token }),
-      });
-
-      const acceptData = await acceptRes.json().catch(() => ({}));
-
-      if (!acceptRes.ok) {
-        // Check for email mismatch error
-        if (acceptRes.status === 403 && acceptData?.error?.toLowerCase().includes("mismatch")) {
-          setStatus("wrong_account");
-          setUserEmail(user.email ?? "");
-          posthog?.capture("invite_error", { type: "email_mismatch" });
-          return;
+      // Signed in: ask for an optional calling, then accept on click. The calling
+      // never blocks accepting (see acceptInviteWithCalling).
+      setAccessToken(session.access_token);
+      try {
+        const callingRes = await fetch("/api/organizer-profile/calling", {
+          headers: { Authorization: `Bearer ${session.access_token}` },
+        });
+        if (callingRes.ok) {
+          const callingData = await callingRes.json().catch(() => ({}));
+          const split = splitCalling(callingData?.calling ?? null);
+          setCallingChoice(split.choice);
+          setCallingOther(split.otherText);
         }
-        
-        setStatus("error");
-        setErrorType("generic");
-        setErrorMessage(acceptData?.error ?? "Failed to accept invitation.");
-        posthog?.capture("invite_error", { type: "accept_failed" });
-        return;
+      } catch {
+        // Prefill only; ignore.
       }
-
-      posthog?.capture("accept_success", {
-        organization_id: acceptData.organization_id,
-        ownership_transferred: acceptData.ownership_transferred,
-      });
-      
-      // Navigate to the destination determined by the server
-      const destination = acceptData.destination ?? "/dashboard";
-      router.push(destination);
+      setStatus("ready_to_accept");
     };
 
     run();
   }, [token, router, posthog]);
+
+  const handleAccept = async () => {
+    setStatus("accepting");
+    const calling = joinCalling(callingChoice, callingOther);
+    let result;
+    try {
+      result = await acceptInviteWithCalling({ token, accessToken, calling });
+    } catch {
+      setStatus("error");
+      setErrorType("generic");
+      setErrorMessage("Failed to accept invitation.");
+      posthog?.capture("invite_error", { type: "accept_failed" });
+      return;
+    }
+
+    if (!result.ok) {
+      const errorText = typeof result.data?.error === "string" ? result.data.error : "";
+      if (result.status === 403 && errorText.toLowerCase().includes("mismatch")) {
+        setStatus("wrong_account");
+        posthog?.capture("invite_error", { type: "email_mismatch" });
+        return;
+      }
+      setStatus("error");
+      setErrorType("generic");
+      setErrorMessage(errorText || "Failed to accept invitation.");
+      posthog?.capture("invite_error", { type: "accept_failed" });
+      return;
+    }
+
+    posthog?.capture("accept_success", {
+      organization_id: result.data.organization_id,
+      ownership_transferred: result.data.ownership_transferred,
+      calling_provided: Boolean(calling),
+      calling_saved: result.callingSaved,
+    });
+
+    // Navigate to the destination determined by the server
+    const destination = typeof result.data.destination === "string" ? result.data.destination : "/dashboard";
+    router.push(destination);
+  };
 
   const handleRequestMagicLink = async () => {
     setStatus("sending_link");
@@ -269,6 +295,51 @@ function AcceptInner() {
               className="w-full inline-flex items-center justify-center gap-2 text-sm font-semibold px-6 py-2.5 rounded-full bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:shadow-[0_6px_20px_rgba(14,150,176,0.45)] transition-all"
             >
               Email me a sign in link
+            </button>
+          </div>
+        </main>
+      </>
+    );
+  }
+
+  if (status === "ready_to_accept" && inviteInfo) {
+    return (
+      <>
+        <Navigation />
+        <main className="min-h-screen bg-[#F4FAFB] py-8 px-4 flex flex-col items-center justify-center">
+          <div className="max-w-md w-full bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-8" data-testid="accept-ready">
+            <h1 className="font-serif text-[22px] text-[#0D2B35] mb-3 text-center">
+              You're invited
+            </h1>
+            <div className="bg-[#E6F7FB] border border-[rgba(14,150,176,0.18)] rounded-xl px-5 py-4 mb-5">
+              <p className="text-sm text-[#2E5566] mb-1">
+                <strong className="text-[#0D2B35] font-semibold">Ward:</strong>{" "}
+                {inviteInfo.organizationName}
+              </p>
+              {inviteInfo.inviterDisplayName && (
+                <p className="text-sm text-[#2E5566]">
+                  <strong className="text-[#0D2B35] font-semibold">Invited by:</strong>{" "}
+                  {inviteInfo.inviterDisplayName}
+                </p>
+              )}
+            </div>
+            <div className="mb-2">
+              <CallingField
+                idPrefix="accept-calling"
+                choice={callingChoice}
+                otherText={callingOther}
+                onChoiceChange={setCallingChoice}
+                onOtherTextChange={setCallingOther}
+              />
+            </div>
+            <p className="text-[11px] text-[#5A8399] mb-5">
+              Helps the other leaders know who you are. You can skip this and add it later in settings.
+            </p>
+            <button
+              onClick={handleAccept}
+              className="w-full inline-flex items-center justify-center gap-2 text-sm font-semibold px-6 py-2.5 rounded-full bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:shadow-[0_6px_20px_rgba(14,150,176,0.45)] transition-all"
+            >
+              Accept invitation
             </button>
           </div>
         </main>
