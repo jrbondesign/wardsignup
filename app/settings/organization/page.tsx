@@ -11,6 +11,8 @@ import OrgMembersSection from "@/components/OrgMembersSection";
 import OrgSwitcher from "@/components/OrgSwitcher";
 import GoogleCalendarIntegrations from "@/components/GoogleCalendarIntegrations";
 import { getCurrentOrganization } from "@/lib/organizations";
+import CallingField from "@/components/CallingField";
+import { joinCalling, splitCalling } from "@/lib/callings";
 
 type OrgRow = { 
   id: string; 
@@ -36,6 +38,9 @@ export default function OrganizationSettingsPage() {
   const [savingDirectory, setSavingDirectory] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [copyToast, setCopyToast] = useState(false);
+  const [callingChoice, setCallingChoice] = useState("");
+  const [callingOther, setCallingOther] = useState("");
+  const [savedCalling, setSavedCalling] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -46,6 +51,17 @@ export default function OrganizationSettingsPage() {
         return;
       }
       setUserId(authUser.id);
+
+      // Calling is per person and optional; a failed load just leaves it blank.
+      const { data: { session } } = await supabase.auth.getSession();
+      const callingPromise = session?.access_token
+        ? fetch("/api/organizer-profile/calling", {
+            headers: { Authorization: `Bearer ${session.access_token}` },
+          })
+            .then((r) => (r.ok ? r.json() : null))
+            .then((d: { calling?: string | null } | null) => d?.calling ?? null)
+            .catch(() => null)
+        : Promise.resolve(null);
 
       // Honor the saved selection so multi-org users land on the org they picked.
       const current = await getCurrentOrganization(supabase, authUser, brand.id);
@@ -74,6 +90,11 @@ export default function OrganizationSettingsPage() {
       setName(row?.name && row.name !== "Untitled organization" ? row.name : "");
       setSlug(row?.slug ?? "");
       setPublicDirectoryEnabled(row?.public_directory_enabled ?? false);
+      const calling = await callingPromise;
+      const split = splitCalling(calling);
+      setSavedCalling(calling);
+      setCallingChoice(split.choice);
+      setCallingOther(split.otherText);
       setLoading(false);
     };
     load();
@@ -114,31 +135,50 @@ export default function OrganizationSettingsPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!org) return;
+    const ownerCanRename = userId === org.owner_id;
     const trimmed = name.trim();
-    if (!trimmed) {
-      setMessage({ kind: "error", text: "Please enter a name." });
+    if (ownerCanRename && !trimmed) {
+      setMessage({ kind: "error", text: "Please enter your ward name." });
       return;
     }
+    const calling = joinCalling(callingChoice, callingOther);
+    const nameChanged = ownerCanRename && trimmed !== org.name;
+    const callingChanged = calling !== savedCalling;
     setSaving(true);
     setMessage(null);
     try {
       const supabase = createClientComponentClient();
       const { data: { session } } = await supabase.auth.getSession();
-      const res = await fetch(`/api/organizations/${org.id}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${session?.access_token ?? ""}`,
-        },
-        body: JSON.stringify({ name: trimmed }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setMessage({ kind: "error", text: data?.error ?? "Failed to update organization." });
-        setSaving(false);
-        return;
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${session?.access_token ?? ""}`,
+      };
+      if (nameChanged) {
+        const res = await fetch(`/api/organizations/${org.id}`, {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ name: trimmed }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setMessage({ kind: "error", text: data?.error ?? "Failed to update your ward name." });
+          return;
+        }
+        setOrg({ ...org, name: trimmed, needs_naming: false });
       }
-      setOrg({ ...org, name: trimmed, needs_naming: false });
+      if (callingChanged) {
+        const res = await fetch("/api/organizer-profile/calling", {
+          method: "PATCH",
+          headers,
+          body: JSON.stringify({ calling }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setMessage({ kind: "error", text: data?.error ?? "Failed to save your calling." });
+          return;
+        }
+        setSavedCalling(calling);
+      }
       setMessage({ kind: "ok", text: "Saved." });
     } catch {
       setMessage({ kind: "error", text: "Network error. Please try again." });
@@ -255,7 +295,7 @@ export default function OrganizationSettingsPage() {
 
             <form onSubmit={handleSave}>
               <label htmlFor="org-name" className="block text-[12px] font-semibold text-[#0D2B35] mb-1.5">
-                Name
+                Ward name
               </label>
               <input
                 id="org-name"
@@ -263,10 +303,24 @@ export default function OrganizationSettingsPage() {
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={!isOwner}
-                placeholder="e.g. Sossaman Estates Ward EQ"
+                placeholder="e.g. Sossaman Estates Ward"
                 maxLength={120}
                 className="w-full px-4 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/30 focus:border-[#0E96B0] focus:outline-none text-[#0D2B35] placeholder-[#5A8399]/60 disabled:bg-[#F4FAFB] disabled:cursor-not-allowed"
               />
+              <p className="mt-1.5 text-[11px] text-[#5A8399]">
+                {isOwner ? "In a branch or stake? Use that name." : "Only the owner can change the ward name."}
+              </p>
+
+              <div className="mt-4">
+                <CallingField
+                  idPrefix="settings-calling"
+                  choice={callingChoice}
+                  otherText={callingOther}
+                  onChoiceChange={setCallingChoice}
+                  onOtherTextChange={setCallingOther}
+                  disabled={saving}
+                />
+              </div>
 
               {message && (
                 <p className={`mt-2 text-[13px] ${message.kind === "ok" ? "text-[#0F6E56]" : "text-red-600"}`}>
@@ -274,17 +328,15 @@ export default function OrganizationSettingsPage() {
                 </p>
               )}
 
-              {isOwner && (
-                <div className="mt-5">
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="text-sm font-semibold px-6 py-2.5 rounded-xl bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
-                  >
-                    {saving ? "Saving…" : "Save changes"}
-                  </button>
-                </div>
-              )}
+              <div className="mt-5">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="text-sm font-semibold px-6 py-2.5 rounded-xl bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </button>
+              </div>
             </form>
           </div>
 

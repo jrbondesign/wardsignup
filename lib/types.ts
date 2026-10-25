@@ -220,6 +220,8 @@ export interface Database {
           created_at: string;
           logo_url: string | null;
           email_lower: string | null;
+          calling: string | null;
+          calling_updated_at: string | null;
         };
         Insert: {
           user_id: string;
@@ -227,6 +229,8 @@ export interface Database {
           created_at?: string;
           logo_url?: string | null;
           email_lower?: string | null;
+          calling?: string | null;
+          calling_updated_at?: string | null;
         };
         Update: {
           user_id?: string;
@@ -234,6 +238,8 @@ export interface Database {
           created_at?: string;
           logo_url?: string | null;
           email_lower?: string | null;
+          calling?: string | null;
+          calling_updated_at?: string | null;
         };
         Relationships: TableRelationship[];
       };
