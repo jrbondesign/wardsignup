@@ -37,16 +37,18 @@ export function isUnlimitedEventsUser(email: string | null | undefined): boolean
 }
 
 /**
- * Per-organization event-limit overrides, keyed by lowercased org name. Lets specific
- * orgs run a higher cap than the default free-tier limit without granting unlimited
- * events. Returns null when the org has no override, so callers fall back to
- * getMaxCampaignsPerUser().
+ * Per-organization event-limit overrides, keyed by organization id (lowercased UUID).
+ * Keyed by id, not name, so renaming an org or moving its ward name into the
+ * Ward/Unit field keeps the override, and another org that picks the same name
+ * does not get it. Returns null when the org has no override, so callers fall back
+ * to getMaxCampaignsPerUser().
  */
 const ORG_EVENT_LIMIT_OVERRIDES: Record<string, number> = {
-  "sweetwater branch": 5,
+  "ab5867a1-c1a3-452e-a265-8419ed34bdb4": 5, // Sweetwater Branch
+  "d3832817-8aa6-4ba1-96ab-9b0e23d5af4c": 5, // Sweetwater Branch
 };
 
-export function getMaxCampaignsForOrg(orgName: string | null | undefined): number | null {
-  if (!orgName) return null;
-  return ORG_EVENT_LIMIT_OVERRIDES[orgName.trim().toLowerCase()] ?? null;
+export function getMaxCampaignsForOrg(orgId: string | null | undefined): number | null {
+  if (!orgId) return null;
+  return ORG_EVENT_LIMIT_OVERRIDES[orgId.trim().toLowerCase()] ?? null;
 }
