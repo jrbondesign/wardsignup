@@ -9,10 +9,10 @@ import type { BrandId } from "@/lib/brand/types";
 /**
  * Resolve which brand a cron invocation should process.
  *
- * Prefer the request Host when it is a known brand hostname (so
- * www.orgsignup.com always claims `*:orgsignup` even if
- * NEXT_PUBLIC_BRAND_ID is missing/wrong on that Vercel project). Fall back to
- * NEXT_PUBLIC_BRAND_ID, then wardsignup.
+ * Prefer the request Host when it is a known brand hostname, so a wrong or
+ * missing NEXT_PUBLIC_BRAND_ID can't change the claim key. Fall back to
+ * NEXT_PUBLIC_BRAND_ID, then wardsignup. Retired hosts (ministrysignup.com,
+ * orgsignup.com) resolve to wardsignup.
  */
 export function resolveCronBrandId(request: Request): BrandId {
   const host =

@@ -46,8 +46,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Host wins on known brand domains so Org (www.orgsignup.com) claims
-  // `*:orgsignup` even if NEXT_PUBLIC_BRAND_ID is missing/wrong on that project.
+  // Host wins on known brand domains, so a wrong or missing
+  // NEXT_PUBLIC_BRAND_ID can't change the brand-scoped claim key.
   const brandId = resolveCronBrandId(request);
 
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {

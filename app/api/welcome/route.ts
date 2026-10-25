@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
 
     const normalizedEmail = canonicalUser.email?.trim().toLowerCase() ?? "";
 
-    // One welcome per brand (same email can get Ward + Ministry welcomes separately)
+    // One welcome per brand (tracked in user_metadata.welcome_sent_by_brand)
     if (
       alreadyWelcomedForBrand(
         canonicalUser.user_metadata as

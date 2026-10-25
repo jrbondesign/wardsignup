@@ -7,7 +7,7 @@ export function organizerReportErrorHint(apiMessage: string): string {
   if (/api key|invalid.*key|missing_api_key|restricted_api_key/i.test(m)) {
     return `${m}
 
-Fix: Vercel → this project → Settings → Environment Variables → set RESEND_API_KEY (and for Ministry, RESEND_API_KEY_MINISTRY) to keys from resend.com/api-keys (Production). Save, then Redeploy once.`;
+Fix: Vercel → this project → Settings → Environment Variables → set RESEND_API_KEY to a key from resend.com/api-keys (Production). Save, then Redeploy once.`;
   }
   return m;
 }
