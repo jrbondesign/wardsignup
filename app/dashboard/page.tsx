@@ -449,9 +449,7 @@ export default function DashboardPage() {
               </div>
               <h2 className="font-serif text-[22px] text-[#0D2B35] mb-2">No Events Yet</h2>
               <p className="text-sm text-[#5A8399] mb-7 leading-relaxed">
-                {isWardBrand
-                  ? "Pick a template or create a custom event from scratch."
-                  : "Create your first event to start managing signups for your ministry or church."}
+                Pick a template or create a custom event from scratch.
               </p>
               <Link
                 href="/create"
