@@ -11,8 +11,9 @@ import OrgMembersSection from "@/components/OrgMembersSection";
 import OrgSwitcher from "@/components/OrgSwitcher";
 import GoogleCalendarIntegrations from "@/components/GoogleCalendarIntegrations";
 import { getCurrentOrganization } from "@/lib/organizations";
-import CallingField from "@/components/CallingField";
+import OrgIdentityFields from "@/components/OrgIdentityFields";
 import { joinCalling, splitCalling } from "@/lib/callings";
+import { normalizeWardName } from "@/lib/ward-name";
 
 type OrgRow = { 
   id: string; 
@@ -41,6 +42,8 @@ export default function OrganizationSettingsPage() {
   const [callingChoice, setCallingChoice] = useState("");
   const [callingOther, setCallingOther] = useState("");
   const [savedCalling, setSavedCalling] = useState<string | null>(null);
+  const [wardName, setWardName] = useState("");
+  const [savedWard, setSavedWard] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -86,6 +89,19 @@ export default function OrganizationSettingsPage() {
           row = (data as OrgRow | null) ?? null;
         }
       }
+      // Ward/Unit is read on its own so a database without the ward_name column
+      // (migration not applied yet) leaves it blank instead of hitting the fallback.
+      let ward: string | null = null;
+      if (row) {
+        const { data: wardRow, error: wardError } = await supabase
+          .from("organizations")
+          .select("ward_name")
+          .eq("id", row.id)
+          .maybeSingle();
+        if (!wardError) ward = (wardRow as { ward_name?: string | null } | null)?.ward_name ?? null;
+      }
+      setSavedWard(ward);
+      setWardName(ward ?? "");
       setOrg(row);
       setName(row?.name && row.name !== "Untitled organization" ? row.name : "");
       setSlug(row?.slug ?? "");
@@ -138,11 +154,13 @@ export default function OrganizationSettingsPage() {
     const ownerCanRename = userId === org.owner_id;
     const trimmed = name.trim();
     if (ownerCanRename && !trimmed) {
-      setMessage({ kind: "error", text: "Please enter your ward name." });
+      setMessage({ kind: "error", text: "Please enter your organization." });
       return;
     }
     const calling = joinCalling(callingChoice, callingOther);
+    const ward = normalizeWardName(wardName);
     const nameChanged = ownerCanRename && trimmed !== org.name;
+    const wardChanged = ownerCanRename && ward !== savedWard;
     const callingChanged = calling !== savedCalling;
     setSaving(true);
     setMessage(null);
@@ -153,18 +171,23 @@ export default function OrganizationSettingsPage() {
         "Content-Type": "application/json",
         Authorization: `Bearer ${session?.access_token ?? ""}`,
       };
-      if (nameChanged) {
+      let wardNotSaved = false;
+      if (nameChanged || wardChanged) {
         const res = await fetch(`/api/organizations/${org.id}`, {
           method: "PATCH",
           headers,
-          body: JSON.stringify({ name: trimmed }),
+          body: JSON.stringify(wardChanged ? { name: trimmed, ward_name: ward } : { name: trimmed }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
-          setMessage({ kind: "error", text: data?.error ?? "Failed to update your ward name." });
+          setMessage({ kind: "error", text: data?.error ?? "Failed to update your organization." });
           return;
         }
         setOrg({ ...org, name: trimmed, needs_naming: false });
+        if (wardChanged) {
+          if (data?.wardSaved === false) wardNotSaved = true;
+          else setSavedWard(ward);
+        }
       }
       if (callingChanged) {
         const res = await fetch("/api/organizer-profile/calling", {
@@ -179,7 +202,11 @@ export default function OrganizationSettingsPage() {
         }
         setSavedCalling(calling);
       }
-      setMessage({ kind: "ok", text: "Saved." });
+      setMessage(
+        wardNotSaved
+          ? { kind: "error", text: "Saved, but Ward/Unit can't be saved yet. Please try again later." }
+          : { kind: "ok", text: "Saved." },
+      );
     } catch {
       setMessage({ kind: "error", text: "Network error. Please try again." });
     } finally {
@@ -272,7 +299,7 @@ export default function OrganizationSettingsPage() {
     <>
       <Navigation />
       <main className="min-h-screen bg-[#F4FAFB] py-8 px-4">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-4xl mx-auto">
           <div className="mb-6">
             <Link
               href="/dashboard"
@@ -294,33 +321,19 @@ export default function OrganizationSettingsPage() {
             </p>
 
             <form onSubmit={handleSave}>
-              <label htmlFor="org-name" className="block text-[12px] font-semibold text-[#0D2B35] mb-1.5">
-                Ward name
-              </label>
-              <input
-                id="org-name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={!isOwner}
-                placeholder="e.g. Sossaman Estates Ward"
-                maxLength={120}
-                className="w-full px-4 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/30 focus:border-[#0E96B0] focus:outline-none text-[#0D2B35] placeholder-[#5A8399]/60 disabled:bg-[#F4FAFB] disabled:cursor-not-allowed"
+              <OrgIdentityFields
+                idPrefix="settings"
+                name={name}
+                onNameChange={setName}
+                wardName={wardName}
+                onWardNameChange={setWardName}
+                callingChoice={callingChoice}
+                callingOther={callingOther}
+                onCallingChoiceChange={setCallingChoice}
+                onCallingOtherChange={setCallingOther}
+                canEditOrg={isOwner}
+                disabled={saving}
               />
-              <p className="mt-1.5 text-[11px] text-[#5A8399]">
-                {isOwner ? "In a branch or stake? Use that name." : "Only the owner can change the ward name."}
-              </p>
-
-              <div className="mt-4">
-                <CallingField
-                  idPrefix="settings-calling"
-                  choice={callingChoice}
-                  otherText={callingOther}
-                  onChoiceChange={setCallingChoice}
-                  onOtherTextChange={setCallingOther}
-                  disabled={saving}
-                />
-              </div>
 
               {message && (
                 <p className={`mt-2 text-[13px] ${message.kind === "ok" ? "text-[#0F6E56]" : "text-red-600"}`}>

@@ -10,6 +10,7 @@ import dynamic from "next/dynamic";
 import type { CoreWeekly } from "@/lib/core-metrics";
 import { formatMonthLabel, formatWeekRange } from "@/lib/metrics-weeks";
 import { CoreMetricsStrip, CoreTrendCharts } from "@/components/metrics/CoreMetricsStrip";
+import { CreatorsTable, type CreatorRow } from "@/components/metrics/CreatorsTable";
 
 type EmailCaptureWeekRow = { weekStart: string; total: number; withEmail: number; ratePct: number | null };
 
@@ -45,7 +46,11 @@ interface MetricsData {
     newSignups: number;
     newCreatorAccounts: number;
   }[];
-  creators: { email: string; events: number; sessions: number; signups: number }[];
+  creators: CreatorRow[];
+  /** False until the organizer_profiles.calling migration is applied. */
+  callingsAvailable?: boolean;
+  /** False until the organizations.ward_name migration is applied. */
+  wardsAvailable?: boolean;
   recentSignups: { member_name: string; event_name: string; signed_up_at: string }[];
   newCreatorsThisCalendarWeek: number;
   newCreatorsLastCompletedWeek: number;
@@ -848,33 +853,14 @@ export default function MetricsPage() {
               {/* Creators + Recent Signups */}
               <div className="grid sm:grid-cols-2 gap-6">
 
-                {/* Creators */}
-                <div className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6">
+                {/* Creators (full width: Ward/Unit, Organization and Calling columns) */}
+                <div className="sm:col-span-2 bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6">
                   <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-5">Creators</div>
-                  {data.creators.length === 0 ? (
-                    <p className="text-sm text-[#5A8399]">No creators yet.</p>
-                  ) : (
-                    <table className="w-full">
-                      <thead>
-                        <tr className="text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] border-b border-[rgba(14,150,176,0.10)]">
-                          <th className="text-left pb-3 font-semibold">Email</th>
-                          <th className="text-right pb-3 pl-4 font-semibold">Events</th>
-                          <th className="text-right pb-3 pl-4 font-semibold">Sess.</th>
-                          <th className="text-right pb-3 pl-4 font-semibold">Signups</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {data.creators.map((c) => (
-                          <tr key={c.email} className="border-b border-[rgba(14,150,176,0.06)] last:border-0">
-                            <td className="py-2.5 text-[13px] text-[#0D2B35] max-w-0 w-full truncate overflow-hidden">{c.email}</td>
-                            <td className="py-2.5 pl-4 text-right text-[13px] font-semibold text-[#0D2B35] tabular-nums whitespace-nowrap">{c.events}</td>
-                            <td className="py-2.5 pl-4 text-right text-[13px] text-[#5A8399] tabular-nums whitespace-nowrap">{c.sessions}</td>
-                            <td className="py-2.5 pl-4 text-right text-[13px] font-semibold text-[#0E96B0] tabular-nums whitespace-nowrap">{c.signups}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
+                  <CreatorsTable
+                    creators={data.creators}
+                    callingsAvailable={data.callingsAvailable ?? true}
+                    wardsAvailable={data.wardsAvailable ?? true}
+                  />
                 </div>
 
                 {/* Recent Signups */}

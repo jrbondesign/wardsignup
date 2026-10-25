@@ -140,6 +140,7 @@ export interface Database {
           owner_id: string;
           created_at: string;
           needs_naming: boolean;
+          ward_name: string | null;
           slug: string | null;
           public_directory_enabled: boolean;
         };
@@ -151,6 +152,7 @@ export interface Database {
           owner_id: string;
           created_at?: string;
           needs_naming?: boolean;
+          ward_name?: string | null;
           slug?: string | null;
           public_directory_enabled?: boolean;
         };
@@ -162,6 +164,7 @@ export interface Database {
           owner_id?: string;
           created_at?: string;
           needs_naming?: boolean;
+          ward_name?: string | null;
           slug?: string | null;
           public_directory_enabled?: boolean;
         };

@@ -113,7 +113,7 @@ function CreateInner() {
             <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-8 text-center">
               <h1 className="font-serif text-[22px] text-[#0D2B35] mb-1">One quick step</h1>
               <p className="text-sm text-[#5A8399]">
-                Add your ward name to start creating events.
+                Add your organization and ward to start creating events.
               </p>
             </div>
           </div>

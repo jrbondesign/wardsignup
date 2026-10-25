@@ -4,9 +4,11 @@ import { getBrandFromHost } from "@/lib/brand";
 import { ensureOrganizerBrandMatchesHost } from "@/lib/organizer-profile";
 import { CALLING_MAX_LENGTH, normalizeCalling } from "@/lib/callings";
 
-/** Postgres "undefined_column": the calling migration has not run on this database yet. */
+import { isMissingColumnError } from "@/lib/missing-column";
+
+/** The calling migration has not run on this database yet (42703 on select, PGRST204 on update). */
 function isMissingColumn(error: unknown): boolean {
-  return (error as { code?: string } | null)?.code === "42703";
+  return isMissingColumnError(error, "calling");
 }
 
 function brandFor(request: NextRequest) {
@@ -74,8 +76,8 @@ export async function PATCH(request: NextRequest) {
     if (error) {
       if (isMissingColumn(error)) {
         return NextResponse.json(
-          { error: "Saving your calling isn't available yet. Please try again later." },
-          { status: 503 },
+          { error: "Saving your calling isn't available yet. Please try again later.", code: "calling_unavailable" },
+          { status: 409 },
         );
       }
       console.error("PATCH /api/organizer-profile/calling error:", error);

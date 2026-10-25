@@ -126,9 +126,17 @@ describe("/api/organizer-profile/calling", () => {
     expect(updates).toHaveLength(0);
   });
 
-  it("PATCH returns 503 before the migration runs", async () => {
+  it("PATCH returns 409 (never 5xx) before the migration runs", async () => {
     const { client } = supabaseWith({ updateError: { code: "42703" } });
     signIn(client);
-    expect((await PATCH(req("PATCH", { calling: "Bishop" }))).status).toBe(503);
+    expect((await PATCH(req("PATCH", { calling: "Bishop" }))).status).toBe(409);
+  });
+
+  it("PATCH returns 409 for PostgREST's schema cache error (PGRST204) too", async () => {
+    const { client } = supabaseWith({
+      updateError: { code: "PGRST204", message: "Could not find the 'calling' column of 'organizer_profiles' in the schema cache" },
+    });
+    signIn(client);
+    expect((await PATCH(req("PATCH", { calling: "Bishop" }))).status).toBe(409);
   });
 });

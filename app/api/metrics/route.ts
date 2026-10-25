@@ -21,6 +21,7 @@ import {
 } from "@/lib/metrics-weeks";
 import { buildCoreWeekly, lastWeekKeys } from "@/lib/core-metrics";
 import { fetchAllRows } from "@/lib/supabase-paging";
+import { attachCreatorIdentity, fetchCreatorIdentity, type CreatorIdentityClient } from "@/lib/creator-identity";
 import { computeWardFirstEvents, type OrgWithAttribution, type WardCampaign } from "@/lib/new-wards";
 
 /** Every week on the founder metrics page is Monday to Sunday in Phoenix time. */
@@ -233,6 +234,7 @@ export async function GET(request: NextRequest) {
     sessionCampaignRows,
     signupCampaignRows,
     inviteInviterRows,
+    creatorIdentity,
   ] = await Promise.all([
     brandCampaignIds !== null
       ? admin.from("campaigns").select("id", { count: "exact", head: true }).in("id", brandCampaignIds)
@@ -314,6 +316,8 @@ export async function GET(request: NextRequest) {
       },
       { label: "event_invites.inviter_id" },
     ),
+    // Safe before the calling/ward migration is applied: missing columns show as not set.
+    fetchCreatorIdentity(admin as unknown as CreatorIdentityClient, { brandId: brandFilter }),
   ]);
 
   if (capErr) {
@@ -393,12 +397,16 @@ export async function GET(request: NextRequest) {
   }));
 
   const creatorRowsTyped = (creatorRpc ?? []) as CreatorBreakdownRow[];
-  const creators = creatorRowsTyped.map((r: CreatorBreakdownRow) => ({
-    email: r.organizer_email,
-    events: num(r.event_count),
-    sessions: num(r.session_count),
-    signups: num(r.signup_count),
-  }));
+  const creators = attachCreatorIdentity(
+    creatorRowsTyped.map((r: CreatorBreakdownRow) => ({
+      email: r.organizer_email,
+      events: num(r.event_count),
+      sessions: num(r.session_count),
+      signups: num(r.signup_count),
+    })),
+    allAuthUsers,
+    creatorIdentity,
+  );
 
   const recentSignups = (recentSignupsRaw ?? ([] as RecentSignupJoined[])).map((s) => {
     const c = s.campaigns;
@@ -803,6 +811,8 @@ export async function GET(request: NextRequest) {
     totalCapacity,
     growth,
     creators,
+    callingsAvailable: creatorIdentity.callingsAvailable,
+    wardsAvailable: creatorIdentity.wardsAvailable,
     recentSignups,
     newCreatorsThisCalendarWeek,
     newCreatorsLastCompletedWeek,
