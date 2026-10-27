@@ -12,6 +12,8 @@ import { useBrand } from "@/components/BrandProvider";
 import OrgLogoButton from "@/components/OrgLogoButton";
 import OrgNameModal from "@/components/OrgNameModal";
 import OrgSettingsEntry from "@/components/OrgSettingsEntry";
+import OrgWardLine from "@/components/OrgWardLine";
+import { loadOrgWardName } from "@/lib/ward-name";
 import {
   dashboardCardStats,
   loadDashboardLegacy,
@@ -158,6 +160,8 @@ export default function DashboardPage() {
   const [orgNeedsNaming, setOrgNeedsNaming] = useState<{ id: string; name: string } | null>(null);
   const [orgName, setOrgName] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
+  // undefined while loading; null when the org has no Ward/Unit yet.
+  const [wardName, setWardName] = useState<string | null | undefined>(undefined);
 
   const maxEvents = getMaxCampaignsForOrg(orgId) ?? getMaxCampaignsPerUser();
   const isUnlimited = isUnlimitedEventsUser(user?.email);
@@ -280,10 +284,16 @@ export default function DashboardPage() {
       setEvents(dashboard.events);
 
       setLoading(false);
+
+      // Ward line above the org name (ward brand only). Read on its own after
+      // the page shows so it never delays the dashboard; read only.
+      if (isWardBrand && org?.id) {
+        void loadOrgWardName(supabase, org.id).then(setWardName);
+      }
     };
 
     loadUserAndEvents();
-  }, [router, brand.id, posthog]);
+  }, [router, brand.id, posthog, isWardBrand]);
 
   useEffect(() => {
     const handleClickOutside = () => setOpenDropdown(null);
@@ -341,8 +351,9 @@ export default function DashboardPage() {
 
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
+            <div className="min-w-0">
+              {isWardBrand && <OrgWardLine wardName={wardName} />}
+              <div className="flex items-center gap-3">
                 {/* Future: Org logo support */}
                 <h1 className="font-serif text-[clamp(28px,4vw,40px)] text-[#0D2B35] tracking-[-0.5px] leading-tight">
                   {orgName ?? "My Events"}

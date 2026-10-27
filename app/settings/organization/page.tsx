@@ -116,6 +116,16 @@ export default function OrganizationSettingsPage() {
     load();
   }, [router, brand.id]);
 
+  // The dashboard ward line links here with ?focus=ward: land on Ward/Unit.
+  useEffect(() => {
+    if (loading || !org || typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("focus") !== "ward") return;
+    const input = document.getElementById("settings-ward") as HTMLInputElement | null;
+    if (!input) return;
+    input.scrollIntoView({ block: "center" });
+    input.focus({ preventScroll: true });
+  }, [loading, org]);
+
   const handleLeave = async () => {
     if (!org) return;
     if (!confirm("Leave this organization? You'll lose access to its events immediately.")) return;
