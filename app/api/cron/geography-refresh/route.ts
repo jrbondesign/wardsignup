@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { claimCronRun, dayBucketDate } from "@/lib/rate-limit";
+import { claimCronRun } from "@/lib/rate-limit";
+import { phoenixDayStartUtc } from "@/lib/phoenix-time";
 import { refreshGeographyCacheFromPostHog } from "@/lib/geography-cache";
 
 export const dynamic = "force-dynamic";
@@ -9,7 +10,10 @@ export const maxDuration = 60;
  * Daily geography map refresh.
  * Pulls PostHog GeoIP city aggregates and upserts geography_snapshot_cache.
  * Secured with Authorization: Bearer CRON_SECRET.
- * Idempotent once per UTC day via claimCronRun.
+ * Schedule: vercel.json "0 15 * * *" = 15:00 UTC = 8:00 AM Phoenix.
+ * Idempotent once per Phoenix (Arizona) calendar day via claimCronRun: the
+ * claim bucket is Phoenix midnight (07:00Z), not UTC midnight, so the guard
+ * rolls over at 12 AM Arizona time instead of 5 PM.
  */
 export async function GET(request: NextRequest) {
   const secret = process.env.CRON_SECRET?.trim();
@@ -25,7 +29,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const claim = await claimCronRun("geography-refresh", dayBucketDate());
+  const claim = await claimCronRun("geography-refresh", phoenixDayStartUtc());
   if (!claim.claimed) {
     return NextResponse.json({
       ok: true,
