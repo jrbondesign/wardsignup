@@ -1,7 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { SignupFunnelTracker, buildFunnelProps, type FunnelContext, type SignupFormKind } from "@/lib/signup-funnel";
+import {
+  SignupFunnelTracker,
+  buildFunnelProps,
+  syncOrgIdSuperProperty,
+  type FunnelContext,
+  type SignupFormKind,
+} from "@/lib/signup-funnel";
 import { isEmailNudgeEligibleSheet, readEmailNudgeVariant, type EmailNudgeVariant } from "@/lib/email-nudge";
 import { type EventPageState } from "./useEventPageState";
 
@@ -50,6 +56,16 @@ export function useSignupFunnel(ctx: EventPageState) {
     };
   }, [eventId]);
 
+  // Ward id as a PostHog super property once the lookup resolves, so it also
+  // rides on events buildFunnelProps can't reach, like the experiment
+  // exposure ($feature_flag_called). Removed while another sheet's lookup is
+  // pending and when the page unmounts, so it never leaks to other pages.
+  useEffect(() => {
+    if (!orgIdResolved) return;
+    syncOrgIdSuperProperty(posthog, orgId);
+    return () => syncOrgIdSuperProperty(posthog, null);
+  }, [orgIdResolved, orgId, posthog]);
+
   // Fires once per page view, after the sheet data (server rendered or
   // browser loaded) and the ward context have both resolved. The tracker
   // dedupes, so background refreshes of the sheet data don't refire it.
@@ -67,7 +83,24 @@ export function useSignupFunnel(ctx: EventPageState) {
   // The flag is read once, on signup_form_started, on spots / rsvp sheets
   // only; that read is the exposure. null = flags not loaded or PostHog
   // error: control, no exposure.
+  //
+  // org_id has to be registered before the read so the exposure carries it.
+  // If the form starts while the ward lookup is still running, the read waits
+  // for the lookup (it always settles, success or failure). Until then
+  // nudgeVariant() is null, i.e. control, same as flags not loaded.
   const nudgeVariantRef = useRef<{ eventId: string; variant: EmailNudgeVariant | null } | null>(null);
+  const pendingNudgeReadRef = useRef<string | null>(null);
+  const readNudgeVariant = () => {
+    syncOrgIdSuperProperty(posthog, orgId);
+    nudgeVariantRef.current = { eventId, variant: readEmailNudgeVariant(posthog as never) };
+  };
+  useEffect(() => {
+    if (!orgIdResolved || pendingNudgeReadRef.current !== eventId) return;
+    pendingNudgeReadRef.current = null;
+    readNudgeVariant();
+    // readNudgeVariant is derived from the deps below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orgIdResolved, orgId, eventId]);
   const nudgeVariant = (): EmailNudgeVariant | null =>
     nudgeVariantRef.current?.eventId === eventId ? nudgeVariantRef.current.variant : null;
   const captureNudge = (name: string) => {
@@ -81,7 +114,8 @@ export function useSignupFunnel(ctx: EventPageState) {
   const trackFormStarted = (form: SignupFormKind, trigger: "field_focus" | "slot_selected" = "field_focus") => {
     const started = funnel.formStarted(funnelCtx, form, trigger);
     if (started && form === "slots" && isEmailNudgeEligibleSheet(eventType)) {
-      nudgeVariantRef.current = { eventId, variant: readEmailNudgeVariant(posthog as never) };
+      if (orgIdResolved) readNudgeVariant();
+      else pendingNudgeReadRef.current = eventId;
     }
   };
   const trackEmailEntered = (form: SignupFormKind, email: string) => {

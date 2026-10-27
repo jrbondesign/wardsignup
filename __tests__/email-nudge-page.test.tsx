@@ -14,6 +14,8 @@ const mockPosthog = {
   capture: jest.fn(),
   identify: jest.fn(),
   getFeatureFlag: jest.fn(),
+  register: jest.fn(),
+  unregister: jest.fn(),
   featureFlags: { hasLoadedFlags: true },
 };
 jest.mock("posthog-js/react", () => ({ usePostHog: () => mockPosthog }));
@@ -74,6 +76,8 @@ beforeEach(() => {
   window.localStorage.clear();
   mockPosthog.capture.mockReset();
   mockPosthog.getFeatureFlag.mockReset();
+  mockPosthog.register.mockReset();
+  mockPosthog.unregister.mockReset();
   mockPosthog.featureFlags.hasLoadedFlags = true;
   fetchMock = jest.fn(async (url: string) => ({
     ok: true,
@@ -147,5 +151,79 @@ describe("email nudge on the public event page", () => {
     expect(screen.queryByText(EMAIL_NUDGE_COPY.title)).not.toBeInTheDocument();
     await waitFor(() => expect(bulkCalls().length).toBeGreaterThan(0));
     expect(nudgeEvents()).toHaveLength(0);
+  });
+});
+
+describe("org_id on the flag exposure ($feature_flag_called)", () => {
+  const orgRegisterCalls = () => mockPosthog.register.mock.calls.filter((c) => "org_id" in (c[0] as object));
+  const firstOrder = (m: jest.Mock) => m.mock.invocationCallOrder[0];
+
+  it("registers org_id as a super property before the flag is read", async () => {
+    mockPosthog.getFeatureFlag.mockReturnValue("control");
+    await renderPage(rsvpPage("2099-01-10"));
+    await fillNameAndSubmit();
+
+    expect(orgRegisterCalls().length).toBeGreaterThan(0);
+    for (const [props] of orgRegisterCalls()) expect(props).toEqual({ org_id: ORG_ID });
+    expect(mockPosthog.getFeatureFlag).toHaveBeenCalledTimes(1);
+    expect(firstOrder(mockPosthog.register)).toBeLessThan(firstOrder(mockPosthog.getFeatureFlag));
+  });
+
+  it("waits for the ward lookup before reading the flag when the form starts first", async () => {
+    let resolveLookup: (v: unknown) => void = () => {};
+    const lookup = new Promise((r) => (resolveLookup = r));
+    fetchMock.mockImplementation(async (url: string) =>
+      String(url).endsWith("/analytics-context")
+        ? lookup
+        : { ok: true, json: async () => ({ primary_cancel_token: "tok", results: [{ session_id: "s1" }] }) },
+    );
+    mockPosthog.getFeatureFlag.mockReturnValue("test");
+    mockCurrentPage = rsvpPage("2099-01-10");
+    render(
+      <BrandProvider brand={getDefaultPublicBrand()}>
+        <EventPageClient eventId={EVENT_ID} initialPage={mockCurrentPage as PublicEventPageData} initialCover={null} />
+      </BrandProvider>,
+    );
+    const name = await screen.findByPlaceholderText("First and last name");
+    fireEvent.focus(name);
+    expect(mockPosthog.getFeatureFlag).not.toHaveBeenCalled();
+    expect(orgRegisterCalls()).toHaveLength(0);
+
+    await act(async () => {
+      resolveLookup({ ok: true, json: async () => ({ orgId: ORG_ID, isTestOrg: false }) });
+    });
+    await waitFor(() => expect(mockPosthog.getFeatureFlag).toHaveBeenCalledTimes(1));
+    expect(mockPosthog.register).toHaveBeenCalledWith({ org_id: ORG_ID });
+    expect(firstOrder(mockPosthog.register)).toBeLessThan(firstOrder(mockPosthog.getFeatureFlag));
+
+    // The deferred read still drives the nudge (test arm, dated slot, no email).
+    fireEvent.change(name, { target: { value: "Pat Signer" } });
+    await act(async () => {
+      fireEvent.submit(name.closest("form")!);
+    });
+    expect(screen.getByText(EMAIL_NUDGE_COPY.title)).toBeInTheDocument();
+    expect(mockPosthog.getFeatureFlag).toHaveBeenCalledTimes(1);
+  });
+
+  it("never registers an empty org_id, and still reads the flag when the lookup has no ward", async () => {
+    fetchMock.mockImplementation(async (url: string) => ({
+      ok: true,
+      json: async () =>
+        String(url).endsWith("/analytics-context") ? { orgId: null, isTestOrg: null } : { primary_cancel_token: "tok", results: [{ session_id: "s1" }] },
+    }));
+    mockPosthog.getFeatureFlag.mockReturnValue("control");
+    await renderPage(rsvpPage("2099-01-10"));
+    await fillNameAndSubmit();
+    expect(orgRegisterCalls()).toHaveLength(0);
+    expect(mockPosthog.unregister).toHaveBeenCalledWith("org_id");
+    expect(mockPosthog.getFeatureFlag).toHaveBeenCalledTimes(1);
+  });
+
+  it("removes org_id when the event page unmounts", async () => {
+    await renderPage(rsvpPage("2099-01-10"));
+    expect(mockPosthog.register).toHaveBeenCalledWith({ org_id: ORG_ID });
+    mockPosthog.unregister.mockReset();
+    cleanup();
+    expect(mockPosthog.unregister).toHaveBeenCalledWith("org_id");
   });
 });
