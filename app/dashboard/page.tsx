@@ -157,8 +157,9 @@ export default function DashboardPage() {
   const [showAllTemplates, setShowAllTemplates] = useState(false);
   const [orgNeedsNaming, setOrgNeedsNaming] = useState<{ id: string; name: string } | null>(null);
   const [orgName, setOrgName] = useState<string | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
 
-  const maxEvents = getMaxCampaignsForOrg(orgName) ?? getMaxCampaignsPerUser();
+  const maxEvents = getMaxCampaignsForOrg(orgId) ?? getMaxCampaignsPerUser();
   const isUnlimited = isUnlimitedEventsUser(user?.email);
   const atLimit = !isUnlimited && events.length >= maxEvents;
 
@@ -265,6 +266,7 @@ export default function DashboardPage() {
       // If the org was backfilled (needs_naming = true), a blocking modal asks
       // them to rename before doing anything else.
       const org = dashboard.org;
+      setOrgId(org?.id ?? null);
       if (org?.needs_naming) {
         setOrgNeedsNaming({ id: org.id, name: org.name });
       } else if (org?.name) {
