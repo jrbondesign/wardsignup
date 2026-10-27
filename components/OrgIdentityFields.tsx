@@ -17,11 +17,14 @@ interface OrgIdentityFieldsProps {
   onNameChange: (v: string) => void;
   wardName: string;
   onWardNameChange: (v: string) => void;
-  callingChoice: string;
-  callingOther: string;
-  onCallingChoiceChange: (v: string) => void;
-  onCallingOtherChange: (v: string) => void;
-  /** Org name and Ward/Unit are owner only; calling is per person. */
+  /** Calling inputs; omit them all (with showCalling false) where calling lives elsewhere. */
+  callingChoice?: string;
+  callingOther?: string;
+  onCallingChoiceChange?: (v: string) => void;
+  onCallingOtherChange?: (v: string) => void;
+  /** Org settings shows calling on the person's own admin row instead. Default true. */
+  showCalling?: boolean;
+  /** Org name and Ward/Unit: owner and co-admins in settings; calling is per person. */
   canEditOrg: boolean;
   disabled?: boolean;
   autoFocus?: boolean;
@@ -43,13 +46,17 @@ export default function OrgIdentityFields({
   callingOther,
   onCallingChoiceChange,
   onCallingOtherChange,
+  showCalling = true,
   canEditOrg,
   disabled,
   autoFocus,
   idPrefix,
 }: OrgIdentityFieldsProps) {
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-3" data-testid="org-identity-fields">
+    <div
+      className={`grid grid-cols-1 gap-4 ${showCalling ? "md:grid-cols-3" : "md:grid-cols-2"}`}
+      data-testid="org-identity-fields"
+    >
       <div>
         <label htmlFor={`${idPrefix}-ward`} className={labelClass}>
           Ward/Unit
@@ -83,14 +90,16 @@ export default function OrgIdentityFields({
         />
         <p className={hintClass}>{canEditOrg ? ORG_NAME_HINT : OWNER_ONLY_HINT}</p>
       </div>
-      <CallingField
-        idPrefix={`${idPrefix}-calling`}
-        choice={callingChoice}
-        otherText={callingOther}
-        onChoiceChange={onCallingChoiceChange}
-        onOtherTextChange={onCallingOtherChange}
-        disabled={disabled}
-      />
+      {showCalling && (
+        <CallingField
+          idPrefix={`${idPrefix}-calling`}
+          choice={callingChoice ?? ""}
+          otherText={callingOther ?? ""}
+          onChoiceChange={onCallingChoiceChange ?? (() => {})}
+          onOtherTextChange={onCallingOtherChange ?? (() => {})}
+          disabled={disabled}
+        />
+      )}
     </div>
   );
 }

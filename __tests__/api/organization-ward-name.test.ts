@@ -21,10 +21,17 @@ function req(body: unknown) {
 const params = { params: Promise.resolve({ id: "org-1" }) };
 
 /** Fake client: lookup returns an owned org; each update result comes from `updateResults` in order. */
-function client(updateResults: { data: unknown; error: unknown }[], ownerId = USER_ID) {
+function client(
+  updateResults: { data: unknown; error: unknown }[],
+  ownerId = USER_ID,
+  isMember = false,
+) {
   const updates: Record<string, unknown>[] = [];
+  const memberChain: Record<string, unknown> = {};
+  for (const m of ["select", "eq", "limit"]) memberChain[m] = () => memberChain;
+  memberChain.maybeSingle = async () => ({ data: isMember ? { id: "m-1" } : null, error: null });
   const c = {
-    from: () => ({
+    from: (table: string) => table === "organization_members" ? memberChain : ({
       select: () => ({
         eq: () => ({ maybeSingle: async () => ({ data: { id: "org-1", owner_id: ownerId }, error: null }) }),
       }),
@@ -89,9 +96,27 @@ describe("PATCH /api/organizations/[id] Ward/Unit", () => {
     expect(updates).toHaveLength(0);
   });
 
-  it("only the owner can set Ward/Unit", async () => {
-    const updates = client([okOrg()], "someone-else");
+  it("someone who isn't an admin of the org can't set Ward/Unit or the name", async () => {
+    const updates = client([okOrg()], "someone-else", false);
     expect((await PATCH(req({ name: "Elders Quorum", ward_name: "Maple Ridge Ward" }), params)).status).toBe(403);
     expect(updates).toHaveLength(0);
+  });
+
+  it("an accepted co-admin can set the name and Ward/Unit, and only those columns are written", async () => {
+    const updates = client([okOrg({ ward_name: "Maple Ridge Ward" })], "someone-else", true);
+    const res = await PATCH(
+      req({ name: "Elders Quorum", ward_name: "Maple Ridge Ward", owner_id: USER_ID, slug: "x", brand_id: "other" }),
+      params,
+    );
+    expect(res.status).toBe(200);
+    expect(updates).toEqual([{ name: "Elders Quorum", needs_naming: false, ward_name: "Maple Ridge Ward" }]);
+  });
+
+  it("co-admin before the trigger migration: clear 409, no 5xx", async () => {
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    client([{ data: null, error: { code: "42501", message: "Only the owner can change organization fields" } }], "someone-else", true);
+    const res = await PATCH(req({ name: "Elders Quorum", ward_name: "Maple Ridge Ward" }), params);
+    expect(res.status).toBe(409);
+    expect((await res.json()).code).toBe("coadmin_edit_unavailable");
   });
 });
