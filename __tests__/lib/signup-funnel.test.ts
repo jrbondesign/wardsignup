@@ -1,4 +1,10 @@
-import { SignupFunnelTracker, buildFunnelProps, isLikelyEmail, type FunnelContext } from "@/lib/signup-funnel";
+import {
+  SignupFunnelTracker,
+  buildFunnelProps,
+  isLikelyEmail,
+  syncOrgIdSuperProperty,
+  type FunnelContext,
+} from "@/lib/signup-funnel";
 import { orgIdForCampaign } from "@/lib/analytics-context";
 
 const ORG = "11111111-2222-4333-8444-555555555555";
@@ -133,5 +139,34 @@ describe("orgIdForCampaign", () => {
     await expect(orgIdForCampaign(adminReturning(new Error("network")), CAMPAIGN)).resolves.toBeNull();
     await expect(orgIdForCampaign(null, CAMPAIGN)).resolves.toBeNull();
     await expect(orgIdForCampaign(adminReturning({ data: { organization_id: ORG }, error: null }), null)).resolves.toBeNull();
+  });
+});
+
+describe("syncOrgIdSuperProperty", () => {
+  const client = () => ({ register: jest.fn(), unregister: jest.fn() });
+
+  it("registers only the ward id", () => {
+    const c = client();
+    syncOrgIdSuperProperty(c, ORG);
+    expect(c.register).toHaveBeenCalledWith({ org_id: ORG });
+    expect(c.unregister).not.toHaveBeenCalled();
+  });
+
+  it("removes org_id instead of registering a missing or empty id", () => {
+    for (const id of [null, undefined, "", "  "]) {
+      const c = client();
+      syncOrgIdSuperProperty(c, id);
+      expect(c.register).not.toHaveBeenCalled();
+      expect(c.unregister).toHaveBeenCalledWith("org_id");
+    }
+  });
+
+  it("never throws without PostHog or when PostHog throws", () => {
+    expect(() => syncOrgIdSuperProperty(null, ORG)).not.toThrow();
+    expect(() => syncOrgIdSuperProperty(undefined, ORG)).not.toThrow();
+    expect(() => syncOrgIdSuperProperty({}, ORG)).not.toThrow();
+    const throws = { register: () => { throw new Error("boom"); }, unregister: () => { throw new Error("boom"); } };
+    expect(() => syncOrgIdSuperProperty(throws, ORG)).not.toThrow();
+    expect(() => syncOrgIdSuperProperty(throws, null)).not.toThrow();
   });
 });
