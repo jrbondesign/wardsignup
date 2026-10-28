@@ -72,6 +72,14 @@ const nextConfig = {
         source: "/event/:path*",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
+      {
+        // Public ward directory pages list a ward's sheets. Same treatment as
+        // /event: noindex via header, and /w is NOT disallowed in robots.ts.
+        // (The old next/head tag in app/w/[slug]/page.tsx did nothing in the
+        // App Router; app/w/[slug]/layout.tsx now sets the meta tag too.)
+        source: "/w/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
     ];
   },
   async rewrites() {

@@ -3,7 +3,6 @@
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import Head from "next/head";
 import { getPublicOrgCampaigns } from "@/lib/supabase";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
@@ -105,9 +104,6 @@ export default function WardDirectoryPage({ params }: { params: Promise<{ slug: 
 
   return (
     <>
-      <Head>
-        <meta name="robots" content="noindex" />
-      </Head>
       <div className="min-h-screen bg-[#F4FAFB] flex flex-col">
         <header className="bg-white border-b border-[#0E96B0]/10">
         <div className="max-w-4xl mx-auto px-6 min-h-[60px] py-2 flex items-center justify-between gap-3">
