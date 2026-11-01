@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { createSignupIfCapacityRpc, mapSignupRpcError } from "@/lib/supabase";
@@ -238,6 +239,7 @@ export async function POST(request: Request) {
     after(() => posthog.flush());
 
     const cancelToken = (data as Record<string, unknown>).cancel_token as string | null | undefined;
+    revalidateEventPage(campaign_id);
     return NextResponse.json({ signup: data, cancel_token: cancelToken ?? null });
   } catch (error) {
     console.error("Error creating signup:", error);

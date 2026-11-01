@@ -1,9 +1,11 @@
 import { cache } from "react";
+import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { loadPublicEventPage, type PublicEventClient, type PublicEventPageData } from "@/lib/public-event-page";
 import { publicCoverForCampaign } from "@/lib/event-media";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import type { PublicCover } from "@/lib/use-public-cover";
+import { EVENT_PAGE_CACHE_SECONDS, eventPageTag } from "@/lib/event-page-cache";
 
 /**
  * Server side loads for /event/[id], memoized per request with React cache()
@@ -16,6 +18,11 @@ import type { PublicCover } from "@/lib/use-public-cover";
  *
  * Each load gives up after SERVER_LOAD_TIMEOUT_MS so a slow Supabase can't
  * hold the whole page; the browser then shows the spinner and fetches itself.
+ *
+ * The event page read is also shared across requests for
+ * EVENT_PAGE_CACHE_SECONDS (tag eventPageTag(id)); signup, cancel and edit
+ * routes expire it with revalidateEventPage. Failures throw inside the cache
+ * so they are never stored.
  */
 
 export const SERVER_LOAD_TIMEOUT_MS = 1500;
@@ -40,20 +47,39 @@ function anonClient() {
   });
 }
 
-export const getServerEventPage = cache(
-  async (eventId: string): Promise<PublicEventPageData | null | undefined> => {
+/** Server loaded event page plus when it was read (ms epoch), so the browser can tell how fresh it is. */
+export interface ServerEventSnapshot {
+  page: PublicEventPageData;
+  loadedAt: number;
+}
+
+function loadCachedEventSnapshot(eventId: string): Promise<ServerEventSnapshot | null> {
+  return unstable_cache(
+    async (id: string): Promise<ServerEventSnapshot | null> => {
+      const page = await loadPublicEventPage(anonClient() as unknown as PublicEventClient, id);
+      return page ? { page, loadedAt: Date.now() } : null;
+    },
+    ["public-event-page-v1", eventId],
+    { revalidate: EVENT_PAGE_CACHE_SECONDS, tags: [eventPageTag(eventId)] }
+  )(eventId);
+}
+
+export const getServerEventSnapshot = cache(
+  async (eventId: string): Promise<ServerEventSnapshot | null | undefined> => {
     if (!UUID_RE.test(eventId)) return null;
     try {
-      return await withTimeout(
-        loadPublicEventPage(anonClient() as unknown as PublicEventClient, eventId),
-        SERVER_LOAD_TIMEOUT_MS
-      );
+      return await withTimeout(loadCachedEventSnapshot(eventId), SERVER_LOAD_TIMEOUT_MS);
     } catch (err) {
       console.error("Server event page load failed:", err);
       return undefined;
     }
   }
 );
+
+export async function getServerEventPage(eventId: string): Promise<PublicEventPageData | null | undefined> {
+  const snapshot = await getServerEventSnapshot(eventId);
+  return snapshot === undefined ? undefined : snapshot?.page ?? null;
+}
 
 /** Cover for the event page, already gated by the cover feature allowlist. */
 export const getServerEventCover = cache(

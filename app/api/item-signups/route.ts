@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { getPostHogClient } from "@/lib/posthog-server";
@@ -158,6 +159,7 @@ export async function POST(request: Request) {
       },
     });
 
+    revalidateEventPage(campaign_id);
     return NextResponse.json({ signup: data });
   } catch (err) {
     console.error(err);
