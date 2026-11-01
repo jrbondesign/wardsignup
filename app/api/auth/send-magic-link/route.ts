@@ -9,6 +9,8 @@ import { consumeActionRate } from "@/lib/rate-limit";
 import { consumeEmailKeyRate } from "@/lib/email-send";
 import { magicLinkDedupeBuckets, normalizeEmail } from "@/lib/email-throttle";
 import { checkBotId } from "botid/server";
+import { verifyTurnstile } from "@/lib/turnstile";
+import { getClientIp } from "@/lib/request-ip";
 import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
 
 function messageFromResendError(err: unknown): string {
@@ -37,11 +39,11 @@ function requestOrigin(request: NextRequest): string {
   return `${proto}://${host}`;
 }
 
-function parseJsonBody(raw: string): { email?: unknown; next?: unknown } | null {
+function parseJsonBody(raw: string): { email?: unknown; next?: unknown; captchaToken?: unknown } | null {
   const t = raw.trim();
   if (!t) return null;
   try {
-    return JSON.parse(t) as { email?: unknown; next?: unknown };
+    return JSON.parse(t) as { email?: unknown; next?: unknown; captchaToken?: unknown };
   } catch {
     return null;
   }
@@ -74,6 +76,22 @@ export async function POST(request: NextRequest) {
     if (verification.isBot) {
       return NextResponse.json(
         { error: "We couldn't verify this request. Please refresh and try again." },
+        { status: 403 },
+      );
+    }
+
+    // Cloudflare Turnstile (no-op until both Turnstile keys are set). Checked
+    // before any rate limit or account is touched.
+    const captcha = await verifyTurnstile(body.captchaToken, getClientIp(request));
+    if (!captcha.ok) {
+      return NextResponse.json(
+        {
+          error:
+            captcha.reason === "missing_token"
+              ? "Please complete the verification check and try again."
+              : "Verification failed. Please refresh and try again.",
+          captcha: true,
+        },
         { status: 403 },
       );
     }
