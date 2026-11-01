@@ -92,6 +92,13 @@ it("sends near real time rows before an older batch backlog, with the realtime f
   expect(listCalls[1].notIn).toBe("(welcome,new_creator,feedback_response)");
 });
 
+it("passes the row id as a stable idempotency key, so a retried row Resend already took is not sent twice", async () => {
+  rows = [row("w1", "welcome", "2026-10-12T16:00:00Z")];
+  sendGuardedEmail.mockResolvedValue({ ok: true });
+  await run();
+  expect(sendGuardedEmail.mock.calls[0][0].idempotencyKey).toBe("email-queue/w1");
+});
+
 it("stops at the first over budget refusal; the welcome went first, the batch row stays pending", async () => {
   rows = [row("d1", "digest", "2026-10-12T07:05:00Z"), row("w1", "welcome", "2026-10-12T16:00:00Z")];
   sendGuardedEmail.mockImplementation((p: { kind: string }) =>

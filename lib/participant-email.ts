@@ -6,7 +6,7 @@ import {
 } from "@/lib/brand";
 import { buildParticipantEmailFooterHtml } from "@/lib/site-footer";
 import { formatSessionSlotLabel } from "@/lib/organizer-email";
-import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
+import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import type { Campaign } from "@/lib/types";
 import { withUtm } from "@/lib/utm";
@@ -102,7 +102,7 @@ export async function sendParticipantSignupConfirmation(params: {
   guestNames?: string[];
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
   }
 
@@ -187,7 +187,7 @@ export async function sendParticipantReminderEmail(params: {
   cancelToken?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
   }
 
@@ -293,7 +293,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
   }
 
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
   }
 

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getBrandFromHost } from "@/lib/brand";
 import { magicLinkEmailFrom } from "@/lib/brand/email-from";
-import { getResendForBrand } from "@/lib/resend-for-brand";
 import { escapeHtml } from "@/lib/html-escape";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { safeReturnPath } from "@/lib/auth-return-path";
@@ -10,7 +9,7 @@ import { consumeActionRate } from "@/lib/rate-limit";
 import { consumeEmailKeyRate } from "@/lib/email-send";
 import { magicLinkDedupeBuckets, normalizeEmail } from "@/lib/email-throttle";
 import { checkBotId } from "botid/server";
-import { brevoConfig, deliverEmail } from "@/lib/email-deliver";
+import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
 
 function messageFromResendError(err: unknown): string {
   if (
@@ -155,8 +154,7 @@ export async function POST(request: NextRequest) {
       actionLink += `&next=${encodeURIComponent(nextParam)}`;
     }
 
-    const resend = getResendForBrand(brand);
-    if (!resend && !brevoConfig()) {
+    if (!hasEmailProviderConfigured(brand)) {
       console.error("send-magic-link: Resend API key missing for this brand");
       return NextResponse.json(
         { error: "Email is not configured." },
@@ -182,6 +180,7 @@ export async function POST(request: NextRequest) {
 
     const sendRes = await deliverEmail({
       brand,
+      kind: "magic_link",
       from,
       to: email,
       subject,
