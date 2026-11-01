@@ -5,8 +5,7 @@ import { consumeEmailKeyRate } from "@/lib/email-send";
 import { magicLinkDedupeBuckets, normalizeEmail } from "@/lib/email-throttle";
 import { getBrandFromHost } from "@/lib/brand";
 import { magicLinkEmailFrom } from "@/lib/brand/email-from";
-import { getResendForBrand } from "@/lib/resend-for-brand";
-import { brevoConfig, deliverEmail } from "@/lib/email-deliver";
+import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { escapeHtml } from "@/lib/html-escape";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { createHash } from "crypto";
@@ -170,8 +169,7 @@ export async function POST(request: NextRequest) {
     // Build token_hash callback URL (type=email for new accounts with confirmation_token)
     const actionLink = `${origin}/auth/callback?token_hash=${encodeURIComponent(hashedOtpToken)}&type=email&next=${encodeURIComponent(`/orgs/accept?token=${encodeURIComponent(token)}`)}`;
 
-    const resend = getResendForBrand(brand);
-    if (!resend && !brevoConfig()) {
+    if (!hasEmailProviderConfigured(brand)) {
       console.error("invite-magic-link: email not configured for this brand");
       return NextResponse.json({ error: "Email is not configured." }, { status: 503 });
     }
@@ -187,6 +185,7 @@ export async function POST(request: NextRequest) {
     const sendRes = await deliverEmail(
       {
         brand,
+        kind: "org_invite_link",
         from,
         to: email,
         subject,

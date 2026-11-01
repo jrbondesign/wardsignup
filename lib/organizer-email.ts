@@ -8,7 +8,7 @@ import {
 import { buildOrganizerEmailFooterHtml } from "@/lib/site-footer";
 import { escapeHtml } from "@/lib/html-escape";
 import { formatTimeRange } from "@/lib/utils";
-import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
+import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { formatInTimeZone } from "date-fns-tz";
 import {
@@ -549,7 +549,7 @@ export async function sendOrganizerMetricsEmail(
     public_host: c.public_host as string | null | undefined,
   });
 
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend API key not configured for this brand" };
   }
 
@@ -718,7 +718,7 @@ export async function sendOrganizerFasterAlertEmail(
     public_host: c.public_host as string | null | undefined,
   });
 
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend API key not configured for this brand" };
   }
 

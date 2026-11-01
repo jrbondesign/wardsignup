@@ -5,7 +5,18 @@ jest.mock("@/lib/resend-for-brand", () => ({
   getResendForBrand: () => ({ emails: { send: resendSend } }),
 }));
 
-import { brevoConfig, deliverEmail, parseFrom, resendUtcDayCap, sendViaBrevo } from "@/lib/email-deliver";
+const capture = jest.fn();
+jest.mock("@/lib/posthog-server", () => ({ getPostHogClient: () => ({ capture }) }));
+
+import {
+  brevoConfig,
+  classifyResendError,
+  deliverEmail,
+  failoverAlertTo,
+  parseFrom,
+  resendUtcDayCap,
+  sendViaBrevo,
+} from "@/lib/email-deliver";
 
 const brand = { id: "wardsignup", name: "Ward Signup" } as never;
 const msg = { brand, from: "Ward Signup <noreply@wardsignup.com>", to: "a@b.com", subject: "S", html: "<p>h</p>" };
@@ -20,7 +31,10 @@ const saved = { ...process.env };
 beforeEach(() => {
   rpc.mockReset();
   resendSend.mockReset();
-  process.env = { ...saved };
+  capture.mockReset();
+  process.env = { ...saved, EMAIL_RESEND_RETRY_MS: "0" };
+  jest.spyOn(console, "info").mockImplementation(() => {});
+  jest.spyOn(console, "warn").mockImplementation(() => {});
   (global as { fetch?: unknown }).fetch = jest.fn().mockResolvedValue({ ok: true, text: async () => "" });
 });
 afterAll(() => {
@@ -223,3 +237,162 @@ describe("Brevo failure is reported so near real time mail can be queued", () =>
   });
 });
 
+
+describe("failover by Resend failure class", () => {
+  const fetchMock = () => global.fetch as unknown as jest.Mock;
+  const brevoBodies = () => fetchMock().mock.calls.map((c) => JSON.parse((c[1] as { body: string }).body));
+  /** Brevo sends for the email itself, leaving out the founder alert. */
+  const brevoSendsTo = (to: string) => brevoBodies().filter((b) => b.to[0].email === to);
+  const roomOnResend = () =>
+    rpc.mockImplementation((_n: string, a: { p_action: string }) =>
+      Promise.resolve({ data: a.p_action !== "email_failover_alert" ? true : false, error: null }),
+    );
+
+  beforeEach(() => {
+    Object.assign(process.env, BREVO_ENV);
+    jest.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it("classifies Resend errors", () => {
+    expect(classifyResendError({ statusCode: 429, name: "daily_quota_exceeded" })).toBe("quota");
+    expect(classifyResendError({ statusCode: 429, name: "rate_limit_exceeded" })).toBe("quota");
+    expect(classifyResendError({ statusCode: 429, name: "monthly_quota_exceeded" })).toBe("quota");
+    expect(classifyResendError({ statusCode: 500, name: "application_error" })).toBe("transient");
+    expect(classifyResendError({ statusCode: 503, name: "service_unavailable" })).toBe("transient");
+    expect(classifyResendError({ statusCode: null, name: "application_error" })).toBe("transient");
+    expect(classifyResendError({ statusCode: 401, name: "validation_error", message: "API key is invalid" })).toBe("auth");
+    expect(classifyResendError({ statusCode: 403, name: "suspended_api_key" })).toBe("auth");
+    expect(classifyResendError({ statusCode: 409, name: "concurrent_idempotent_requests" })).toBe("in_progress");
+    expect(classifyResendError({ statusCode: 422, name: "missing_required_field" })).toBe("permanent");
+    expect(classifyResendError({ statusCode: 400, name: "validation_error" })).toBe("permanent");
+    expect(classifyResendError({ statusCode: 403, name: "validation_error", message: "The x.com domain is not verified" })).toBe("permanent");
+    expect(classifyResendError({ statusCode: 409, name: "invalid_idempotent_request" })).toBe("permanent");
+  });
+
+  it("5xx once: retries Resend with the same Idempotency-Key and never touches Brevo", async () => {
+    roomOnResend();
+    resendSend
+      .mockResolvedValueOnce({ error: { statusCode: 500, name: "application_error", message: "boom" } })
+      .mockResolvedValueOnce({ error: null });
+    expect(await deliverEmail(msg, { urgent: false })).toEqual({ ok: true, provider: "resend" });
+    expect(resendSend).toHaveBeenCalledTimes(2);
+    const k1 = resendSend.mock.calls[0][1].idempotencyKey;
+    expect(k1).toEqual(expect.any(String));
+    expect(resendSend.mock.calls[1][1].idempotencyKey).toBe(k1);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("5xx twice: the same email goes through Brevo, batch mail included", async () => {
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: { statusCode: 503, name: "service_unavailable", message: "down" } });
+    expect(await deliverEmail({ ...msg, idempotencyKey: "email-queue/1" }, { urgent: false })).toEqual({
+      ok: true,
+      provider: "brevo",
+    });
+    const [sent] = brevoSendsTo("a@b.com");
+    expect(sent.subject).toBe("S");
+    expect(sent.htmlContent).toBe("<p>h</p>");
+    expect(sent.headers.IdempotencyKey).toBe("email-queue/1");
+    expect(resendSend.mock.calls.map((c) => c[1].idempotencyKey)).toEqual(["email-queue/1", "email-queue/1"]);
+  });
+
+  it("network error (no response) twice: Brevo", async () => {
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: { statusCode: null, name: "application_error", message: "Unable to fetch data." } });
+    expect(await deliverEmail(msg, { urgent: true })).toEqual({ ok: true, provider: "brevo" });
+    expect(brevoSendsTo("a@b.com")).toHaveLength(1);
+  });
+
+  it("validation errors never fail over", async () => {
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: { statusCode: 422, name: "missing_required_field", message: "missing to" } });
+    expect(await deliverEmail(msg, { urgent: true })).toEqual({ ok: false, error: "missing to" });
+    expect(resendSend).toHaveBeenCalledTimes(1);
+    expect(fetchMock()).not.toHaveBeenCalled();
+    expect(capture).not.toHaveBeenCalled();
+  });
+
+  it("an idempotent request still in progress is never handed to Brevo (it may already be sending)", async () => {
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: { statusCode: 409, name: "concurrent_idempotent_requests", message: "in progress" } });
+    expect(await deliverEmail(msg, { urgent: true })).toMatchObject({ ok: false });
+    expect(resendSend).toHaveBeenCalledTimes(2);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("an invalid or suspended Resend key fails over", async () => {
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: { statusCode: 401, name: "validation_error", message: "API key is invalid" } });
+    expect(await deliverEmail(msg, { urgent: false })).toEqual({ ok: true, provider: "brevo" });
+    expect(resendSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("quota on batch mail still waits for the queue instead of using Brevo", async () => {
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: { statusCode: 429, name: "daily_quota_exceeded", message: "quota" } });
+    expect(await deliverEmail(msg, { urgent: false })).toMatchObject({ ok: false, overBudget: true });
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("no Brevo configured: a 5xx is reported, nothing else is tried", async () => {
+    for (const k of Object.keys(BREVO_ENV)) delete process.env[k];
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: { statusCode: 500, name: "application_error", message: "boom" } });
+    expect(await deliverEmail(msg, { urgent: true })).toEqual({ ok: false, error: "boom" });
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("Brevo failing after a 5xx is reported as brevoFailed", async () => {
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: { statusCode: 500, name: "application_error", message: "boom" } });
+    (global as { fetch?: unknown }).fetch = jest.fn().mockResolvedValue({ ok: false, status: 502, text: async () => "bad" });
+    expect(await deliverEmail(msg, { urgent: true })).toMatchObject({ ok: false, brevoFailed: true });
+  });
+
+  describe("failover alert", () => {
+    beforeEach(() => {
+      process.env.NEXT_PUBLIC_POSTHOG_KEY = "phc_test";
+      resendSend.mockResolvedValue({ error: { statusCode: 500, name: "application_error", message: "boom" } });
+    });
+
+    it("first failover of the Arizona day: PostHog event plus one alert email to the founder", async () => {
+      rpc.mockResolvedValue({ data: true, error: null });
+      await deliverEmail({ ...msg, kind: "magic_link" }, { urgent: true });
+      expect(capture).toHaveBeenCalledWith(
+        expect.objectContaining({
+          event: "email_failover",
+          properties: { brand_id: "wardsignup", kind: "magic_link", reason: "transient", provider: "brevo" },
+        }),
+      );
+      expect(JSON.stringify(capture.mock.calls)).not.toContain("a@b.com");
+      const alerts = brevoSendsTo("jonathan@wardsignup.com");
+      expect(alerts).toHaveLength(1);
+      expect(alerts[0].subject).toContain("failover");
+      expect(JSON.stringify(alerts[0])).not.toContain("a@b.com");
+      const alertRate = rpc.mock.calls.find((c) => c[1].p_action === "email_failover_alert")![1];
+      expect(alertRate.p_max).toBe(1);
+    });
+
+    it("later failovers that day: event only, no second alert", async () => {
+      roomOnResend(); // alert counter full
+      await deliverEmail(msg, { urgent: true });
+      expect(capture).toHaveBeenCalledTimes(1);
+      expect(brevoSendsTo("jonathan@wardsignup.com")).toHaveLength(0);
+      expect(brevoSendsTo("a@b.com")).toHaveLength(1);
+    });
+
+    it("alert counter error fails closed (no alert storm)", async () => {
+      rpc.mockImplementation((_n: string, a: { p_action: string }) =>
+        Promise.resolve(a.p_action === "email_failover_alert" ? { data: null, error: { message: "db" } } : { data: true, error: null }),
+      );
+      expect(await deliverEmail(msg, { urgent: true })).toEqual({ ok: true, provider: "brevo" });
+      expect(brevoSendsTo("jonathan@wardsignup.com")).toHaveLength(0);
+    });
+
+    it("can be turned off or pointed elsewhere", () => {
+      expect(failoverAlertTo({})).toBe("jonathan@wardsignup.com");
+      expect(failoverAlertTo({ EMAIL_FAILOVER_ALERT: "off" })).toBeNull();
+      expect(failoverAlertTo({ EMAIL_FAILOVER_ALERT_TO: "ops@wardsignup.com" })).toBe("ops@wardsignup.com");
+    });
+  });
+});
