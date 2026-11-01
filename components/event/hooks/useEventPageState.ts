@@ -12,6 +12,8 @@ import { type CampaignItemWithSignups } from "@/lib/types";
 export interface EventPageInit {
   /** Server loaded data: object = loaded, null = no such event, undefined = load in the browser. */
   initialPage?: PublicEventPageData | null;
+  /** When the server read initialPage (ms epoch); decides whether the browser needs a background refresh. */
+  initialLoadedAt?: number;
   /** Server loaded cover: object = show, null = none, undefined = fetch in the browser. */
   initialCover?: PublicCover | null;
 }

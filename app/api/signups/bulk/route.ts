@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { createSignupIfCapacityRpc, mapSignupRpcError } from "@/lib/supabase";
@@ -320,6 +321,7 @@ export async function POST(request: Request) {
       }
     });
 
+    revalidateEventPage(campaign_id);
     return NextResponse.json({
       results,
       primary_cancel_token: successfulCancelTokens[0] ?? null,
