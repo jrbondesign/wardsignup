@@ -79,7 +79,62 @@ export function resolveEventType(t: string | null | undefined): PublicEventType 
 }
 
 /** Merge parent rows with public signup rows (pure; shared by both paths). */
+/** Same rule the page UI uses: names are public only when the flag is true. */
+export function signupsArePublic(event: Pick<PublicEventRow, "show_signups_publicly">): boolean {
+  return Boolean(event.show_signups_publicly);
+}
+
+/**
+ * Defense in depth for "show signups publicly" = off. The signups_public and
+ * item_signups_public views already null names, notes, labels and guest names
+ * for hidden events; this also blanks them in the app and swaps signup ids for
+ * opaque per-page ids, so nothing that identifies a person reaches the page
+ * HTML, the RSC payload or the shared cache even if a view or RPC regresses.
+ * Row counts and item quantities stay, because the page uses them for capacity.
+ */
+export function redactHiddenSignups(page: PublicEventPageData): PublicEventPageData {
+  if (signupsArePublic(page.event)) return page;
+  let n = 0;
+  const hiddenId = () => `hidden-${++n}`;
+  return {
+    ...page,
+    sessions: page.sessions.map((session) => ({
+      ...session,
+      signups: (session.signups ?? []).map(() => ({
+        id: hiddenId(),
+        member_name: "",
+        signup_note: null,
+        guest_names: [],
+      })),
+    })),
+    items: page.items.map((item) => ({
+      ...item,
+      item_signups: (item.item_signups ?? []).map(
+        (sig) =>
+          ({
+            id: hiddenId(),
+            member_name: "",
+            signup_note: null,
+            quantity: (sig as { quantity?: number }).quantity ?? 1,
+          }) as never
+      ),
+    })),
+    customSignups: page.customSignups.map((sig) => ({
+      id: hiddenId(),
+      member_name: "",
+      custom_label: null,
+      signup_note: null,
+      quantity: sig.quantity,
+    })),
+  };
+}
+
 export function buildPublicEventPage(payload: PublicEventPagePayload): PublicEventPageData | null {
+  const page = buildUnredactedPublicEventPage(payload);
+  return page ? redactHiddenSignups(page) : null;
+}
+
+function buildUnredactedPublicEventPage(payload: PublicEventPagePayload): PublicEventPageData | null {
   const event = payload.event;
   if (!event) return null;
   const eventType = resolveEventType(event.event_type);
