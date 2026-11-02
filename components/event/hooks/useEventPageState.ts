@@ -8,6 +8,7 @@ import { usePublicCover, type PublicCover } from "@/lib/use-public-cover";
 import type { PublicEventPageData } from "@/lib/public-event-page";
 import { SessionWithSignups } from "@/components/event/event-page-shared";
 import { type CampaignItemWithSignups } from "@/lib/types";
+import { useCaptcha } from "@/lib/use-captcha";
 
 export interface EventPageInit {
   /** Server loaded data: object = loaded, null = no such event, undefined = load in the browser. */
@@ -58,8 +59,15 @@ export function useEventPageState(eventId: string, init: EventPageInit = {}) {
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<{ day: number; year: number; month: number } | null>(null);
+  // Turnstile, one widget per form (off until the Turnstile keys are set).
+  const slotCaptcha = useCaptcha();
+  const itemCaptcha = useCaptcha();
+  const customCaptcha = useCaptcha();
 
   return {
+    slotCaptcha,
+    itemCaptcha,
+    customCaptcha,
     brand,
     posthog,
     router,

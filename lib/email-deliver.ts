@@ -34,6 +34,13 @@ import { getPostHogClient } from "@/lib/posthog-server";
  *   would fail there too.
  * Every send logs which provider took it. A failover also records a PostHog
  * event and sends at most one alert email per Arizona day (via Brevo).
+ *
+ * Routing by type (bulkProvider): bulk, non urgent mail (reminders, daily
+ * digests, feedback asks; see BULK_KINDS) goes to Brevo FIRST when Brevo is
+ * configured, so Resend's 100 a day free quota stays free for sign in links,
+ * invites and signup confirmations. If Brevo refuses or errors, the email
+ * falls back to the normal Resend path above (budget, retry, idempotency key).
+ * With no Brevo configured, or EMAIL_BULK_PROVIDER=resend, nothing changes.
  */
 
 export type DeliverParams = {
@@ -88,6 +95,31 @@ export function brevoConfig(env: Env = process.env):
   const senderEmail = env.BREVO_SENDER_EMAIL?.trim();
   if (!apiKey || !senderEmail) return null;
   return { apiKey, senderEmail, senderName: env.BREVO_SENDER_NAME?.trim() || null };
+}
+
+/**
+ * Bulk, non urgent kinds. Brevo first when bulkProvider() says so. Sign in
+ * links, invites, signup confirmations, welcome and leader notices are NOT
+ * here: they stay Resend first.
+ */
+export const BULK_KINDS: ReadonlySet<string> = new Set(["reminder", "digest", "feedback", "feedback_summary"]);
+
+export function isBulkKind(kind: string | undefined | null): boolean {
+  return Boolean(kind && BULK_KINDS.has(kind));
+}
+
+/**
+ * Which provider bulk mail tries first. EMAIL_BULK_PROVIDER:
+ * - unset or "auto" (default): Brevo when brevoConfig() is complete, else Resend.
+ *   Same switch as the failover, so nothing changes until Brevo is set up.
+ * - "resend": always Resend first (the behavior before this switch existed).
+ * - "brevo": same as auto (Brevo needs its config either way).
+ * Anything else is treated as "resend", the old behavior.
+ */
+export function bulkProvider(env: Env = process.env): "resend" | "brevo" {
+  const v = env.EMAIL_BULK_PROVIDER?.trim().toLowerCase() || "auto";
+  if (v !== "auto" && v !== "brevo") return "resend";
+  return brevoConfig(env) ? "brevo" : "resend";
 }
 
 /** "Ward Signup <noreply@x.com>" to { name, email }. */
@@ -183,9 +215,9 @@ export function failoverAlertTo(env: Env = process.env): string | null {
 }
 
 /** One provider line per email, for Vercel logs. No recipient, no subject. */
-function logProvider(p: DeliverParams, provider: "resend" | "brevo", reason?: string) {
+function logProvider(p: DeliverParams, provider: "resend" | "brevo", reason?: string, route?: "bulk") {
   console.info(
-    `[email] sent provider=${provider} brand=${p.brand.id} kind=${p.kind ?? "other"}${reason ? ` failover=${reason}` : ""}`,
+    `[email] sent provider=${provider} brand=${p.brand.id} kind=${p.kind ?? "other"}${route ? ` route=${route}` : ""}${reason ? ` failover=${reason}` : ""}`,
   );
 }
 
@@ -296,14 +328,33 @@ export async function sendViaBrevo(
  * back, so the caller can queue it for the hourly drain.
  * Other non urgent mail gets `overBudget: true` back so the caller can queue
  * it for the next Arizona day.
+ *
+ * Bulk mail (opts.bulk, or a kind in BULK_KINDS) tries Brevo first when
+ * bulkProvider() is "brevo". It does not use Resend budget then. If Brevo
+ * fails, the email takes the normal path above on Resend, and Brevo is not
+ * tried a second time for it.
  */
 export async function deliverEmail(
   params: DeliverParams,
-  opts: { urgent: boolean; realtime?: boolean },
+  opts: { urgent: boolean; realtime?: boolean; bulk?: boolean },
 ): Promise<DeliverResult> {
   const p: DeliverParams = { ...params, idempotencyKey: params.idempotencyKey ?? `ws/${randomUUID()}` };
   const brevoOk = opts.urgent || Boolean(opts.realtime);
-  const brevo = brevoConfig();
+  let brevo = brevoConfig();
+
+  const bulk = opts.bulk ?? isBulkKind(p.kind);
+  if (bulk && brevo && bulkProvider() === "brevo") {
+    const first = await sendViaBrevo(p, brevo);
+    if (first.ok) {
+      logProvider(p, "brevo", undefined, "bulk");
+      return first;
+    }
+    console.warn(
+      `[email] bulk brevo failed brand=${p.brand.id} kind=${p.kind ?? "other"}, trying Resend: ${first.error.slice(0, 160)}`,
+    );
+    // Brevo just failed for this email: don't send it there again below.
+    brevo = null;
+  }
   const viaBrevo = async (
     cfg: NonNullable<typeof brevo>,
     reason: ResendFailure | "budget" | "no_resend_key",

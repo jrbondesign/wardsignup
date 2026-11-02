@@ -41,25 +41,35 @@ function loadScript(): Promise<void> {
  * Cloudflare Turnstile widget (managed mode: most people never see a
  * challenge). Renders nothing when no site key is configured. Calls onToken
  * with a fresh token, or null when it expires or errors. Bump resetKey after
- * each submit: tokens are single use.
+ * each submit: tokens are single use. Expired tokens refresh on their own.
+ *
+ * appearance "interaction-only" keeps the widget hidden unless Cloudflare
+ * actually needs the person to click something (the event signup forms).
  */
 export default function TurnstileWidget({
   siteKey,
   onToken,
+  onError,
   resetKey = 0,
   action = "magic_link",
+  appearance = "always",
 }: {
   siteKey: string | null;
   onToken: (token: string | null) => void;
+  /** The widget or its script failed (blocked, offline). onToken(null) is called too. */
+  onError?: () => void;
   resetKey?: number;
   action?: string;
+  appearance?: "always" | "interaction-only";
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const widgetId = useRef<string | null>(null);
   const onTokenRef = useRef(onToken);
+  const onErrorRef = useRef(onError);
   useEffect(() => {
     onTokenRef.current = onToken;
-  }, [onToken]);
+    onErrorRef.current = onError;
+  }, [onToken, onError]);
 
   useEffect(() => {
     if (!siteKey || !ref.current) return;
@@ -70,18 +80,26 @@ export default function TurnstileWidget({
         widgetId.current = window.turnstile.render(ref.current, {
           sitekey: siteKey,
           action,
+          appearance,
+          "refresh-expired": "auto",
           callback: (t: string) => onTokenRef.current(t),
           "expired-callback": () => onTokenRef.current(null),
-          "error-callback": () => onTokenRef.current(null),
+          "error-callback": () => {
+            onTokenRef.current(null);
+            onErrorRef.current?.();
+          },
         });
       })
-      .catch(() => onTokenRef.current(null));
+      .catch(() => {
+        onTokenRef.current(null);
+        onErrorRef.current?.();
+      });
     return () => {
       cancelled = true;
       if (widgetId.current && window.turnstile) window.turnstile.remove(widgetId.current);
       widgetId.current = null;
     };
-  }, [siteKey, action]);
+  }, [siteKey, action, appearance]);
 
   useEffect(() => {
     if (resetKey && widgetId.current && window.turnstile) {
@@ -91,5 +109,11 @@ export default function TurnstileWidget({
   }, [resetKey]);
 
   if (!siteKey) return null;
-  return <div ref={ref} data-testid="turnstile-widget" className="mb-5 flex justify-center" />;
+  return (
+    <div
+      ref={ref}
+      data-testid="turnstile-widget"
+      className={appearance === "interaction-only" ? "flex justify-center empty:hidden" : "mb-5 flex justify-center"}
+    />
+  );
 }

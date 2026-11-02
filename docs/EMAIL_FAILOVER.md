@@ -1,8 +1,39 @@
-# Email failover (Resend, then Brevo)
+# Email failover (Resend, then Brevo) and routing by type
 
 Every app email goes through `deliverEmail` in `lib/email-deliver.ts`, either directly (sign in links, org invite links) or through `sendGuardedEmail` (everything else, including the hourly queue drain). Supabase Auth does not send any of our mail: sign in and invite links are made with `auth.admin.generateLink` and sent by the app, so this failover covers them too.
 
-## When Brevo takes an email
+## Routing by type (bulk mail goes to Brevo first)
+
+Resend's free plan is 100 emails a day. Sign in links, invites and signup confirmations need that room most, so bulk mail goes to Brevo (free, 300 a day) first once Brevo is set up.
+
+| Mail | Kind (`kind` in logs) | First provider |
+| --- | --- | --- |
+| Sign in / magic link | `magic_link` | Resend (failover below) |
+| Org and event invites | `org_invite_link`, `other` | Resend (failover below) |
+| Signup confirmations | `signup_confirmation` | Resend (failover below) |
+| Welcome, new creator, feedback received, leader notices, manual reports | various | Resend (failover below) |
+| Participant reminders | `reminder` | **Brevo**, then Resend |
+| Daily organizer digests | `digest` | **Brevo**, then Resend |
+| Feedback asks and summaries | `feedback`, `feedback_summary` | **Brevo**, then Resend |
+
+The list lives in `BULK_KINDS` in `lib/email-deliver.ts`.
+
+- Brevo first sends do not use the Resend daily budget, so they leave room for sign in mail.
+- If Brevo refuses or errors (for example its own daily limit), the email takes the normal Resend path: the Resend budget, the one retry, the same `Idempotency-Key`. Brevo is not tried a second time for that email. Batch mail with no Resend room is queued for the next Arizona day, as before.
+- A Brevo first send is routing, not a failover: it logs `[email] sent provider=brevo ... route=bulk`, and does not record `email_failover` or send the alert.
+- Residual risk: if Brevo accepts a reminder but the answer is lost in the network, the Resend fallback sends a second copy. Brevo has no idempotency guarantee. A duplicate reminder is the safer failure than a missing one.
+
+### Switch: `EMAIL_BULK_PROVIDER`
+
+| Value | Bulk mail goes to |
+| --- | --- |
+| unset or `auto` (default) | Brevo first when Brevo is configured (the three vars under "Turning it on"); otherwise Resend, exactly as before |
+| `brevo` | Same as `auto` |
+| `resend` | Resend first, always (the behavior before this switch). Any unknown value also means `resend`. |
+
+Why `auto` is the default: it changes nothing until Brevo is configured, and Brevo being configured is already the switch that turns on the failover, so there is one thing to set up, not two. The lean plan is to keep Resend's free quota for sign in mail. To keep Brevo as a failover only, set `EMAIL_BULK_PROVIDER=resend`.
+
+## When Brevo takes an email (failover)
 
 | Resend answer | What happens |
 | --- | --- |
@@ -26,4 +57,11 @@ The queue drain passes `email-queue/<row id>` as the key, so a row retried withi
 
 ## Turning it on
 
+Both the failover and the bulk routing above turn on with these vars.
+
 Brevo stays off (Resend only, exactly as before) until all three are set: `EMAIL_FALLBACK_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` (optional `BREVO_SENDER_NAME`). `BREVO_SENDER_EMAIL` must be a sender on a domain authenticated in Brevo. `EMAIL_RESEND_RETRY_MS` (default 400) is the wait before the Resend retry.
+
+## Turning it off (rollback)
+
+- Bulk routing only: set `EMAIL_BULK_PROVIDER=resend` and redeploy. Brevo stays as the failover.
+- Brevo completely: remove `EMAIL_FALLBACK_PROVIDER` (or set it to anything other than `brevo`) and redeploy. Everything goes through Resend only, as before Brevo was added.

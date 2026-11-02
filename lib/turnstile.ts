@@ -1,5 +1,6 @@
 /**
- * Cloudflare Turnstile on the sign in / sign up link form.
+ * Cloudflare Turnstile on the sign in / sign up link form and on the public
+ * event signup forms (/api/signups, /api/signups/bulk, /api/item-signups).
  *
  * Off (a no-op) until BOTH NEXT_PUBLIC_TURNSTILE_SITE_KEY and
  * TURNSTILE_SECRET_KEY are set. Requiring both means setting only the secret
@@ -82,4 +83,11 @@ export async function verifyTurnstile(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** What the browser shows when verifyTurnstile says no. No dashes: customer copy. */
+export function turnstileRejectionMessage(reason: "missing_token" | "invalid_token"): string {
+  return reason === "missing_token"
+    ? "Please wait for the quick security check to finish, then try again."
+    : "The security check expired or failed. Please try again.";
 }

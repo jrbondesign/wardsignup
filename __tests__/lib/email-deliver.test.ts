@@ -10,7 +10,9 @@ jest.mock("@/lib/posthog-server", () => ({ getPostHogClient: () => ({ capture })
 
 import {
   brevoConfig,
+  bulkProvider,
   classifyResendError,
+  isBulkKind,
   deliverEmail,
   failoverAlertTo,
   parseFrom,
@@ -394,5 +396,122 @@ describe("failover by Resend failure class", () => {
       expect(failoverAlertTo({ EMAIL_FAILOVER_ALERT: "off" })).toBeNull();
       expect(failoverAlertTo({ EMAIL_FAILOVER_ALERT_TO: "ops@wardsignup.com" })).toBe("ops@wardsignup.com");
     });
+  });
+});
+
+describe("routing by email type: bulk mail Brevo first", () => {
+  const fetchMock = () => global.fetch as unknown as jest.Mock;
+  const brevoBodies = () => fetchMock().mock.calls.map((c) => JSON.parse((c[1] as { body: string }).body));
+  const budgetCalls = () =>
+    rpc.mock.calls.filter((c) => String((c[1] as { p_action: string }).p_action).startsWith("email_resend_"));
+  const roomOnResend = () => rpc.mockResolvedValue({ data: true, error: null });
+
+  it("bulk kinds are reminders, digests and feedback asks; urgent auth and signup mail is not bulk", () => {
+    for (const k of ["reminder", "digest", "feedback", "feedback_summary"]) expect(isBulkKind(k)).toBe(true);
+    for (const k of ["magic_link", "org_invite", "signup_confirmation", "welcome", "report", undefined, null, ""]) {
+      expect(isBulkKind(k)).toBe(false);
+    }
+  });
+
+  it("bulkProvider: Brevo only when Brevo is configured, and EMAIL_BULK_PROVIDER=resend restores the old behavior", () => {
+    expect(bulkProvider({})).toBe("resend");
+    expect(bulkProvider({ EMAIL_BULK_PROVIDER: "brevo" })).toBe("resend"); // no Brevo config
+    expect(bulkProvider(BREVO_ENV)).toBe("brevo");
+    expect(bulkProvider({ ...BREVO_ENV, EMAIL_BULK_PROVIDER: "auto" })).toBe("brevo");
+    expect(bulkProvider({ ...BREVO_ENV, EMAIL_BULK_PROVIDER: "brevo" })).toBe("brevo");
+    expect(bulkProvider({ ...BREVO_ENV, EMAIL_BULK_PROVIDER: "resend" })).toBe("resend");
+    expect(bulkProvider({ ...BREVO_ENV, EMAIL_BULK_PROVIDER: "typo" })).toBe("resend");
+  });
+
+  it("reminder with Brevo configured: Brevo first, Resend and its daily budget untouched, no failover alert", async () => {
+    Object.assign(process.env, BREVO_ENV, { NEXT_PUBLIC_POSTHOG_KEY: "phc_test" });
+    roomOnResend();
+    const r = await deliverEmail({ ...msg, kind: "reminder", idempotencyKey: "k-1" }, { urgent: true });
+    expect(r).toEqual({ ok: true, provider: "brevo" });
+    expect(resendSend).not.toHaveBeenCalled();
+    expect(budgetCalls()).toHaveLength(0);
+    expect(capture).not.toHaveBeenCalled();
+    const bodies = brevoBodies();
+    expect(bodies).toHaveLength(1);
+    expect(bodies[0].to).toEqual([{ email: "a@b.com" }]);
+    expect(bodies[0].headers.IdempotencyKey).toBe("k-1");
+    expect(console.info).toHaveBeenCalledWith(expect.stringContaining("provider=brevo brand=wardsignup kind=reminder route=bulk"));
+  });
+
+  it("queued digest drained with Brevo configured goes to Brevo with the queue row key", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    roomOnResend();
+    expect(await deliverEmail({ ...msg, kind: "digest", idempotencyKey: "email-queue/9" }, { urgent: false })).toEqual({
+      ok: true,
+      provider: "brevo",
+    });
+    expect(resendSend).not.toHaveBeenCalled();
+    expect(brevoBodies()[0].headers.IdempotencyKey).toBe("email-queue/9");
+  });
+
+  it("reminder without Brevo configured: exactly today's Resend path", async () => {
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: null });
+    expect(await deliverEmail({ ...msg, kind: "reminder" }, { urgent: true })).toEqual({ ok: true, provider: "resend" });
+    expect(fetchMock()).not.toHaveBeenCalled();
+    expect(budgetCalls()).toHaveLength(2);
+  });
+
+  it("EMAIL_BULK_PROVIDER=resend keeps reminders on Resend even with Brevo configured", async () => {
+    Object.assign(process.env, BREVO_ENV, { EMAIL_BULK_PROVIDER: "resend" });
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: null });
+    expect(await deliverEmail({ ...msg, kind: "reminder" }, { urgent: true })).toEqual({ ok: true, provider: "resend" });
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("sign in, invite and confirmation mail stays Resend first with Brevo configured", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: null });
+    for (const kind of ["magic_link", "org_invite_link", "signup_confirmation"]) {
+      expect(await deliverEmail({ ...msg, kind }, { urgent: true })).toEqual({ ok: true, provider: "resend" });
+    }
+    expect(resendSend).toHaveBeenCalledTimes(3);
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+
+  it("bulk Brevo fails: falls back to Resend with the same idempotency key", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    roomOnResend();
+    fetchMock().mockResolvedValue({ ok: false, status: 402, text: async () => "daily limit" });
+    resendSend.mockResolvedValue({ error: null });
+    expect(await deliverEmail({ ...msg, kind: "reminder", idempotencyKey: "k-2" }, { urgent: true })).toEqual({
+      ok: true,
+      provider: "resend",
+    });
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+    expect(resendSend.mock.calls[0][1].idempotencyKey).toBe("k-2");
+  });
+
+  it("bulk Brevo fails and Resend is then out of quota: Brevo is not tried a second time", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    roomOnResend();
+    fetchMock().mockResolvedValue({ ok: false, status: 500, text: async () => "boom" });
+    resendSend.mockResolvedValue({ error: { statusCode: 429, name: "daily_quota_exceeded", message: "quota" } });
+    expect(await deliverEmail({ ...msg, kind: "reminder" }, { urgent: true })).toMatchObject({ ok: false });
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+  });
+
+  it("bulk digest: Brevo fails and our Resend budget is full: queued for later like today", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    rpc.mockResolvedValue({ data: false, error: null });
+    fetchMock().mockRejectedValue(new Error("network"));
+    expect(await deliverEmail({ ...msg, kind: "digest" }, { urgent: false })).toMatchObject({ ok: false, overBudget: true });
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+    expect(resendSend).not.toHaveBeenCalled();
+  });
+
+  it("opts.bulk overrides the kind", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: null });
+    expect(await deliverEmail({ ...msg, kind: "reminder" }, { urgent: true, bulk: false })).toEqual({ ok: true, provider: "resend" });
+    expect(await deliverEmail({ ...msg, kind: "other" }, { urgent: true, bulk: true })).toEqual({ ok: true, provider: "brevo" });
   });
 });

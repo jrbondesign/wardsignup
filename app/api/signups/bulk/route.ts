@@ -5,6 +5,7 @@ import { createHash } from "crypto";
 import { createSignupIfCapacityRpc, mapSignupRpcError } from "@/lib/supabase";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { getClientIp } from "@/lib/request-ip";
+import { verifyTurnstile, turnstileRejectionMessage } from "@/lib/turnstile";
 import { sendParticipantBatchSignupConfirmation } from "@/lib/participant-email";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
@@ -64,6 +65,18 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Too many slots in one request" },
         { status: 400 },
+      );
+    }
+
+    // Cloudflare Turnstile (no-op until both Turnstile keys are set). Checked
+    // before the rate limit and before create_signup_if_capacity, so bots
+    // neither take slots nor use up a shared network's signup allowance.
+    // Siteverify outages fail open (see lib/turnstile.ts).
+    const captcha = await verifyTurnstile(body.captchaToken, getClientIp(request));
+    if (!captcha.ok) {
+      return NextResponse.json(
+        { error: turnstileRejectionMessage(captcha.reason), captcha: true },
+        { status: 403 },
       );
     }
 
