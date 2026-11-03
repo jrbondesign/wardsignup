@@ -30,10 +30,12 @@ export default function Navigation() {
 
   const handleSignOut = async () => {
     const supabase = createClientComponentClient();
-    await supabase.auth.signOut();
+    const { error } = await supabase.auth.signOut();
     // Unlink this browser from the signed-out organizer so a shared ward
-    // computer doesn't merge two people into one PostHog person.
-    resetPostHogOnSignOut();
+    // computer doesn't merge two people into one PostHog person. Skip it when
+    // sign out failed, since the session is still live.
+    if (error) console.error("Sign out failed:", error.message);
+    else resetPostHogOnSignOut();
     router.push("/");
   };
 

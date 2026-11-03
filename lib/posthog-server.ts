@@ -1,4 +1,5 @@
 import { PostHog } from "posthog-node";
+import { scrubError, scrubProperties } from "@/lib/pii-scrub";
 
 let posthogClient: PostHog | null = null;
 
@@ -45,9 +46,17 @@ export async function flushPostHogSafely(
 export interface ServerExceptionContext {
   /** Route or job name, e.g. "/api/signups" or "cron:geography-refresh". */
   route: string;
-  /** Browser distinct id (x-posthog-distinct-id) or user id when known. */
+  /**
+   * Server verified person id (for example the signed in user's id). Never pass
+   * a value taken straight from a request header: anyone could set it and pin
+   * an error on someone else. Omit it and the exception is captured without a
+   * person profile.
+   */
   distinctId?: string | null;
-  /** Extra non PII properties (ids, counts, flags). Never emails, names or tokens. */
+  /**
+   * Extra non PII properties (ids, counts, flags). String values are scrubbed
+   * for emails, phone numbers and secrets before capture as a safety net.
+   */
   properties?: Record<string, string | number | boolean | null | undefined>;
 }
 
@@ -64,17 +73,22 @@ export function captureServerException(
   try {
     const c = client ?? (process.env.NEXT_PUBLIC_POSTHOG_KEY ? getPostHogClient() : null);
     if (!c) return;
-    c.captureException(error, ctx.distinctId || undefined, {
-      ...(ctx.properties ?? {}),
-      route: ctx.route,
-      runtime: "server",
-      vercel_env: process.env.VERCEL_ENV ?? null,
-    });
+    // Scrub before anything leaves the process: messages and stacks can echo
+    // an email, a Postgres Key (...)=(...) value or a token.
+    c.captureException(
+      scrubError(error),
+      ctx.distinctId || undefined,
+      scrubProperties({
+        ...(ctx.properties ?? {}),
+        route: ctx.route,
+        runtime: "server",
+        vercel_env: process.env.VERCEL_ENV ?? null,
+      }),
+    );
     const flush = () => flushPostHogSafely(POSTHOG_FLUSH_TIMEOUT_MS, c);
     try {
       // Required lazily so this module stays importable outside Next's server
       // runtime (jsdom tests, scripts). after() throws outside a request scope.
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       const { after } = require("next/server") as typeof import("next/server");
       after(flush);
     } catch {

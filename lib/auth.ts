@@ -247,6 +247,8 @@ export async function signInWithGoogle() {
 export async function signOut() {
   const supabase = createClientComponentClient();
   const { error } = await supabase.auth.signOut();
-  resetPostHogOnSignOut();
+  // Only unlink PostHog once the session is really gone. On error Supabase
+  // keeps the session, so the person is still signed in.
+  if (!error) resetPostHogOnSignOut();
   return { error };
 }

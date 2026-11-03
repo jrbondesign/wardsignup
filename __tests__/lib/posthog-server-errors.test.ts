@@ -28,10 +28,33 @@ describe("captureServerException", () => {
     const client = { captureException: jest.fn(), flush: jest.fn().mockResolvedValue(undefined) };
     const err = new Error("db down");
     captureServerException(err, { route: "/api/signups", distinctId: "abc", properties: { campaign_id: "c1" } }, client as never);
-    expect(client.captureException).toHaveBeenCalledWith(err, "abc", expect.objectContaining({ route: "/api/signups", campaign_id: "c1", runtime: "server" }));
+    expect(client.captureException).toHaveBeenCalledWith(
+      expect.objectContaining({ message: "db down", name: "Error" }),
+      "abc",
+      expect.objectContaining({ route: "/api/signups", campaign_id: "c1", runtime: "server" }),
+    );
     expect(mockAfter).toHaveBeenCalledTimes(1);
     await mockAfter.mock.calls[0][0]();
     expect(client.flush).toHaveBeenCalled();
+  });
+  it("scrubs emails and tokens from the message, stack and string properties before capture", () => {
+    const client = { captureException: jest.fn(), flush: jest.fn().mockResolvedValue(undefined) };
+    const err = new Error("Resend rejected to=jane@example.org with key re_AbCdEf123456789012345678");
+    captureServerException(err, { route: "/api/signups", properties: { note: "for bob@example.com", count: 2 } }, client as never);
+    const [sent, distinctId, props] = client.captureException.mock.calls[0];
+    expect(sent).toBeInstanceOf(Error);
+    expect(sent).not.toBe(err);
+    expect(sent.message).toBe("Resend rejected to=[email] with key [secret]");
+    expect(sent.stack).not.toContain("jane@example.org");
+    expect(sent.stack).not.toContain("re_AbCdEf");
+    expect(distinctId).toBeUndefined();
+    expect(props).toEqual(expect.objectContaining({ note: "for [email]", count: 2 }));
+    expect(err.message).toContain("jane@example.org");
+  });
+  it("scrubs non Error values such as PostgREST error objects", () => {
+    const client = { captureException: jest.fn(), flush: jest.fn().mockResolvedValue(undefined) };
+    captureServerException({ code: "23505", message: "Key (email)=(a@b.co) already exists" }, { route: "/api/x" }, client as never);
+    expect(client.captureException.mock.calls[0][0].message).toBe("Key (email)=([redacted]) already exists");
   });
   it("falls back to a direct flush outside a request scope", async () => {
     mockAfter.mockImplementation(() => { throw new Error("after() outside request scope"); });
