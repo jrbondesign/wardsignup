@@ -142,12 +142,12 @@ describe("markConnectionBroken", () => {
 });
 
 describe("calendar-reconcile scheduling", () => {
-  it("is hourly via GitHub Actions, not a Vercel cron (Hobby is daily only)", () => {
+  it("runs every 3 hours via GitHub Actions, not a Vercel cron (Hobby is daily only)", () => {
     const cfg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "vercel.json"), "utf8"));
     const cron = cfg.crons.find((c: { path: string }) => c.path === "/api/cron/calendar-reconcile");
     expect(cron).toBeUndefined();
     const wf = fs.readFileSync(path.join(process.cwd(), ".github/workflows/calendar-reconcile.yml"), "utf8");
-    expect(wf).toMatch(/cron: '\d+ \* \* \* \*'/);
+    expect(wf).toMatch(/cron: '5 \*\/3 \* \* \*'/);
     expect(wf).toContain("/api/cron/calendar-reconcile");
   });
 });
