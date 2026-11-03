@@ -22,15 +22,21 @@ const RULES: Rule[] = [
     pattern: /\b(?:re|sk|rk|pk_live|sk_live|sk_test|ghp|gho|ghs|ghu|github_pat|sb_secret|sbp|xox[abprs])_[A-Za-z0-9_-]{16,}/g,
     replace: "[secret]",
   },
-  // Sensitive query string or form parameters.
+  // Sensitive query string parameters. Requires ? & or ; before the name so
+  // prose like "status code=500" keeps its value.
   {
-    pattern: /([?&;\s"'](?:access_token|refresh_token|id_token|token|api_key|apikey|key|secret|password|code|signature|sig)=)[^&\s"'#]+/gi,
+    pattern: /([?&;](?:access_token|refresh_token|id_token|token|api_key|apikey|key|secret|password|code|signature|sig)=)[^&\s"'#]+/gi,
     replace: (_m, prefix: string) => `${prefix}[redacted]`,
   },
   // Email addresses, plain and URL encoded.
-  { pattern: /[A-Za-z0-9._%+-]+(?:@|%40)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/gi, replace: "[email]" },
+  // The lookbehind anchors the match at the start of a run, so a long run with
+  // no @ is scanned once instead of once per character (no quadratic blowup).
+  { pattern: /(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+(?:@|%40)[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}/gi, replace: "[email]" },
   // Phone numbers with separators (US style), so stack line:col pairs are left alone.
   { pattern: /(?<![\w.:])(?:\+?1[\s.-]?)?\(?\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}(?![\w])/g, replace: "[phone]" },
+  // E.164 numbers (+15551234567). Bare digit runs are left alone: they are
+  // usually ids, counts or timestamps.
+  { pattern: /(?<![\w+])\+\d{10,15}(?!\d)/g, replace: "[phone]" },
   // Long hex strings (API keys, hashes of secrets). UUIDs have dashes and are kept.
   { pattern: /\b[a-f0-9]{32,}\b/gi, replace: "[hex]" },
   // Long base64 or base64url runs that look random (upper, lower and digits).
@@ -40,10 +46,17 @@ const RULES: Rule[] = [
   },
 ];
 
+/**
+ * Longest string scrubbed. Longer input is cut first so a huge message or a
+ * minified one line stack can't stall an error handler; the tail is dropped
+ * rather than sent unscrubbed.
+ */
+export const MAX_SCRUB_LENGTH = 20_000;
+
 /** Redact emails, phone numbers, tokens and secrets from a string. */
 export function scrubText(input: string): string {
   if (typeof input !== "string" || input.length === 0) return input;
-  let out = input;
+  let out = input.length > MAX_SCRUB_LENGTH ? `${input.slice(0, MAX_SCRUB_LENGTH)}…[truncated]` : input;
   for (const rule of RULES) {
     try {
       out = out.replace(rule.pattern, rule.replace as never);
@@ -107,16 +120,21 @@ const MAX_DEEP_DEPTH = 8;
 /** Scrub every string inside a JSON like value (arrays and plain objects). */
 export function scrubDeep<T>(value: T, depth = 0): T {
   if (typeof value === "string") return scrubText(value) as T;
-  if (depth >= MAX_DEEP_DEPTH || value === null || typeof value !== "object") return value;
+  if (value === null || typeof value !== "object") return value;
+  // Fail closed: anything nested deeper than we scrub is replaced, not sent.
+  if (depth >= MAX_DEEP_DEPTH) return "[truncated]" as T;
   if (Array.isArray(value)) return value.map((v) => scrubDeep(v, depth + 1)) as T;
   const out: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = scrubDeep(v, depth + 1);
   return out as T;
 }
 
+/** Page URL properties that can carry ?email= or ?token= on an exception. */
+const URL_KEYS = new Set(["$current_url", "$pathname", "$referrer", "$initial_referrer"]);
+
 /**
  * posthog-js before_send hook: scrubs browser $exception events (message,
- * type and stack frames) the same way server exceptions are scrubbed. Other
+ * type, stack frames and page URLs) the same way server exceptions are scrubbed. Other
  * events pass through untouched. Never throws and never drops an event.
  */
 export function scrubExceptionEvent<E extends { event?: string; properties?: Record<string, unknown> } | null>(event: E): E {
@@ -124,7 +142,7 @@ export function scrubExceptionEvent<E extends { event?: string; properties?: Rec
     if (!event || event.event !== "$exception" || !event.properties) return event;
     const properties: Record<string, unknown> = { ...event.properties };
     for (const key of Object.keys(properties)) {
-      if (key.startsWith("$exception")) properties[key] = scrubDeep(properties[key]);
+      if (key.startsWith("$exception") || URL_KEYS.has(key)) properties[key] = scrubDeep(properties[key]);
     }
     return { ...event, properties };
   } catch {

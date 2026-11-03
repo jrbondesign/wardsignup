@@ -1,7 +1,7 @@
 /**
  * @jest-environment node
  */
-import { scrubError, scrubExceptionEvent, scrubProperties, scrubText } from "@/lib/pii-scrub";
+import { MAX_SCRUB_LENGTH, scrubDeep, scrubError, scrubExceptionEvent, scrubProperties, scrubText } from "@/lib/pii-scrub";
 
 describe("scrubText", () => {
   it("redacts plain and URL encoded email addresses", () => {
@@ -35,9 +35,28 @@ describe("scrubText", () => {
     expect(scrubText("blob Zm9vYmFyQmF6UXV4MTIzNDU2Nzg5MEFiQ2RFZkdoSWpLbE1u end")).toBe("blob [secret] end");
   });
 
-  it("redacts phone numbers with separators", () => {
+  it("redacts phone numbers with separators and E.164 numbers", () => {
     expect(scrubText("call (480) 555-0123 now")).toBe("call [phone] now");
     expect(scrubText("call +1 480-555-0123 now")).toBe("call [phone] now");
+    expect(scrubText("sms to +14805550123 failed")).toBe("sms to [phone] failed");
+    expect(scrubText("took 1730650000123 ms")).toBe("took 1730650000123 ms");
+  });
+
+  it("keeps prose like status code=500 but redacts the same name in a query string", () => {
+    expect(scrubText("upstream status code=500")).toBe("upstream status code=500");
+    expect(scrubText("/cb?code=abc")).toBe("/cb?code=[redacted]");
+  });
+
+  it("stays fast on huge inputs and truncates past the cap", () => {
+    for (const big of ["a".repeat(200_000), "a.".repeat(100_000), "A1".repeat(100_000), "x@".repeat(100_000)]) {
+      const start = Date.now();
+      const out = scrubText(big);
+      expect(Date.now() - start).toBeLessThan(500);
+      expect(out.length).toBeLessThanOrEqual(MAX_SCRUB_LENGTH + 20);
+    }
+    const long = `${"a ".repeat(MAX_SCRUB_LENGTH)}jane@example.org`;
+    expect(scrubText(long)).not.toContain("jane@example.org");
+    expect(scrubText(long).endsWith("…[truncated]")).toBe(true);
   });
 
   it("leaves ordinary error text, UUIDs and stack positions alone", () => {
@@ -113,5 +132,23 @@ describe("scrubExceptionEvent", () => {
     const other = { event: "$pageview", properties: { note: "a@b.co" } };
     expect(scrubExceptionEvent(other)).toBe(other);
     expect(scrubExceptionEvent(null)).toBeNull();
+  });
+
+  it("scrubs page URLs on exception events", () => {
+    const out = scrubExceptionEvent({
+      event: "$exception",
+      properties: { $current_url: "https://wardsignup.com/x?email=jane@example.org&token=abc", $referrer: "https://mail.test/?u=bob@example.com" },
+    });
+    expect(out.properties.$current_url).toBe("https://wardsignup.com/x?email=[email]&token=[redacted]");
+    expect(out.properties.$referrer).toBe("https://mail.test/?u=[email]");
+  });
+});
+
+describe("scrubDeep", () => {
+  it("replaces values nested past the depth cap instead of sending them unscrubbed", () => {
+    let deep: unknown = "jane@example.org";
+    for (let i = 0; i < 20; i++) deep = { next: deep };
+    expect(JSON.stringify(scrubDeep(deep))).not.toContain("jane@example.org");
+    expect(JSON.stringify(scrubDeep(deep))).toContain("[truncated]");
   });
 });
