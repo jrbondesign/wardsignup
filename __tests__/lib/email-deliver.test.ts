@@ -514,4 +514,52 @@ describe("routing by email type: bulk mail Brevo first", () => {
     expect(await deliverEmail({ ...msg, kind: "reminder" }, { urgent: true, bulk: false })).toEqual({ ok: true, provider: "resend" });
     expect(await deliverEmail({ ...msg, kind: "other" }, { urgent: true, bulk: true })).toEqual({ ok: true, provider: "brevo" });
   });
+
+  it("bulk Brevo network error: falls back to Resend and still sends", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    roomOnResend();
+    fetchMock().mockRejectedValue(new Error("ECONNRESET"));
+    resendSend.mockResolvedValue({ error: null });
+    expect(await deliverEmail({ ...msg, kind: "feedback" }, { urgent: true })).toEqual({ ok: true, provider: "resend" });
+    expect(resendSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("bulk Brevo and then Resend both fail with a non quota error: reported as a failure, not a silent success", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    roomOnResend();
+    fetchMock().mockResolvedValue({ ok: false, status: 401, text: async () => "unauthorized" });
+    resendSend.mockResolvedValue({ error: { statusCode: 422, name: "validation_error", message: "bad to" } });
+    const r = await deliverEmail({ ...msg, kind: "reminder" }, { urgent: true });
+    expect(r).toMatchObject({ ok: false });
+    expect(fetchMock()).toHaveBeenCalledTimes(1);
+  });
+
+  it("EMAIL_BULK_PROVIDER is case and space tolerant, and never moves urgent non bulk mail", async () => {
+    expect(bulkProvider({ ...BREVO_ENV, EMAIL_BULK_PROVIDER: " Brevo " })).toBe("brevo");
+    expect(bulkProvider({ ...BREVO_ENV, EMAIL_BULK_PROVIDER: "RESEND" })).toBe("resend");
+    expect(bulkProvider({ ...BREVO_ENV, EMAIL_BULK_PROVIDER: "" })).toBe("brevo");
+    Object.assign(process.env, BREVO_ENV, { EMAIL_BULK_PROVIDER: "brevo" });
+    roomOnResend();
+    resendSend.mockResolvedValue({ error: null });
+    expect(await deliverEmail({ ...msg, kind: "magic_link" }, { urgent: true })).toEqual({ ok: true, provider: "resend" });
+    expect(fetchMock()).not.toHaveBeenCalled();
+  });
+});
+
+describe("Brevo request timeout", () => {
+  const cfg = { apiKey: "k", senderEmail: "noreply@wardsignup.com", senderName: "Ward Signup" } as never;
+  it("a hung Brevo call is aborted and reported as a failure (so the caller can fall back)", async () => {
+    const hung = jest.fn(
+      (_u: unknown, init: { signal: AbortSignal }) =>
+        new Promise((_res, rej) => init.signal.addEventListener("abort", () => rej(new Error("aborted")))),
+    );
+    const r = await sendViaBrevo({ ...msg }, cfg, hung as unknown as typeof fetch, 20);
+    expect(r).toEqual({ ok: false, error: "Brevo request failed: timed out after 20ms" });
+    expect(hung.mock.calls[0][1].signal).toBeDefined();
+  });
+
+  it("the default timeout is 15 seconds", async () => {
+    const { BREVO_TIMEOUT_MS } = await import("@/lib/email-deliver");
+    expect(BREVO_TIMEOUT_MS).toBe(15_000);
+  });
 });

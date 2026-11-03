@@ -282,10 +282,14 @@ async function noteFailover(
   }
 }
 
+/** Brevo API call timeout. A hung request must not stall a cron batch. */
+export const BREVO_TIMEOUT_MS = 15_000;
+
 export async function sendViaBrevo(
   p: DeliverParams,
   cfg: NonNullable<ReturnType<typeof brevoConfig>>,
   fetchImpl: typeof fetch = fetch,
+  timeoutMs: number = BREVO_TIMEOUT_MS,
 ): Promise<DeliverResult> {
   const parsed = parseFrom(p.from);
   const replyTo = p.replyTo ?? (parsed.email !== cfg.senderEmail ? parsed.email : undefined);
@@ -303,11 +307,14 @@ export async function sendViaBrevo(
       ? { headers: { ...(p.headers ?? {}), ...(p.idempotencyKey ? { IdempotencyKey: p.idempotencyKey } : {}) } }
       : {}),
   };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetchImpl("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: { "api-key": cfg.apiKey, "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
     if (!res.ok) {
       const t = await res.text().catch(() => "");
@@ -315,7 +322,10 @@ export async function sendViaBrevo(
     }
     return { ok: true, provider: "brevo" };
   } catch (e) {
-    return { ok: false, error: `Brevo request failed: ${e instanceof Error ? e.message : String(e)}` };
+    const why = controller.signal.aborted ? `timed out after ${timeoutMs}ms` : e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Brevo request failed: ${why}` };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

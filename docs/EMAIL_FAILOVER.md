@@ -19,9 +19,9 @@ Resend's free plan is 100 emails a day. Sign in links, invites and signup confir
 The list lives in `BULK_KINDS` in `lib/email-deliver.ts`.
 
 - Brevo first sends do not use the Resend daily budget, so they leave room for sign in mail.
-- If Brevo refuses or errors (for example its own daily limit), the email takes the normal Resend path: the Resend budget, the one retry, the same `Idempotency-Key`. Brevo is not tried a second time for that email. Batch mail with no Resend room is queued for the next Arizona day, as before.
+- If Brevo refuses or errors (for example its own daily limit), the email takes the normal Resend path: the Resend budget, the one retry, the same `Idempotency-Key`. Brevo is not tried a second time for that email. Each Brevo call times out after 15 seconds (`BREVO_TIMEOUT_MS`), so a hung Brevo request can't stall a reminder or digest batch; a timeout counts as a Brevo failure. Batch mail with no Resend room is queued for the next Arizona day, as before.
 - A Brevo first send is routing, not a failover: it logs `[email] sent provider=brevo ... route=bulk`, and does not record `email_failover` or send the alert.
-- Residual risk: if Brevo accepts a reminder but the answer is lost in the network, the Resend fallback sends a second copy. Brevo has no idempotency guarantee. A duplicate reminder is the safer failure than a missing one.
+- Residual risk: if Brevo accepts a reminder but the answer is lost in the network (or arrives after the 15 second timeout), the Resend fallback sends a second copy. Brevo has no idempotency guarantee. A duplicate reminder is the safer failure than a missing one.
 
 ### Switch: `EMAIL_BULK_PROVIDER`
 

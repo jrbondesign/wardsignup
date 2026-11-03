@@ -185,4 +185,46 @@ describe.each(routes)("$name", (route) => {
     expect(res.status).toBe(200);
     expect(route.created().mock.calls.length).toBe(1);
   });
+
+  it("with keys, a forged or garbage token (invalid-input-response) is refused before the rate limit and the signup RPC", async () => {
+    keysOn();
+    siteverify.mockResolvedValue({
+      status: 200,
+      json: async () => ({ success: false, "error-codes": ["invalid-input-response"] }),
+    });
+    const res = await route.post(req(route.name, { ...route.body, captchaToken: "forged" }));
+    expect(res.status).toBe(403);
+    expect((await res.json()).captcha).toBe(true);
+    expect(rateLimitCalls()).toBe(0);
+    expect(route.created().mock.calls.length).toBe(0);
+  });
+
+  it("fails open when siteverify times out (aborted request)", async () => {
+    keysOn();
+    siteverify.mockRejectedValue(Object.assign(new Error("This operation was aborted"), { name: "AbortError" }));
+    const res = await route.post(req(route.name, { ...route.body, captchaToken: "t" }));
+    expect(res.status).toBe(200);
+    expect(route.created().mock.calls.length).toBe(1);
+  });
+
+  it("fails open when Cloudflare rate limits us (429) or answers with a non JSON page", async () => {
+    keysOn();
+    siteverify.mockResolvedValueOnce({ status: 429, json: async () => ({}) });
+    expect((await route.post(req(route.name, { ...route.body, captchaToken: "t" }))).status).toBe(200);
+    siteverify.mockResolvedValueOnce({ status: 403, json: async () => Promise.reject(new SyntaxError("Unexpected token <")) });
+    expect((await route.post(req(route.name, { ...route.body, captchaToken: "t" }))).status).toBe(200);
+    expect(route.created().mock.calls.length).toBe(2);
+  });
+
+  it("fails open (and logs it) when our own secret is rejected, so a bad key can't block every signup", async () => {
+    keysOn();
+    siteverify.mockResolvedValue({
+      status: 200,
+      json: async () => ({ success: false, "error-codes": ["invalid-input-secret"] }),
+    });
+    const res = await route.post(req(route.name, { ...route.body, captchaToken: "t" }));
+    expect(res.status).toBe(200);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining("invalid-input-secret"));
+    expect(route.created().mock.calls.length).toBe(1);
+  });
 });
