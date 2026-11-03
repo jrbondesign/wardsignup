@@ -183,7 +183,7 @@ export async function GET(request: Request) {
     }
 
     // Reconnect succeeded: clear any broken state so the banner goes away and the
-    // next breakage notifies again. The hourly reconcile cron catches the calendar up.
+    // next breakage notifies again. The reconcile cron (every 3 hours) catches the calendar up.
     if (connectionId) {
       await clearConnectionBroken(admin, connectionId);
     }
