@@ -67,3 +67,55 @@ it("lets the request through when siteverify itself is down (BotID and rate limi
     }),
   ).toEqual({ ok: true, skipped: "siteverify_unavailable" });
 });
+
+it("rejects every token code Cloudflare uses for a bad visitor token", async () => {
+  for (const code of ["invalid-input-response", "timeout-or-duplicate", "missing-input-response", "bad-request"]) {
+    const f = jest.fn().mockResolvedValue(json(200, { success: false, "error-codes": [code] }));
+    expect(await verifyTurnstile("tok", null, { env: ON, fetchImpl: f })).toEqual({ ok: false, reason: "invalid_token", codes: [code] });
+  }
+  // A failure with no codes at all is still a refusal.
+  const f = jest.fn().mockResolvedValue(json(200, { success: false }));
+  expect(await verifyTurnstile("tok", null, { env: ON, fetchImpl: f })).toEqual({ ok: false, reason: "invalid_token", codes: [] });
+});
+
+it("fails open on a real timeout: a hung siteverify is aborted after timeoutMs", async () => {
+  const hung = jest.fn(
+    (_u: unknown, init: { signal: AbortSignal }) =>
+      new Promise<Response>((_res, rej) => init.signal.addEventListener("abort", () => rej(new Error("aborted")))),
+  );
+  const t0 = Date.now();
+  expect(await verifyTurnstile("tok", null, { env: ON, fetchImpl: hung as unknown as typeof fetch, timeoutMs: 20 })).toEqual({
+    ok: true,
+    skipped: "siteverify_unavailable",
+  });
+  expect(Date.now() - t0).toBeLessThan(2000);
+});
+
+it("fails open on 429 and on answers that are not siteverify JSON", async () => {
+  const bad = [
+    json(429, { success: false }),
+    { status: 403, json: async () => Promise.reject(new SyntaxError("Unexpected token <")) } as unknown as Response,
+    json(200, null),
+    json(200, {}),
+    json(200, { success: "yes" }),
+  ];
+  for (const r of bad) {
+    expect(await verifyTurnstile("tok", null, { env: ON, fetchImpl: jest.fn().mockResolvedValue(r) })).toEqual({
+      ok: true,
+      skipped: "siteverify_unavailable",
+    });
+  }
+});
+
+it("fails open and logs when our own secret is wrong or missing (config error, not the visitor)", async () => {
+  for (const code of ["invalid-input-secret", "missing-input-secret"]) {
+    const f = jest.fn().mockResolvedValue(json(200, { success: false, "error-codes": [code] }));
+    expect(await verifyTurnstile("tok", null, { env: ON, fetchImpl: f })).toEqual({ ok: true, skipped: "siteverify_unavailable" });
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining(code));
+  }
+});
+
+it("4xx with a token verdict still refuses (only outages fail open)", async () => {
+  const f = jest.fn().mockResolvedValue(json(400, { success: false, "error-codes": ["invalid-input-response"] }));
+  expect(await verifyTurnstile("tok", null, { env: ON, fetchImpl: f })).toMatchObject({ ok: false, reason: "invalid_token" });
+});

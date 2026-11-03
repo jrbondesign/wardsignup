@@ -1,5 +1,6 @@
 /**
- * Cloudflare Turnstile on the sign in / sign up link form.
+ * Cloudflare Turnstile on the sign in / sign up link form and on the public
+ * event signup forms (/api/signups, /api/signups/bulk, /api/item-signups).
  *
  * Off (a no-op) until BOTH NEXT_PUBLIC_TURNSTILE_SITE_KEY and
  * TURNSTILE_SECRET_KEY are set. Requiring both means setting only the secret
@@ -30,14 +31,27 @@ export function turnstileSecret(env: Env = process.env): string | null {
   return secret;
 }
 
+/**
+ * Siteverify error codes that are not about the visitor's token: Cloudflare's
+ * internal error, or our own secret being wrong or missing. These fail open.
+ * Token codes (invalid-input-response, timeout-or-duplicate,
+ * missing-input-response, bad-request) still refuse.
+ */
+const SITEVERIFY_NOT_VISITOR_CODES: ReadonlySet<string> = new Set([
+  "internal-error",
+  "invalid-input-secret",
+  "missing-input-secret",
+]);
+
 export type TurnstileResult =
   | { ok: true; skipped?: "not_configured" | "siteverify_unavailable" }
   | { ok: false; reason: "missing_token" | "invalid_token"; codes?: string[] };
 
 /**
  * Verifies a widget token. A missing or rejected token fails. If Cloudflare's
- * siteverify itself is down (network error, 5xx, timeout) we let the request
- * through and log it: BotID and the IP / per recipient rate limits still
+ * siteverify itself is down (network error, timeout, 5xx, 429, an answer that
+ * isn't siteverify JSON, internal-error) or our secret is rejected, we let the
+ * request through and log it: BotID and the IP / per recipient rate limits still
  * apply, and an outage at Cloudflare shouldn't stop people signing in.
  */
 export async function verifyTurnstile(
@@ -64,15 +78,28 @@ export async function verifyTurnstile(
       }),
       signal: controller.signal,
     });
-    if (res.status >= 500) {
+    // 5xx or 429: Cloudflare can't answer right now. Fail open.
+    if (res.status >= 500 || res.status === 429) {
       console.error(`turnstile siteverify ${res.status}; allowing (BotID and rate limits still apply)`);
       return { ok: true, skipped: "siteverify_unavailable" };
     }
-    const json = (await res.json().catch(() => null)) as { success?: boolean; "error-codes"?: string[] } | null;
-    if (json?.success === true) return { ok: true };
-    const codes = Array.isArray(json?.["error-codes"]) ? json!["error-codes"]! : [];
-    if (codes.includes("internal-error")) {
-      console.error("turnstile siteverify internal-error; allowing (BotID and rate limits still apply)");
+    const json = (await res.json().catch(() => null)) as { success?: unknown; "error-codes"?: unknown } | null;
+    // Not a siteverify answer at all (HTML block page, empty body): treat as
+    // an outage, not as a verdict on the visitor's token.
+    if (!json || typeof json.success !== "boolean") {
+      console.error(`turnstile siteverify unreadable answer (${res.status}); allowing (BotID and rate limits still apply)`);
+      return { ok: true, skipped: "siteverify_unavailable" };
+    }
+    if (json.success === true) return { ok: true };
+    const codes = Array.isArray(json["error-codes"])
+      ? (json["error-codes"] as unknown[]).filter((c): c is string => typeof c === "string")
+      : [];
+    // Cloudflare's own failure, or OUR secret is wrong or missing. Neither is
+    // the visitor's fault, and refusing would block every signup and sign in
+    // until someone noticed. Allow and log loudly so the logs show it.
+    const outage = codes.find((c) => SITEVERIFY_NOT_VISITOR_CODES.has(c));
+    if (outage) {
+      console.error(`turnstile siteverify ${outage}; allowing (BotID and rate limits still apply). Check TURNSTILE_SECRET_KEY.`);
       return { ok: true, skipped: "siteverify_unavailable" };
     }
     return { ok: false, reason: "invalid_token", codes };
@@ -82,4 +109,11 @@ export async function verifyTurnstile(
   } finally {
     clearTimeout(timer);
   }
+}
+
+/** What the browser shows when verifyTurnstile says no. No dashes: customer copy. */
+export function turnstileRejectionMessage(reason: "missing_token" | "invalid_token"): string {
+  return reason === "missing_token"
+    ? "Please wait for the quick security check to finish, then try again."
+    : "The security check expired or failed. Please try again.";
 }

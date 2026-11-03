@@ -1,5 +1,6 @@
 "use client";
 
+import SignupCaptcha from "@/components/event/SignupCaptcha";
 import { DAYS } from "@/components/event/event-page-shared";
 import { formatTime } from "@/lib/utils";
 import EmailTypoHint from "@/components/EmailTypoHint";
@@ -28,6 +29,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
     setShowSignupForm,
     showSignupForm,
     signupSessionIds,
+    slotCaptcha,
     submitting,
     trackEmailEntered,
     trackFormStarted,
@@ -115,6 +117,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
             </div>
           )}
 
+          <SignupCaptcha captcha={slotCaptcha} action="event_signup" />
           {nudgeOpen && <EmailNudgePrompt onAdd={handleNudgeAdd} onSkip={handleNudgeSkip} disabled={submitting} />}
           <div className="flex gap-3 pt-2">
             <button type="button"
