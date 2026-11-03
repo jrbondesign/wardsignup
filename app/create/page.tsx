@@ -30,8 +30,7 @@ function CreateInner() {
     [brandTemplates]
   );
 
-  // Only honor ?template= if the key is valid AND offered to this brand, so a
-  // shared Ward template URL doesn't prefill on ministrysignup/orgsignup.
+  // Only honor ?template= if the key is valid AND offered to this brand.
   const rawTemplate = searchParams.get("template") ?? "";
   const initialTemplateKey: TemplateKey | null = brandTemplateKeys.has(rawTemplate as TemplateKey)
     ? (rawTemplate as TemplateKey)
