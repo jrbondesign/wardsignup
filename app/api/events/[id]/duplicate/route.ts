@@ -59,17 +59,8 @@ export async function POST(
       );
     }
 
-    // Per-org override on the free-tier cap keys off the org name.
-    let orgName: string | null = null;
-    if (source.organization_id) {
-      const { data: org } = await supabase
-        .from("organizations")
-        .select("name")
-        .eq("id", source.organization_id)
-        .maybeSingle();
-      orgName = (org as { name: string } | null)?.name ?? null;
-    }
-    const limit = await checkEventLimit(supabase, user, brand.id, orgName);
+    // Per-org override on the free-tier cap keys off the org id.
+    const limit = await checkEventLimit(supabase, user, brand.id, source.organization_id ?? null);
     if (!limit.ok) {
       return NextResponse.json({ error: limit.error }, { status: limit.status });
     }

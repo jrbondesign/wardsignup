@@ -1,5 +1,4 @@
 import { createServerClient } from "@supabase/ssr";
-import type { User } from "@supabase/supabase-js";
 import { NextResponse, type NextRequest } from "next/server";
 import type { Database } from "@/lib/types";
 
@@ -23,13 +22,30 @@ export function hasAuthCookie(cookies: { name: string }[]): boolean {
   );
 }
 
+/** The signed-in user as far as middleware needs to know: verified JWT subject and email. */
+export interface MiddlewareUser {
+  id: string;
+  email?: string;
+}
+
+/** Turn verified JWT claims into the middleware user; null when there is no usable subject. */
+export function userFromClaims(claims: { sub?: unknown; email?: unknown } | null | undefined): MiddlewareUser | null {
+  if (!claims || typeof claims.sub !== "string" || !claims.sub) return null;
+  return { id: claims.sub, email: typeof claims.email === "string" ? claims.email : undefined };
+}
+
 /**
  * Refreshes the Supabase session from cookies and returns the response that
  * must be used so Set-Cookie headers are applied (per @supabase/ssr).
+ *
+ * Uses auth.getClaims(), not getUser(): the project signs JWTs with an
+ * asymmetric key (ES256), so the token is verified locally against the cached
+ * JWKS instead of a /auth/v1/user round trip on every page view. An expiring
+ * session is still refreshed (getClaims refreshes first) and its cookies set.
  */
 export async function updateSession(request: NextRequest): Promise<{
   response: NextResponse;
-  user: User | null;
+  user: MiddlewareUser | null;
   /** Supabase did not answer within AUTH_TIMEOUT_MS; user is unknown, not signed out. */
   timedOut: boolean;
 }> {
@@ -76,7 +92,7 @@ export async function updateSession(request: NextRequest): Promise<{
     timer = setTimeout(() => resolve("timeout"), AUTH_TIMEOUT_MS);
   });
   const result = await Promise.race([
-    supabase.auth.getUser().catch(() => null),
+    supabase.auth.getClaims().catch(() => null),
     timeout,
   ]);
   clearTimeout(timer);
@@ -86,5 +102,5 @@ export async function updateSession(request: NextRequest): Promise<{
     return { response: NextResponse.next({ request }), user: null, timedOut: true };
   }
 
-  return { response: supabaseResponse, user: result?.data.user ?? null, timedOut: false };
+  return { response: supabaseResponse, user: userFromClaims(result?.data?.claims), timedOut: false };
 }

@@ -11,6 +11,8 @@ import OrgMembersSection from "@/components/OrgMembersSection";
 import OrgSwitcher from "@/components/OrgSwitcher";
 import GoogleCalendarIntegrations from "@/components/GoogleCalendarIntegrations";
 import { getCurrentOrganization } from "@/lib/organizations";
+import OrgIdentityFields from "@/components/OrgIdentityFields";
+import { normalizeWardName } from "@/lib/ward-name";
 
 type OrgRow = { 
   id: string; 
@@ -36,6 +38,8 @@ export default function OrganizationSettingsPage() {
   const [savingDirectory, setSavingDirectory] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [copyToast, setCopyToast] = useState(false);
+  const [wardName, setWardName] = useState("");
+  const [savedWard, setSavedWard] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -70,6 +74,19 @@ export default function OrganizationSettingsPage() {
           row = (data as OrgRow | null) ?? null;
         }
       }
+      // Ward/Unit is read on its own so a database without the ward_name column
+      // (migration not applied yet) leaves it blank instead of hitting the fallback.
+      let ward: string | null = null;
+      if (row) {
+        const { data: wardRow, error: wardError } = await supabase
+          .from("organizations")
+          .select("ward_name")
+          .eq("id", row.id)
+          .maybeSingle();
+        if (!wardError) ward = (wardRow as { ward_name?: string | null } | null)?.ward_name ?? null;
+      }
+      setSavedWard(ward);
+      setWardName(ward ?? "");
       setOrg(row);
       setName(row?.name && row.name !== "Untitled organization" ? row.name : "");
       setSlug(row?.slug ?? "");
@@ -78,6 +95,16 @@ export default function OrganizationSettingsPage() {
     };
     load();
   }, [router, brand.id]);
+
+  // The dashboard ward line links here with ?focus=ward: land on Ward/Unit.
+  useEffect(() => {
+    if (loading || !org || typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("focus") !== "ward") return;
+    const input = document.getElementById("settings-ward") as HTMLInputElement | null;
+    if (!input) return;
+    input.scrollIntoView({ block: "center" });
+    input.focus({ preventScroll: true });
+  }, [loading, org]);
 
   const handleLeave = async () => {
     if (!org) return;
@@ -114,9 +141,19 @@ export default function OrganizationSettingsPage() {
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!org) return;
+    // Owner and co-admins can both rename the org and set Ward/Unit; the API
+    // checks membership and writes only those columns. Calling saves on the
+    // person's own row in the admins section.
     const trimmed = name.trim();
     if (!trimmed) {
-      setMessage({ kind: "error", text: "Please enter a name." });
+      setMessage({ kind: "error", text: "Please enter your organization." });
+      return;
+    }
+    const ward = normalizeWardName(wardName);
+    const nameChanged = trimmed !== org.name;
+    const wardChanged = ward !== savedWard;
+    if (!nameChanged && !wardChanged) {
+      setMessage({ kind: "ok", text: "Saved." });
       return;
     }
     setSaving(true);
@@ -130,16 +167,26 @@ export default function OrganizationSettingsPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${session?.access_token ?? ""}`,
         },
-        body: JSON.stringify({ name: trimmed }),
+        body: JSON.stringify(wardChanged ? { name: trimmed, ward_name: ward } : { name: trimmed }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setMessage({ kind: "error", text: data?.error ?? "Failed to update organization." });
-        setSaving(false);
+        setMessage({ kind: "error", text: data?.error ?? "Failed to update your organization." });
         return;
       }
+      // Update the page header right away.
       setOrg({ ...org, name: trimmed, needs_naming: false });
-      setMessage({ kind: "ok", text: "Saved." });
+      setName(trimmed);
+      const wardNotSaved = wardChanged && data?.wardSaved === false;
+      if (wardChanged && !wardNotSaved) {
+        setSavedWard(ward);
+        setWardName(ward ?? "");
+      }
+      setMessage(
+        wardNotSaved
+          ? { kind: "error", text: "Saved, but Ward/Unit can't be saved yet. Please try again later." }
+          : { kind: "ok", text: "Saved." },
+      );
     } catch {
       setMessage({ kind: "error", text: "Network error. Please try again." });
     } finally {
@@ -232,7 +279,7 @@ export default function OrganizationSettingsPage() {
     <>
       <Navigation />
       <main className="min-h-screen bg-[#F4FAFB] py-8 px-4">
-        <div className="max-w-2xl mx-auto">
+        <div className="max-w-4xl mx-auto">
           <div className="mb-6">
             <Link
               href="/dashboard"
@@ -254,18 +301,15 @@ export default function OrganizationSettingsPage() {
             </p>
 
             <form onSubmit={handleSave}>
-              <label htmlFor="org-name" className="block text-[12px] font-semibold text-[#0D2B35] mb-1.5">
-                Name
-              </label>
-              <input
-                id="org-name"
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                disabled={!isOwner}
-                placeholder="e.g. Sossaman Estates Ward EQ"
-                maxLength={120}
-                className="w-full px-4 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/30 focus:border-[#0E96B0] focus:outline-none text-[#0D2B35] placeholder-[#5A8399]/60 disabled:bg-[#F4FAFB] disabled:cursor-not-allowed"
+              <OrgIdentityFields
+                idPrefix="settings"
+                name={name}
+                onNameChange={setName}
+                wardName={wardName}
+                onWardNameChange={setWardName}
+                showCalling={false}
+                canEditOrg
+                disabled={saving}
               />
 
               {message && (
@@ -274,17 +318,15 @@ export default function OrganizationSettingsPage() {
                 </p>
               )}
 
-              {isOwner && (
-                <div className="mt-5">
-                  <button
-                    type="submit"
-                    disabled={saving}
-                    className="text-sm font-semibold px-6 py-2.5 rounded-xl bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
-                  >
-                    {saving ? "Saving…" : "Save changes"}
-                  </button>
-                </div>
-              )}
+              <div className="mt-5">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="text-sm font-semibold px-6 py-2.5 rounded-xl bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:-translate-y-0.5 transition-all disabled:opacity-50 disabled:hover:translate-y-0"
+                >
+                  {saving ? "Saving…" : "Save changes"}
+                </button>
+              </div>
             </form>
           </div>
 
@@ -389,7 +431,7 @@ export default function OrganizationSettingsPage() {
 
           <GoogleCalendarIntegrations organizationId={org.id} />
 
-          <OrgMembersSection organizationId={org.id} isOwner={isOwner} />
+          <OrgMembersSection organizationId={org.id} isOwner={isOwner} currentUserId={userId} />
 
           {!isOwner && (
             <section className="mt-6 bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">

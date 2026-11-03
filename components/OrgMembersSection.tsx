@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createClientComponentClient } from "@/lib/auth";
+import OwnCallingField from "@/components/OwnCallingField";
 
 type Member = {
   id: string;
@@ -17,6 +18,8 @@ type Member = {
 interface Props {
   organizationId: string;
   isOwner: boolean;
+  /** Signed in user; their own row gets the "Your calling" field. */
+  currentUserId?: string | null;
 }
 
 const CONFIRM_PHRASE = "transfer ownership";
@@ -25,7 +28,7 @@ type TransferTarget =
   | { kind: "existing"; memberId: string; email: string }
   | { kind: "new" };
 
-export default function OrgMembersSection({ organizationId, isOwner }: Props) {
+export default function OrgMembersSection({ organizationId, isOwner, currentUserId }: Props) {
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
   const [inviteEmail, setInviteEmail] = useState("");
@@ -212,7 +215,7 @@ export default function OrgMembersSection({ organizationId, isOwner }: Props) {
     <section id="co-admins" className="scroll-mt-20 mt-8 bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">
       <h2 className="font-serif text-[20px] text-[#0D2B35] mb-1">Co-admins</h2>
       <p className="text-[13px] text-[#5A8399] mb-5">
-        Co-admins can edit and delete events, manage signups, and view analytics. Only the owner can invite or remove co-admins.
+        Co-admins can edit and delete events, manage signups, view analytics, and change the organization and Ward/Unit. Only the owner can invite or remove co-admins.
       </p>
 
       {isOwner && (
@@ -273,10 +276,14 @@ export default function OrgMembersSection({ organizationId, isOwner }: Props) {
             .map((m) => {
             const isPendingHandoff = !!m.transfer_on_accept && m.status === "pending";
             const canTransferTo = isOwner && m.role === "admin" && m.status === "accepted" && !!m.user_id;
+            const isMe = !!currentUserId && m.user_id === currentUserId && m.status === "accepted";
             return (
-              <li key={m.id} className="flex items-center justify-between py-3 gap-3">
-                <div className="min-w-0">
-                  <div className="text-[14px] text-[#0D2B35] font-medium truncate">{m.invited_email}</div>
+              <li key={m.id} className="flex items-start justify-between py-3 gap-3" data-testid={isMe ? "member-row-me" : undefined}>
+                <div className="min-w-0 flex-1">
+                  <div className="text-[14px] text-[#0D2B35] font-medium truncate">
+                    {m.invited_email}
+                    {isMe && <span className="ml-1.5 text-[12px] font-normal text-[#5A8399]">(you)</span>}
+                  </div>
                   <div className="text-[12px] text-[#5A8399]">
                     {m.role === "owner" ? "Owner" : "Co-admin"}
                     {" · "}
@@ -287,6 +294,7 @@ export default function OrgMembersSection({ organizationId, isOwner }: Props) {
                       </span>
                     )}
                   </div>
+                  {isMe && <OwnCallingField />}
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   {canTransferTo && (

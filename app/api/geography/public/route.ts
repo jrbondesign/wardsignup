@@ -1,28 +1,35 @@
 import { NextResponse } from "next/server";
-import { resolveGeographyPayload } from "@/lib/geography-cache";
+import {
+  GEOGRAPHY_PUBLIC_CACHE_CONTROL,
+  resolveGeographyPayload,
+} from "@/lib/geography-cache";
 
 export const maxDuration = 60;
-/** Hourly: the DB cache refreshes daily, so the public copy catches up within an hour. */
+/**
+ * Hourly ISR window. The snapshot row refreshes once a day; the writer also
+ * calls revalidatePath on this route so both maps update without waiting.
+ * Keep in sync with GEOGRAPHY_PUBLIC_CACHE_CONTROL (must be a literal here).
+ */
 export const revalidate = 3600;
 
 /**
- * Public geography endpoint for homepage "Our Community" map.
+ * Public geography endpoint for the homepage and founder metrics maps.
  * Returns ONLY city-level aggregates (city, country, lat, lng, userCount).
  * No PII, emails, names, or person identifiers are ever exposed.
- * 
+ *
  * Data sources (in preference order):
- * 1. DB cache (geography_snapshot_cache table, refreshed daily by cron)
+ * 1. DB cache (geography_snapshot_cache, refreshed daily by cron; the writer
+ *    revalidates this route on demand)
  * 2. Baked snapshot fallback (GEOGRAPHY_SNAPSHOT constant)
- * 
- * Security: This endpoint exposes aggregate city-level statistics only.
- * All person-level data remains behind authentication.
+ *
+ * Display never calls PostHog. One row, one endpoint, both maps match.
  */
 export async function GET() {
   try {
     const payload = await resolveGeographyPayload();
     return NextResponse.json(payload, {
       headers: {
-        "Cache-Control": "public, s-maxage=3600, stale-while-revalidate=600",
+        "Cache-Control": GEOGRAPHY_PUBLIC_CACHE_CONTROL,
       },
     });
   } catch (error) {

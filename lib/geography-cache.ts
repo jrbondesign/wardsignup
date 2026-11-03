@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { isRealOrgId, TEST_ORG_IDS, TEST_OWNER_EMAILS } from "@/lib/test-orgs";
 import {
@@ -7,10 +8,33 @@ import {
   type GeographyCity,
 } from "@/lib/geography-snapshot";
 
-/** Daily cadence: cache is fresh for ~1 day; cron refreshes once per UTC day. */
+/** Daily cadence: cron refreshes once per Phoenix day (8 AM Arizona). */
 export const GEOGRAPHY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
-/** Soft stale window: still serve cache while allowing lazy refresh. */
-export const GEOGRAPHY_CACHE_STALE_MS = 36 * 60 * 60 * 1000;
+
+/** Public homepage and founder metrics map endpoint. */
+export const GEOGRAPHY_PUBLIC_PATH = "/api/geography/public";
+/**
+ * CDN header for the public map endpoint: fresh for 1h, then serve stale while
+ * revalidating. The cron also calls revalidatePath right after it writes, so
+ * both maps pick up the new row without waiting for the hour.
+ */
+export const GEOGRAPHY_PUBLIC_CACHE_CONTROL =
+  "public, s-maxage=3600, stale-while-revalidate=86400";
+
+/**
+ * Purge the cached public map response after the snapshot row changes so the
+ * homepage and founder metrics map match right away. Never throws: a failed
+ * purge must not fail the write; the 1h window covers it.
+ */
+export function revalidatePublicGeography(): boolean {
+  try {
+    revalidatePath(GEOGRAPHY_PUBLIC_PATH);
+    return true;
+  } catch (err) {
+    console.warn("geography public revalidate failed:", err);
+    return false;
+  }
+}
 
 const POSTHOG_HOST =
   process.env.NEXT_PUBLIC_POSTHOG_HOST?.replace(/\/$/, "") ||
@@ -76,6 +100,11 @@ export function buildGeographyQuery(excludeCampaignIds: string[]): string {
   );
 }
 
+/**
+ * Live PostHog pull. Cron only. Display routes must never call this: a live
+ * refresh on one request while the other still serves the CDN/DB row is how
+ * the homepage and founder maps drift apart.
+ */
 export async function fetchLiveGeographyFromPostHog(): Promise<GeographyCity[] | null> {
   const apiKey = process.env.POSTHOG_PERSONAL_API_KEY?.trim();
   if (!apiKey) return null;
@@ -95,8 +124,9 @@ export async function fetchLiveGeographyFromPostHog(): Promise<GeographyCity[] |
           query,
         },
       }),
-      // Daily cadence — avoid hammering PostHog from concurrent page loads.
-      next: { revalidate: 86400 },
+      // Always fetch fresh. A Next data cache entry here could make the cron
+      // write a day old PostHog result into the shared snapshot row.
+      cache: "no-store",
     },
   );
 
@@ -188,6 +218,8 @@ export async function writeGeographyCache(
       return { ok: false, error: error.message };
     }
 
+    revalidatePublicGeography();
+
     return {
       ok: true,
       payload: {
@@ -202,47 +234,29 @@ export async function writeGeographyCache(
   }
 }
 
-function cacheAgeMs(refreshedAt: string): number {
-  return Date.now() - new Date(refreshedAt).getTime();
-}
-
 /**
- * Resolve map data for public/admin UI.
- * Prefer daily DB cache → live PostHog (and persist) → baked snapshot.
+ * Resolve map data for every UI surface (homepage and founder metrics).
+ *
+ * Display path is snapshot only: the shared DB row, else the baked fallback.
+ * Never calls PostHog here. A live refresh on the request path is what let the
+ * two maps diverge after they already shared a component (one request wrote a
+ * new row while the other still served CDN or an older read).
  */
 export async function resolveGeographyPayload(): Promise<GeographyPayload> {
   const cached = await readGeographyCache();
-  if (cached && cacheAgeMs(cached.refreshedAt) <= GEOGRAPHY_CACHE_STALE_MS) {
-    const payload = toGeographyResponse(cached.cities, "cache");
-    return {
-      ...payload,
-      refreshedAt: cached.refreshedAt,
-    };
-  }
-
-  const live = await fetchLiveGeographyFromPostHog();
-  if (live && live.length > 0) {
-    const written = await writeGeographyCache(live);
-    if (written.ok) return written.payload;
-    const payload = toGeographyResponse(live, "live");
-    return { ...payload };
-  }
-
-  // Stale cache is better than the static bake-in if we have one.
   if (cached) {
-    const payload = toGeographyResponse(cached.cities, "cache");
     return {
-      ...payload,
+      ...toGeographyResponse(cached.cities, "cache"),
       refreshedAt: cached.refreshedAt,
     };
   }
 
-  const baked = toGeographyResponse(GEOGRAPHY_SNAPSHOT, "snapshot");
-  return { ...baked };
+  return { ...toGeographyResponse(GEOGRAPHY_SNAPSHOT, "snapshot") };
 }
 
 /**
  * Daily cron: pull PostHog and upsert the cache. Returns null cities if skipped.
+ * This is the only place that may call PostHog for the map.
  */
 export async function refreshGeographyCacheFromPostHog(): Promise<{
   refreshed: boolean;

@@ -3,7 +3,6 @@ import type { User } from "@supabase/supabase-js";
 import { creatorNotifyEmailFrom, type PublicBrand } from "@/lib/brand";
 import { escapeHtml } from "@/lib/html-escape";
 import { formatLocationLine } from "@/lib/request-geo";
-import { getResendForBrand } from "@/lib/resend-for-brand";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 
 /** Every founder-facing message (new creator, feedback digest) goes here. */
@@ -64,8 +63,6 @@ export async function notifyFounderIfFirstEvent(opts: {
     } as never);
     if (first !== true) return;
 
-    const resend = getResendForBrand(brand);
-    if (!resend) return;
     const name = String(user.user_metadata?.full_name ?? user.user_metadata?.name ?? "(none)");
     const sent = await sendGuardedEmail({
       brand,

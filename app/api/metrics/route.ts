@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 import { posthogWeeklyEventCounts } from "@/lib/posthog-query";
@@ -21,6 +22,7 @@ import {
 } from "@/lib/metrics-weeks";
 import { buildCoreWeekly, lastWeekKeys } from "@/lib/core-metrics";
 import { fetchAllRows } from "@/lib/supabase-paging";
+import { attachCreatorIdentity, fetchCreatorIdentity, type CreatorIdentityClient } from "@/lib/creator-identity";
 import { computeWardFirstEvents, type OrgWithAttribution, type WardCampaign } from "@/lib/new-wards";
 
 /** Every week on the founder metrics page is Monday to Sunday in Phoenix time. */
@@ -134,9 +136,43 @@ export async function GET(request: NextRequest) {
   const brandFilter: string | null =
     brandParam && VALID_BRANDS.has(brandParam) ? brandParam : null;
 
+  // Auth above runs on every request; only the heavy aggregate below is cached.
+  try {
+    const body = await cachedMetricsBody(brandFilter ?? "all");
+    return NextResponse.json(body);
+  } catch (err) {
+    if (err instanceof MetricsRpcError) {
+      return NextResponse.json(
+        { error: "Metrics RPC failed (apply migrations?)" },
+        { status: 500 },
+      );
+    }
+    throw err;
+  }
+}
+
+/** A metrics RPC failed; never cached, so the next request retries. */
+class MetricsRpcError extends Error {}
+
+/** How long the founder metrics aggregate is reused across requests. */
+const METRICS_CACHE_SECONDS = 600;
+const METRICS_CACHE_TAG = "founder-metrics";
+
+/**
+ * Same admin-only payload for every metrics admin, keyed by brand tab. Cached
+ * for METRICS_CACHE_SECONDS so reloading the page doesn't re-list every auth
+ * user and re-scan every table. Errors throw, so a failure is never cached.
+ */
+const cachedMetricsBody = unstable_cache(
+  async (brandKey: string) => computeMetricsBody(brandKey === "all" ? null : brandKey),
+  ["founder-metrics-v1"],
+  { revalidate: METRICS_CACHE_SECONDS, tags: [METRICS_CACHE_TAG] },
+);
+
+async function computeMetricsBody(brandFilter: string | null) {
   const admin = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
   );
 
   // History runs from launch (week of the first event ever created) to the current week.
@@ -233,6 +269,7 @@ export async function GET(request: NextRequest) {
     sessionCampaignRows,
     signupCampaignRows,
     inviteInviterRows,
+    creatorIdentity,
   ] = await Promise.all([
     brandCampaignIds !== null
       ? admin.from("campaigns").select("id", { count: "exact", head: true }).in("id", brandCampaignIds)
@@ -314,21 +351,17 @@ export async function GET(request: NextRequest) {
       },
       { label: "event_invites.inviter_id" },
     ),
+    // Safe before the calling/ward migration is applied: missing columns show as not set.
+    fetchCreatorIdentity(admin as unknown as CreatorIdentityClient, { brandId: brandFilter }),
   ]);
 
   if (capErr) {
     console.error("metrics_total_capacity:", capErr);
-    return NextResponse.json(
-      { error: "Metrics RPC failed (apply migrations?)" },
-      { status: 500 },
-    );
+    throw new MetricsRpcError("metrics_total_capacity");
   }
   if (creatorErr) {
     console.error("metrics_creator_breakdown:", creatorErr);
-    return NextResponse.json(
-      { error: "Metrics RPC failed (apply migrations?)" },
-      { status: 500 },
-    );
+    throw new MetricsRpcError("metrics_creator_breakdown");
   }
 
   const { users: allAuthUsers, complete: authUsersFetchComplete } = listUsersResult;
@@ -393,12 +426,16 @@ export async function GET(request: NextRequest) {
   }));
 
   const creatorRowsTyped = (creatorRpc ?? []) as CreatorBreakdownRow[];
-  const creators = creatorRowsTyped.map((r: CreatorBreakdownRow) => ({
-    email: r.organizer_email,
-    events: num(r.event_count),
-    sessions: num(r.session_count),
-    signups: num(r.signup_count),
-  }));
+  const creators = attachCreatorIdentity(
+    creatorRowsTyped.map((r: CreatorBreakdownRow) => ({
+      email: r.organizer_email,
+      events: num(r.event_count),
+      sessions: num(r.session_count),
+      signups: num(r.signup_count),
+    })),
+    allAuthUsers,
+    creatorIdentity,
+  );
 
   const recentSignups = (recentSignupsRaw ?? ([] as RecentSignupJoined[])).map((s) => {
     const c = s.campaigns;
@@ -795,7 +832,7 @@ export async function GET(request: NextRequest) {
     ),
   });
 
-  return NextResponse.json({
+  return {
     totalEvents: totalEvents ?? 0,
     totalSessions: totalSessions ?? 0,
     totalSignups: totalSignups ?? 0,
@@ -803,6 +840,8 @@ export async function GET(request: NextRequest) {
     totalCapacity,
     growth,
     creators,
+    callingsAvailable: creatorIdentity.callingsAvailable,
+    wardsAvailable: creatorIdentity.wardsAvailable,
     recentSignups,
     newCreatorsThisCalendarWeek,
     newCreatorsLastCompletedWeek,
@@ -893,5 +932,5 @@ export async function GET(request: NextRequest) {
     nonCreatorAccounts,
     growthCountsSource,
     totalCreators: activatedCreators.length,
-  });
+  };
 }

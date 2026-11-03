@@ -50,7 +50,6 @@ function CreateInner() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   type OrgState = { kind: "loading" } | { kind: "missing" } | { kind: "needsNaming"; id: string; name: string } | { kind: "ready" };
   const [orgState, setOrgState] = useState<OrgState>({ kind: "loading" });
-  const [orgName, setOrgName] = useState<string | null>(null);
   const [orgId, setOrgId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -72,7 +71,6 @@ function CreateInner() {
       // Honor the saved selection so multi-org users create events under the org they
       // picked, not the first one they happen to own.
       const org = await getCurrentOrganization(supabase, authUser, brand.id);
-      setOrgName(org?.name ?? null);
       setOrgId(org?.id ?? null);
       if (!org) setOrgState({ kind: "missing" });
       else if (org.needs_naming) setOrgState({ kind: "needsNaming", id: org.id, name: org.name });
@@ -83,7 +81,7 @@ function CreateInner() {
     check();
   }, [router, brand.id]);
 
-  const maxEvents = getMaxCampaignsForOrg(orgName) ?? getMaxCampaignsPerUser();
+  const maxEvents = getMaxCampaignsForOrg(orgId) ?? getMaxCampaignsPerUser();
   const isUnlimited = isUnlimitedEventsUser(userEmail);
   const atLimit = !isUnlimited && eventCount !== null && eventCount >= maxEvents;
 
@@ -112,7 +110,7 @@ function CreateInner() {
             <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-8 text-center">
               <h1 className="font-serif text-[22px] text-[#0D2B35] mb-1">One quick step</h1>
               <p className="text-sm text-[#5A8399]">
-                Name your organization to start creating events.
+                Add your organization and ward to start creating events.
               </p>
             </div>
           </div>
@@ -133,7 +131,6 @@ function CreateInner() {
               if (authUser) {
                 const org = await getCurrentOrganization(supabase, authUser, brand.id);
                 if (org) {
-                  setOrgName(org.name);
                   setOrgId(org.id);
                 }
               }

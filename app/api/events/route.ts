@@ -106,7 +106,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const limit = await checkEventLimit(supabase, user, brand.id, org.name);
+    const limit = await checkEventLimit(supabase, user, brand.id, org.id);
     if (!limit.ok) {
       return NextResponse.json({ error: limit.error }, { status: limit.status });
     }

@@ -4,7 +4,7 @@ import { getAuthFromRequest } from "@/lib/auth";
 import { userIsAcceptedOrgMember } from "@/lib/campaign-access";
 import { getBrandFromHost, inviteEmailFrom, publicSiteOriginFromRequest } from "@/lib/brand";
 import { escapeHtml } from "@/lib/html-escape";
-import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
+import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { buildBrandSignatureFooterHtml } from "@/lib/site-footer";
 import { getPostHogClient } from "@/lib/posthog-server";
@@ -166,7 +166,7 @@ export async function POST(
       return NextResponse.json({ error: "Failed to create invite" }, { status: 500 });
     }
 
-    if (!hasResendConfiguredForBrand(hostBrand)) {
+    if (!hasEmailProviderConfigured(hostBrand)) {
       // Persist the invite but tell the caller email failed.
       return NextResponse.json(
         { error: "Email is not configured for this site.", member: memberRow },

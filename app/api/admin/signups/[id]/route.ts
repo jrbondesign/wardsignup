@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
@@ -64,5 +65,6 @@ export async function DELETE(
     });
   }
 
+  revalidateEventPage(campaignId);
   return NextResponse.json({ ok: true });
 }

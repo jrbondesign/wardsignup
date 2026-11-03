@@ -19,6 +19,7 @@ export type LoadedEventPageCtx = Omit<EventPageCtx, "event"> & { event: NonNulla
 export function deriveEventPageView(ctx: LoadedEventPageCtx) {
   const {
     captureNudge,
+    customCaptcha,
     customItem,
     emailInputRef,
     event,
@@ -28,6 +29,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     formData,
     funnelCtx,
     guestNames,
+    itemCaptcha,
     itemFormData,
     nudgeShownRef,
     nudgeVariant,
@@ -51,6 +53,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setSelectedSessions,
     setSubmitting,
     showSignupsPublicly,
+    slotCaptcha,
     submitting,
     trackFormStarted,
   } = ctx;
@@ -76,12 +79,17 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     if (!itemFormData.name.trim()) { setItemError("Please enter your name"); return; }
     setItemSubmitting(true);
     setItemError("");
+    let captchaUsed = false;
     try {
+      const captchaToken = await itemCaptcha.getToken();
+      if (itemCaptcha.enabled && !captchaToken) throw new Error(itemCaptcha.missingMessage);
+      captchaUsed = itemCaptcha.enabled;
       const { getAttributionForSubmission } = await import("@/lib/attribution");
       const res = await fetch("/api/item-signups", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
         body: JSON.stringify({
+          ...(captchaToken ? { captchaToken } : {}),
           item_id: itemId,
           campaign_id: eventId,
           member_name: itemFormData.name,
@@ -104,6 +112,8 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     } catch (err: any) {
       setItemError(err.message || "Failed to sign up. Please try again.");
     } finally {
+      // Turnstile tokens are single use: get a fresh one for the next try.
+      if (captchaUsed) itemCaptcha.reset();
       setItemSubmitting(false);
     }
   };
@@ -114,12 +124,17 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     if (!customItem.name.trim()) { setCustomError("Please enter your name"); return; }
     setCustomSubmitting(true);
     setCustomError("");
+    let captchaUsed = false;
     try {
+      const captchaToken = await customCaptcha.getToken();
+      if (customCaptcha.enabled && !captchaToken) throw new Error(customCaptcha.missingMessage);
+      captchaUsed = customCaptcha.enabled;
       const { getAttributionForSubmission } = await import("@/lib/attribution");
       const res = await fetch("/api/item-signups", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
         body: JSON.stringify({
+          ...(captchaToken ? { captchaToken } : {}),
           campaign_id: eventId,
           custom_label: customItem.label.trim(),
           member_name: customItem.name.trim(),
@@ -138,6 +153,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     } catch (err: any) {
       setCustomError(err.message || "Failed to add your contribution");
     } finally {
+      if (captchaUsed) customCaptcha.reset();
       setCustomSubmitting(false);
     }
   };
@@ -175,7 +191,11 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setSubmitting(true);
     setError("");
 
+    let captchaUsed = false;
     try {
+      const captchaToken = await slotCaptcha.getToken();
+      if (slotCaptcha.enabled && !captchaToken) throw new Error(slotCaptcha.missingMessage);
+      captchaUsed = slotCaptcha.enabled;
       const cleanGuests = guestNames.map((n) => n.trim()).filter(Boolean);
 
       // Single bulk request → single confirmation email covering every slot.
@@ -184,6 +204,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
         body: JSON.stringify({
+          ...(captchaToken ? { captchaToken } : {}),
           campaign_id: eventId,
           session_ids: sessionsToSignUp,
           member_name: formData.name,
@@ -236,6 +257,8 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     } catch (err: any) {
       setError(err.message || "Failed to sign up. Please try again.");
     } finally {
+      // Turnstile tokens are single use: get a fresh one for the next try.
+      if (captchaUsed) slotCaptcha.reset();
       setSubmitting(false);
     }
   };

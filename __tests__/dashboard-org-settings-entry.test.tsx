@@ -42,6 +42,17 @@ function campaignsChain() {
   return chain;
 }
 
+// organizations.ward_name read for the ward line above the org name.
+let wardResult: { data: unknown; error: unknown } = { data: { ward_name: null }, error: null };
+let wardQueries = 0;
+function wardChain() {
+  wardQueries += 1;
+  const chain: Record<string, unknown> = {};
+  for (const m of ["select", "eq"]) chain[m] = () => chain;
+  chain.maybeSingle = async () => wardResult;
+  return chain;
+}
+
 jest.mock("@/lib/auth", () => ({
   createClientComponentClient: () => ({
     auth: {
@@ -49,7 +60,7 @@ jest.mock("@/lib/auth", () => ({
       getUser: async () => ({ data: { user: { id: "u1", email: "owner@example.com" } }, error: null }),
       signOut: async () => ({}),
     },
-    from: () => campaignsChain(),
+    from: (table: string) => (table === "organizations" ? wardChain() : campaignsChain()),
     rpc: async () => rpcResult,
   }),
 }));
@@ -90,6 +101,8 @@ beforeEach(() => {
   campaignsResult = { data: [], error: null };
   campaignsQueries = 0;
   rpcResult = { data: null, error: { code: "PGRST202" } };
+  wardResult = { data: { ward_name: null }, error: null };
+  wardQueries = 0;
 });
 
 describe("OrgSettingsEntry", () => {
@@ -98,7 +111,7 @@ describe("OrgSettingsEntry", () => {
     render(<OrgSettingsEntry isWardBrand />);
     const link = screen.getByRole("link", { name: "Organization settings" });
     expect(link).toHaveAttribute("href", "/settings/organization");
-    expect(link).toHaveClass("min-h-11");
+    expect(link).toHaveClass("h-11");
     expect(link).toHaveAttribute("aria-describedby", "org-settings-caption");
     fireEvent.click(link);
     expect(capture).toHaveBeenCalledWith("org_settings_opened", { source: "dashboard" });
@@ -109,7 +122,7 @@ describe("OrgSettingsEntry", () => {
     mockOrgList(1);
     render(<OrgSettingsEntry isWardBrand />);
     expect(screen.getByText(ORG_SETTINGS_CAPTION_WARD)).toHaveAttribute("id", "org-settings-caption");
-    expect(ORG_SETTINGS_CAPTION_WARD).toBe("Your ward name, admins and public ward directory.");
+    expect(ORG_SETTINGS_CAPTION_WARD).toBe("Ward, admins and public ward directory.");
     expect(screen.queryByText(ORG_SETTINGS_CAPTION_GENERIC)).not.toBeInTheDocument();
     await flush();
   });
@@ -150,7 +163,7 @@ describe("OrgSettingsEntry", () => {
     render(<OrgSettingsEntry isWardBrand />);
     const link = await screen.findByRole("link", { name: /switch organization/i });
     expect(screen.queryByTestId("org-switch-placeholder")).not.toBeInTheDocument();
-    expect(link).toHaveClass("mt-1", "min-h-11", "rounded-full", "focus-visible:outline-[#0E96B0]");
+    expect(link).toHaveClass("mt-2", "min-h-11", "rounded-full", "focus-visible:outline-[#0E96B0]");
   });
 
   it("keeps copy free of dashes", async () => {
@@ -259,5 +272,66 @@ describe("Dashboard header", () => {
     expect(screen.getByText("Temple Night")).toBeInTheDocument();
     expect(screen.getByText("40%", { exact: false })).toBeInTheDocument();
     expect(campaignsQueries).toBe(0);
+  });
+});
+
+describe("Dashboard ward line", () => {
+  function renderDashboard() {
+    return render(
+      <BrandProvider brand={getDefaultPublicBrand()}>
+        <DashboardPage />
+      </BrandProvider>
+    );
+  }
+
+  it("shows the ward above the org name, linking to settings with Ward/Unit focused", async () => {
+    mockOrgList(1);
+    wardResult = { data: { ward_name: "Sweetwater Branch" }, error: null };
+    renderDashboard();
+    const line = await screen.findByTestId("org-ward-line");
+    expect(line).toHaveTextContent("Sweetwater Branch");
+    expect(line).toHaveAttribute("href", "/settings/organization?focus=ward");
+    expect(line).toHaveClass("truncate", "text-[15px]", "font-medium");
+    // Sits above the title.
+    const title = screen.getByText("Smoke Test Eva", { selector: "h1" });
+    expect(line.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId("org-ward-add")).not.toBeInTheDocument();
+    fireEvent.click(line);
+    expect(capture).toHaveBeenCalledWith("org_settings_opened", { source: "dashboard_ward_line", ward_set: true });
+    expect(wardQueries).toBe(1);
+  });
+
+  it("shows + Add your ward when the ward is empty", async () => {
+    mockOrgList(1);
+    renderDashboard();
+    const add = await screen.findByTestId("org-ward-add");
+    expect(add).toHaveTextContent("Add your ward");
+    expect(add).toHaveAttribute("href", "/settings/organization?focus=ward");
+    expect(add).toHaveClass("no-underline");
+  });
+
+  it("shows neither a ward nor the prompt when the ward can't be read", async () => {
+    mockOrgList(1);
+    wardResult = { data: null, error: { code: "42703" } };
+    renderDashboard();
+    await screen.findByText("Smoke Test Eva", { selector: "h1" });
+    await flush();
+    expect(screen.getByTestId("org-ward-placeholder")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByTestId("org-ward-line")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("org-ward-add")).not.toBeInTheDocument();
+  });
+
+  it("is not shown on other brands", async () => {
+    mockOrgList(1);
+    render(
+      <BrandProvider brand={{ ...getDefaultPublicBrand(), id: "ministrysignup" as never }}>
+        <DashboardPage />
+      </BrandProvider>
+    );
+    await screen.findByText("Smoke Test Eva", { selector: "h1" });
+    await flush();
+    expect(screen.queryByTestId("org-ward-placeholder")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("org-ward-add")).not.toBeInTheDocument();
+    expect(wardQueries).toBe(0);
   });
 });
