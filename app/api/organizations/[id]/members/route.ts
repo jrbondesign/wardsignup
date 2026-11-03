@@ -4,10 +4,11 @@ import { getAuthFromRequest } from "@/lib/auth";
 import { userIsAcceptedOrgMember } from "@/lib/campaign-access";
 import { getBrandFromHost, inviteEmailFrom, publicSiteOriginFromRequest } from "@/lib/brand";
 import { escapeHtml } from "@/lib/html-escape";
-import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
+import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { buildBrandSignatureFooterHtml } from "@/lib/site-footer";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { isRealOrgId, isTestOrgId, isTestOwnerEmail } from "@/lib/test-orgs";
 
 const TOKEN_TTL_DAYS = 14;
 
@@ -165,7 +166,7 @@ export async function POST(
       return NextResponse.json({ error: "Failed to create invite" }, { status: 500 });
     }
 
-    if (!hasResendConfiguredForBrand(hostBrand)) {
+    if (!hasEmailProviderConfigured(hostBrand)) {
       // Persist the invite but tell the caller email failed.
       return NextResponse.json(
         { error: "Email is not configured for this site.", member: memberRow },
@@ -255,6 +256,20 @@ export async function POST(
       event: "org_member_invited",
       properties: { organization_id: org.id, brand_id: org.brand_id, transfer_on_accept: transferOwnership },
     });
+    // Co-admin findability: one event per co-admin invite email actually sent
+    // (ownership handoff invites are excluded; they stay on org_member_invited).
+    // The inviter is always the owner, so the owner email check uses user.email.
+    if (!transferOwnership) {
+      posthog.capture({
+        distinctId: user.id,
+        event: "coadmin_invite_sent",
+        properties: {
+          org_id: org.id,
+          is_test_org: !isRealOrgId(org.id) && (isTestOwnerEmail(user.email) || isTestOrgId(org.id)),
+          brand_id: org.brand_id,
+        },
+      });
+    }
 
     return NextResponse.json({ member: memberRow }, { status: 201 });
   } catch (error) {

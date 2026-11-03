@@ -1,7 +1,6 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
-import { getResendForBrand } from "@/lib/resend-for-brand";
-import { brevoConfig, deliverEmail } from "@/lib/email-deliver";
+import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { enqueueEmail } from "@/lib/email-queue";
 import { deferEnabled, deferSendWindowHours, inPostResetWindow, nextResetSendAfter } from "@/lib/email-queue-time";
 import type { PublicBrand } from "@/lib/brand/types";
@@ -28,13 +27,15 @@ import type { PublicBrand } from "@/lib/brand/types";
 const GLOBAL_HOURLY_CEILING = Number(process.env.EMAIL_HOURLY_CEILING) || 100;
 
 export type GuardedSendResult =
-  | { ok: true; queued?: boolean }
+  | { ok: true; queued?: boolean; provider?: "resend" | "brevo" }
   | {
       ok: false;
       skipped?: "suppressed" | "ceiling" | "no_resend_key";
       error?: string;
       /** Resend is out of daily budget; queue callers leave the row pending. */
       overBudget?: boolean;
+      /** Brevo refused or errored; the drain counts this as a failed attempt. */
+      brevoFailed?: boolean;
     };
 
 function unsubSecret(): string | null {
@@ -131,15 +132,27 @@ export type GuardedSendParams = {
    */
   urgent?: boolean;
   /**
-   * Welcome, digests, reports, feedback asks, announcements, new creator
-   * notices. Queued until just after the UTC reset unless it is already early
-   * in the UTC day.
+   * Welcome, new creator notice, feedback received. Sends right away when
+   * Resend has room in both daily counters; otherwise through Brevo; only if
+   * neither can take it, queued due now for the hourly drain. Never held
+   * until 12:05 AM.
+   */
+  realtime?: boolean;
+  /**
+   * Digests, reports, feedback asks, announcements. Queued until 12:05 AM
+   * Arizona unless it is already early in the Arizona day (first
+   * EMAIL_DEFER_SEND_WINDOW_HOURS hours, default 6).
    */
   deferrable?: boolean;
   /** Short label stored on queued rows, e.g. "welcome" or "digest". */
   kind?: string;
   /** Set by the queue drain so a queued email is not queued again. */
   fromQueue?: boolean;
+  /**
+   * Stable Resend Idempotency-Key (the queue drain passes the row id), so a
+   * retry of an email Resend already accepted is never sent twice.
+   */
+  idempotencyKey?: string;
 };
 
 export async function sendGuardedEmail(params: GuardedSendParams): Promise<GuardedSendResult> {
@@ -147,8 +160,9 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     params;
   const emailLower = to.trim().toLowerCase();
   const urgent = Boolean(params.urgent);
+  const realtime = !urgent && Boolean(params.realtime);
 
-  if (!getResendForBrand(brand) && !brevoConfig()) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, skipped: "no_resend_key", error: `Resend API key missing for brand ${brand.id}` };
   }
 
@@ -164,8 +178,9 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
       text_body: text ?? null,
       reply_to: replyTo ?? null,
       attachments: attachments?.length ? attachments : null,
-      send_after: nextResetSendAfter(new Date()).toISOString(),
-    });
+      // Near real time mail is due now (hourly drain); batch mail waits for 12:05 AM Arizona.
+      send_after: (realtime ? new Date() : nextResetSendAfter(new Date())).toISOString(),
+    }, { dedupe: realtime });
     return q.ok ? { ok: true, queued: true } : { ok: false, error: q.error };
   };
 
@@ -173,6 +188,7 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
   if (
     params.deferrable &&
     !urgent &&
+    !realtime &&
     !params.fromQueue &&
     deferEnabled() &&
     !inPostResetWindow(now, deferSendWindowHours())
@@ -203,14 +219,33 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
   }
 
   const sent = await deliverEmail(
-    { brand, from, to: emailLower, subject, html, text, replyTo, attachments, headers },
-    { urgent },
+    {
+      brand,
+      from,
+      to: emailLower,
+      subject,
+      html,
+      text,
+      replyTo,
+      attachments,
+      headers,
+      kind: params.kind,
+      idempotencyKey: params.idempotencyKey,
+    },
+    { urgent, realtime },
   );
-  if (sent.ok) return { ok: true };
+  if (sent.ok) return { ok: true, provider: sent.provider };
   if (sent.overBudget) {
-    // Non urgent mail when Resend is out of budget waits for the reset.
-    if (!params.fromQueue && deferEnabled()) return queueIt();
+    // Out of Resend budget and Brevo couldn't take it: near real time mail is
+    // queued due now for the hourly drain; batch mail waits for 12:05 AM Arizona.
+    if (!params.fromQueue && (realtime || deferEnabled())) return queueIt();
     return { ok: false, error: sent.error, overBudget: true };
+  }
+  if (realtime && sent.brevoFailed) {
+    // Resend was full and Brevo failed: queue it due now for the hourly drain
+    // (3 attempts with backoff there) instead of failing the welcome.
+    if (!params.fromQueue) return queueIt();
+    return { ok: false, error: sent.error, brevoFailed: true };
   }
   return { ok: false, error: sent.error };
 }

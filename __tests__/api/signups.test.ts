@@ -6,7 +6,19 @@ import { POST } from "@/app/api/signups/route";
 import { NextRequest } from "next/server";
 import { createSignupIfCapacityRpc } from "@/lib/supabase";
 
+// after() needs a Next request scope; run callbacks inline instead.
+jest.mock("next/server", () => ({
+  ...jest.requireActual("next/server"),
+  after: (cb: () => unknown) => void cb(),
+}));
+
+const mockRevalidateEventPage = jest.fn();
+jest.mock("@/lib/event-page-cache", () => ({
+  revalidateEventPage: (...a: unknown[]) => mockRevalidateEventPage(...a),
+}));
+
 jest.mock("@/lib/supabase", () => ({
+  ...jest.requireActual("@/lib/supabase"),
   createSignupIfCapacityRpc: jest.fn(),
 }));
 
@@ -15,12 +27,11 @@ jest.mock("@/lib/participant-email", () => ({
 }));
 
 jest.mock("@/lib/posthog-server", () => ({
-  getPostHogClient: () => ({ capture: jest.fn() }),
+  getPostHogClient: () => ({ capture: jest.fn(), flush: jest.fn() }),
 }));
 
-const mockRpc = createSignupIfCapacityRpc as jest.MockedFunction<
-  typeof createSignupIfCapacityRpc
->;
+// Loosely typed: the RPC's generated return type doesn't model the mocked payloads.
+const mockRpc = createSignupIfCapacityRpc as unknown as jest.Mock;
 
 describe("/api/signups", () => {
   beforeEach(() => {
@@ -60,6 +71,8 @@ describe("/api/signups", () => {
       expect(response.status).toBe(200);
       expect(data.signup).toBeDefined();
       expect(data.signup.member_name).toBe("John Doe");
+      // Public event page cache expires right away so counts are fresh.
+      expect(mockRevalidateEventPage).toHaveBeenCalledWith("campaign-123");
       expect(mockRpc).toHaveBeenCalledWith({
         p_session_id: "session-123",
         p_campaign_id: "campaign-123",

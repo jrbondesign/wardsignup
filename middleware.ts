@@ -59,10 +59,12 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  const { response, user } = await updateSession(request);
+  const { response, user, timedOut } = await updateSession(request);
   const path = request.nextUrl.pathname;
 
-  if (path.startsWith("/api/")) {
+  // When Supabase is slow we don't know who the user is: let the page render
+  // (protected pages check auth themselves) rather than hang or bounce to /login.
+  if (path.startsWith("/api/") || timedOut) {
     return response;
   }
 
@@ -112,6 +114,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/|ingest/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

@@ -11,6 +11,10 @@ import Link from "next/link";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
 import { usePostHog } from "posthog-js/react";
+import TurnstileWidget from "@/components/TurnstileWidget";
+
+// Literal reference so Next inlines it in the client bundle. Unset: no widget.
+const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY?.trim() || null;
 
 export default function LoginPage() {
   const brand = useBrand();
@@ -23,6 +27,8 @@ export default function LoginPage() {
   const [lastAttemptTime, setLastAttemptTime] = useState<number>(0);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [isInviteFlow, setIsInviteFlow] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [captchaReset, setCaptchaReset] = useState(0);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -31,6 +37,7 @@ export default function LoginPage() {
     
     // Hide Google sign-in for invite flows
     if (next && next.startsWith("/orgs/accept")) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- ?next= is read from window.location after mount to avoid SSR mismatch
       setIsInviteFlow(true);
     }
     
@@ -52,6 +59,11 @@ export default function LoginPage() {
       return;
     }
 
+    if (TURNSTILE_SITE_KEY && !captchaToken) {
+      setError("Please wait for the verification check to finish, then try again.");
+      return;
+    }
+
     // Rate limiting: prevent requests within 10 seconds
     const now = Date.now();
     const timeSinceLastAttempt = now - lastAttemptTime;
@@ -66,7 +78,9 @@ export default function LoginPage() {
     setLastAttemptTime(now);
 
     try {
-      const { data: linkData, error: signInError } = await signInWithMagicLink(email);
+      const { data: linkData, error: signInError } = await signInWithMagicLink(email, { captchaToken });
+      // Turnstile tokens are single use: get a fresh one for any retry.
+      if (TURNSTILE_SITE_KEY) setCaptchaReset((n) => n + 1);
 
       if (signInError) {
         console.error("Magic link error:", signInError);
@@ -200,6 +214,7 @@ export default function LoginPage() {
       <div className="relative z-10 w-full max-w-[460px] bg-white rounded-3xl shadow-[0_20px_60px_rgba(8,100,126,0.16)] p-11 animate-[fadeUp_0.5s_ease_both]">
         {/* Logo */}
         <Link href="/" className="flex items-center gap-2.5 justify-center mb-8 no-underline">
+          {/* eslint-disable-next-line @next/next/no-img-element -- brand logo is a small static asset; keep plain img to avoid changing rendering */}
           <img
             src={brand.logoSrc}
             alt={brand.logoAlt}
@@ -272,6 +287,8 @@ export default function LoginPage() {
           <div className="-mt-4 mb-5">
             <EmailTypoHint email={email} onAccept={setEmail} />
           </div>
+
+          <TurnstileWidget siteKey={TURNSTILE_SITE_KEY} onToken={setCaptchaToken} resetKey={captchaReset} />
 
           {error && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm">

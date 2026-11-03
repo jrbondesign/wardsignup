@@ -76,6 +76,18 @@ describe("withUtm", () => {
     expect(result).not.toContain("utm_campaign");
   });
 
+  it("keeps relative paths relative", () => {
+    expect(
+      withUtm("/create?x=1#top", { utm_source: "signup_success", ref: "s" }),
+    ).toBe("/create?x=1&utm_source=signup_success&ref=s#top");
+  });
+
+  it("treats protocol relative URLs as invalid", () => {
+    expect(withUtm("//evil.example/x", { utm_source: "t" })).toBe(
+      "//evil.example/x",
+    );
+  });
+
   it("returns original URL on invalid URL", () => {
     const invalid = "not-a-url";
     const result = withUtm(invalid, { utm_source: "test" });

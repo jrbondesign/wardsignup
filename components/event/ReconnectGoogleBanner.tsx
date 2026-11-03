@@ -27,9 +27,12 @@ export default function ReconnectGoogleBanner({ campaignId, organizationId, last
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  // Re-flag as broken when the lastError prop changes to the broken marker (adjust state during render).
+  const [prevLastError, setPrevLastError] = useState(lastError);
+  if (lastError !== prevLastError) {
+    setPrevLastError(lastError);
     if (lastError === CONNECTION_BROKEN_ERROR) setBroken(true);
-  }, [lastError]);
+  }
 
   useEffect(() => {
     let cancelled = false;

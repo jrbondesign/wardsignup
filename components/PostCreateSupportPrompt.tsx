@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
   SUPPORT_PROMPT_DISMISSED_KEY,
@@ -13,25 +13,23 @@ import { useBrand } from "@/components/BrandProvider";
  * Soft post-create prompt shown on the admin page after a successful create
  * (`?created=1`). Dismiss stores localStorage so it does not reappear.
  */
+const subscribeNoop = () => () => {};
+
+function readDismissed(): boolean {
+  try {
+    return localStorage.getItem(SUPPORT_PROMPT_DISMISSED_KEY) === "1";
+  } catch {
+    // private mode / blocked storage — still show once this session
+    return false;
+  }
+}
+
 export default function PostCreateSupportPrompt({ visible }: { visible: boolean }) {
   const brand = useBrand();
-  const [show, setShow] = useState(false);
-
-  useEffect(() => {
-    if (!visible || !isTipJarEnabled(brand)) {
-      setShow(false);
-      return;
-    }
-    try {
-      if (localStorage.getItem(SUPPORT_PROMPT_DISMISSED_KEY) === "1") {
-        setShow(false);
-        return;
-      }
-    } catch {
-      // private mode / blocked storage — still show once this session
-    }
-    setShow(true);
-  }, [visible, brand]);
+  // Server snapshot reports "dismissed" so SSR/hydration render nothing, as before.
+  const storedDismissed = useSyncExternalStore(subscribeNoop, readDismissed, () => true);
+  const [dismissed, setDismissed] = useState(false);
+  const show = visible && isTipJarEnabled(brand) && !storedDismissed && !dismissed;
 
   if (!show) return null;
 
@@ -41,7 +39,7 @@ export default function PostCreateSupportPrompt({ visible }: { visible: boolean 
     } catch {
       // ignore
     }
-    setShow(false);
+    setDismissed(true);
   };
 
   return (

@@ -88,7 +88,7 @@ export default async function FAQPage() {
         "name": "Can other leaders or helpers see who's signing up too?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. Anyone who needs to see signups, like your bishop, a clerk, or another leader, can get access. From your dashboard, invite them as a Co-admin using their email. Once they accept the invite and sign in, they can see the signups. They can also keep an eye on the event preview to see who has signed up."
+          "text": "Yes. Anyone who needs to see signups, like your bishop, a clerk, or another leader, can get access. From your dashboard, open Organization settings and invite them as a Co-admin using their email. Once they accept the invite and sign in, they can see the signups. They can also keep an eye on the event preview to see who has signed up."
         }
       },
       {
@@ -161,7 +161,7 @@ export default async function FAQPage() {
                   Can other leaders or helpers see who's signing up too?
                 </h3>
                 <p className="text-[17px] leading-[1.7] text-[#2E5566]">
-                  Yes. Anyone who needs to see signups, like your bishop, a clerk, or another leader, can get access. From your dashboard, invite them as a Co-admin using their email. Once they accept the invite and sign in, they can see the signups. They can also keep an eye on the event preview to see who has signed up.
+                  Yes. Anyone who needs to see signups, like your bishop, a clerk, or another leader, can get access. From your dashboard, open Organization settings and invite them as a Co-admin using their email. Once they accept the invite and sign in, they can see the signups. They can also keep an eye on the event preview to see who has signed up.
                 </p>
               </div>
             </div>

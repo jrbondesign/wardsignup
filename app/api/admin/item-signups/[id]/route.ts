@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
 
@@ -64,5 +65,6 @@ export async function DELETE(
   // Note: No Google Calendar sync for items events (they don't have time slots)
   // If we add calendar support for items events in the future, add sync here like spots route
 
+  revalidateEventPage((itemSignup as { campaign_id?: string | null }).campaign_id);
   return NextResponse.json({ ok: true });
 }

@@ -50,3 +50,28 @@ export function createSignupIfCapacityRpc(args: RpcSignupArgs) {
   const client = createAnonSupabaseClient();
   return client.rpc("create_signup_if_capacity", args as never);
 }
+
+/**
+ * Maps a `create_signup_if_capacity` RPC error to a user-facing message and
+ * status. `known` is false for unexpected errors the caller should log.
+ */
+export function mapSignupRpcError(error: unknown): {
+  message: string;
+  status: number;
+  known: boolean;
+} {
+  const msg =
+    typeof error === "object" && error !== null && "message" in error
+      ? String((error as { message?: string }).message ?? "")
+      : "";
+  if (msg.includes("SESSION_FULL")) {
+    return { message: "This slot is already full", status: 400, known: true };
+  }
+  if (msg.includes("SESSION_NOT_FOUND")) {
+    return { message: "Slot not found", status: 404, known: true };
+  }
+  if (msg.includes("CAMPAIGN_MISMATCH")) {
+    return { message: "Session does not belong to this event", status: 400, known: true };
+  }
+  return { message: "Failed to create signup", status: 500, known: false };
+}

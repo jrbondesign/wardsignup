@@ -2,13 +2,13 @@ import { ensureOrganizerBrandMatchesHost } from "@/lib/organizer-profile";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { PublicBrand } from "@/lib/brand";
 
-const mockBrand: PublicBrand = {
+const mockBrand = {
   id: "wardsignup",
   publicName: "WardSignup",
   tagline: "Ward signups made easy",
   supportEmail: "support@wardsignup.com",
   shortName: "WardSignup",
-};
+} as unknown as PublicBrand;
 
 describe("ensureOrganizerBrandMatchesHost", () => {
   it("should write attribution when creating a new profile", async () => {

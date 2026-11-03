@@ -1,0 +1,337 @@
+/**
+ * Dashboard "Organization settings" entry point: labeled one tap link,
+ * brand aware caption, and "Switch organization" only for members of 2+ orgs.
+ * Also covers the matching link in the navigation drawer and the dashboard
+ * header wiring (subtitle and gear removed, New Event filled primary).
+ */
+import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import "@testing-library/jest-dom";
+
+const capture = jest.fn();
+// Stable client, like the real hook (it returns the provider's single client).
+// The dashboard's load effect depends on it: a new object per render re-ran the
+// effect on every render, an endless fetch and setEvents loop that made this
+// file hang or pass depending on scheduling.
+const mockPosthog = { capture: (...a: unknown[]) => capture(...a), identify: jest.fn() };
+jest.mock("posthog-js/react", () => ({
+  usePostHog: () => mockPosthog,
+}));
+
+// Stable router: the dashboard's load effect depends on it, like the real hook.
+const mockRouter = { push: jest.fn(), replace: jest.fn() };
+jest.mock("next/navigation", () => ({
+  useRouter: () => mockRouter,
+}));
+
+jest.mock("next/image", () => ({
+  __esModule: true,
+  // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
+  default: ({ unoptimized, ...props }: Record<string, unknown>) => <img {...(props as object)} />,
+}));
+
+// Chainable stand in for the dashboard's campaigns query.
+let campaignsResult: { data: unknown[]; error: null } = { data: [], error: null };
+let campaignsQueries = 0;
+// get_dashboard_events RPC result; default "missing" so the old path runs.
+let rpcResult: { data: unknown; error: unknown } = { data: null, error: { code: "PGRST202" } };
+function campaignsChain() {
+  campaignsQueries += 1;
+  const chain: Record<string, unknown> = {};
+  for (const m of ["select", "eq", "order"]) chain[m] = () => chain;
+  chain.then = (resolve: (v: unknown) => unknown) => Promise.resolve(campaignsResult).then(resolve);
+  return chain;
+}
+
+// organizations.ward_name read for the ward line above the org name.
+let wardResult: { data: unknown; error: unknown } = { data: { ward_name: null }, error: null };
+let wardQueries = 0;
+function wardChain() {
+  wardQueries += 1;
+  const chain: Record<string, unknown> = {};
+  for (const m of ["select", "eq"]) chain[m] = () => chain;
+  chain.maybeSingle = async () => wardResult;
+  return chain;
+}
+
+jest.mock("@/lib/auth", () => ({
+  createClientComponentClient: () => ({
+    auth: {
+      getSession: async () => ({ data: { session: { access_token: "test-token" } } }),
+      getUser: async () => ({ data: { user: { id: "u1", email: "owner@example.com" } }, error: null }),
+      signOut: async () => ({}),
+    },
+    from: (table: string) => (table === "organizations" ? wardChain() : campaignsChain()),
+    rpc: async () => rpcResult,
+  }),
+}));
+
+jest.mock("@/lib/organizations", () => ({
+  getCurrentOrganization: async () => ({ id: "org1", name: "Smoke Test Eva", needs_naming: false }),
+}));
+
+import OrgSettingsEntry, {
+  ORG_SETTINGS_CAPTION_GENERIC,
+  ORG_SETTINGS_CAPTION_WARD,
+} from "@/components/OrgSettingsEntry";
+import Navigation from "@/components/Navigation";
+import DashboardPage from "@/app/dashboard/page";
+import { BrandProvider } from "@/components/BrandProvider";
+import { getDefaultPublicBrand } from "@/lib/brand";
+
+function mockOrgList(count: number) {
+  const organizations = Array.from({ length: count }, (_, i) => ({
+    id: `org${i + 1}`,
+    name: `Org ${i + 1}`,
+    needs_naming: false,
+    brand_id: "wardsignup",
+    role: i === 0 ? "owner" : "admin",
+  }));
+  global.fetch = jest.fn(async (url: string) => {
+    if (String(url).includes("/api/organizations/list")) {
+      return { ok: true, json: async () => ({ organizations, selectedOrgId: "org1" }) };
+    }
+    return { ok: false, json: async () => ({}) };
+  }) as unknown as typeof fetch;
+}
+
+const flush = () => act(async () => { await Promise.resolve(); });
+
+beforeEach(() => {
+  capture.mockClear();
+  campaignsResult = { data: [], error: null };
+  campaignsQueries = 0;
+  rpcResult = { data: null, error: { code: "PGRST202" } };
+  wardResult = { data: { ward_name: null }, error: null };
+  wardQueries = 0;
+});
+
+describe("OrgSettingsEntry", () => {
+  it("links straight to /settings/organization with a 44px tap target", async () => {
+    mockOrgList(1);
+    render(<OrgSettingsEntry isWardBrand />);
+    const link = screen.getByRole("link", { name: "Organization settings" });
+    expect(link).toHaveAttribute("href", "/settings/organization");
+    expect(link).toHaveClass("h-11");
+    expect(link).toHaveAttribute("aria-describedby", "org-settings-caption");
+    fireEvent.click(link);
+    expect(capture).toHaveBeenCalledWith("org_settings_opened", { source: "dashboard" });
+    await flush();
+  });
+
+  it("uses the ward caption on the WardSignup brand", async () => {
+    mockOrgList(1);
+    render(<OrgSettingsEntry isWardBrand />);
+    expect(screen.getByText(ORG_SETTINGS_CAPTION_WARD)).toHaveAttribute("id", "org-settings-caption");
+    expect(ORG_SETTINGS_CAPTION_WARD).toBe("Ward, admins and public ward directory.");
+    expect(screen.queryByText(ORG_SETTINGS_CAPTION_GENERIC)).not.toBeInTheDocument();
+    await flush();
+  });
+
+  it("uses the group caption on other brands", async () => {
+    mockOrgList(1);
+    render(<OrgSettingsEntry isWardBrand={false} />);
+    expect(screen.getByText("Your group name and admins.")).toBeInTheDocument();
+    expect(screen.queryByText(ORG_SETTINGS_CAPTION_WARD)).not.toBeInTheDocument();
+    await flush();
+  });
+
+  it("hides Switch organization for a single org", async () => {
+    mockOrgList(1);
+    render(<OrgSettingsEntry isWardBrand />);
+    await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+    await flush();
+    expect(screen.queryByRole("link", { name: /switch organization/i })).not.toBeInTheDocument();
+  });
+
+  it("shows Switch organization for members of 2+ orgs, pointing at the chooser", async () => {
+    mockOrgList(2);
+    render(<OrgSettingsEntry isWardBrand />);
+    const link = await screen.findByRole("link", { name: /switch organization/i });
+    expect(link).toHaveAttribute("href", "/orgs/select?next=/dashboard");
+  });
+
+  it("reserves the Switch row while loading, then collapses it for a single org", async () => {
+    mockOrgList(1);
+    render(<OrgSettingsEntry isWardBrand />);
+    expect(screen.getByTestId("org-switch-placeholder")).toHaveClass("min-h-11");
+    await waitFor(() => expect(screen.queryByTestId("org-switch-placeholder")).not.toBeInTheDocument());
+    expect(screen.queryByRole("link", { name: /switch organization/i })).not.toBeInTheDocument();
+  });
+
+  it("swaps the placeholder for a focusable Switch link with 2+ orgs", async () => {
+    mockOrgList(2);
+    render(<OrgSettingsEntry isWardBrand />);
+    const link = await screen.findByRole("link", { name: /switch organization/i });
+    expect(screen.queryByTestId("org-switch-placeholder")).not.toBeInTheDocument();
+    expect(link).toHaveClass("mt-2", "min-h-11", "rounded-full", "focus-visible:outline-[#0E96B0]");
+  });
+
+  it("keeps copy free of dashes", async () => {
+    mockOrgList(2);
+    const { container } = render(<OrgSettingsEntry isWardBrand />);
+    await screen.findByRole("link", { name: /switch organization/i });
+    expect(container.textContent).not.toMatch(/[-\u2013\u2014]/);
+  });
+});
+
+describe("Navigation", () => {
+  it("adds Organization settings to the mobile drawer and desktop bar", async () => {
+    mockOrgList(1);
+    render(
+      <BrandProvider brand={getDefaultPublicBrand()}>
+        <Navigation />
+      </BrandProvider>
+    );
+    const desktop = await screen.findByRole("link", { name: "Organization settings" });
+    expect(desktop).toHaveAttribute("href", "/settings/organization");
+    expect(desktop).toHaveClass("inline-flex");
+    expect(desktop).not.toHaveClass("hidden");
+    const email = screen.getByText("owner@example.com");
+    expect(email).toHaveAttribute("title", "owner@example.com");
+    expect(email).toHaveClass("hidden", "lg:block", "max-w-[160px]", "xl:max-w-[200px]");
+    expect(screen.getByRole("button", { name: "Menu" })).toHaveClass("lg:hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "Menu" }));
+    const links = screen.getAllByRole("link", { name: "Organization settings" });
+    expect(links).toHaveLength(2);
+    links.forEach((l) => expect(l).toHaveAttribute("href", "/settings/organization"));
+    fireEvent.click(links[1]);
+    expect(capture).toHaveBeenCalledWith("org_settings_opened", { source: "nav" });
+  });
+});
+
+describe("Dashboard header", () => {
+  function renderDashboard() {
+    return render(
+      <BrandProvider brand={getDefaultPublicBrand()}>
+        <DashboardPage />
+      </BrandProvider>
+    );
+  }
+
+  it("replaces the subtitle and gear with the Organization settings button (empty state too)", async () => {
+    mockOrgList(1);
+    const { container } = renderDashboard();
+    expect(await screen.findByText("Smoke Test Eva", { selector: "h1" })).toBeInTheDocument();
+    expect(screen.queryByText("Manage your ward signups")).not.toBeInTheDocument();
+    expect(container.querySelector('[aria-label="Organization settings menu"]')).toBeNull();
+    const button = container.querySelector('a[aria-describedby="org-settings-caption"]');
+    expect(button).toHaveAttribute("href", "/settings/organization");
+    expect(button).toHaveTextContent("Organization settings");
+    expect(screen.getByText(ORG_SETTINGS_CAPTION_WARD)).toBeInTheDocument();
+    await flush();
+  });
+
+  it("shows Switch organization in the header only with 2+ orgs", async () => {
+    mockOrgList(3);
+    renderDashboard();
+    expect(await screen.findByText("Switch organization", {}, { timeout: 4000 })).toBeInTheDocument();
+  });
+
+  it("makes New Event the filled gradient primary", async () => {
+    mockOrgList(1);
+    campaignsResult = {
+      data: [{ id: "e1", name: "Test Thursday Evening Teaching", sessions: [], campaign_items: [] }],
+      error: null,
+    };
+    renderDashboard();
+    const label = await screen.findByText("New Event", {}, { timeout: 4000 });
+    const newEvent = label.closest("a");
+    expect(newEvent).toHaveAttribute("href", "/create");
+    expect(newEvent).toHaveClass("bg-gradient-to-br", "from-[#22C8D8]", "via-[#0E96B0]", "to-[#08647E]", "text-white");
+    await flush();
+    // The load effect runs once; a re-render must not refetch (that loop is what hung this test).
+    expect(campaignsQueries).toBe(1);
+  });
+  it("uses the one call dashboard RPC when it exists (no table reads) and shows its counts", async () => {
+    mockOrgList(1);
+    rpcResult = {
+      data: {
+        org: { id: "org1", name: "Ward From RPC", needs_naming: false, brand_id: "wardsignup" },
+        events: [
+          {
+            id: "e9",
+            name: "Temple Night",
+            created_at: "2026-10-01T00:00:00Z",
+            event_type: "spots",
+            event_date: null,
+            event_dates: null,
+            session_dates: ["2026-11-01"],
+            total_capacity: 10,
+            total_signups: 4,
+            item_count: 0,
+            item_signups: 0,
+            unclaimed_items: 0,
+          },
+        ],
+      },
+      error: null,
+    };
+    renderDashboard();
+    expect(await screen.findByText("Ward From RPC", { selector: "h1" })).toBeInTheDocument();
+    expect(screen.getByText("Temple Night")).toBeInTheDocument();
+    expect(screen.getByText("40%", { exact: false })).toBeInTheDocument();
+    expect(campaignsQueries).toBe(0);
+  });
+});
+
+describe("Dashboard ward line", () => {
+  function renderDashboard() {
+    return render(
+      <BrandProvider brand={getDefaultPublicBrand()}>
+        <DashboardPage />
+      </BrandProvider>
+    );
+  }
+
+  it("shows the ward above the org name, linking to settings with Ward/Unit focused", async () => {
+    mockOrgList(1);
+    wardResult = { data: { ward_name: "Sweetwater Branch" }, error: null };
+    renderDashboard();
+    const line = await screen.findByTestId("org-ward-line");
+    expect(line).toHaveTextContent("Sweetwater Branch");
+    expect(line).toHaveAttribute("href", "/settings/organization?focus=ward");
+    expect(line).toHaveClass("truncate", "text-[15px]", "font-medium");
+    // Sits above the title.
+    const title = screen.getByText("Smoke Test Eva", { selector: "h1" });
+    expect(line.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.queryByTestId("org-ward-add")).not.toBeInTheDocument();
+    fireEvent.click(line);
+    expect(capture).toHaveBeenCalledWith("org_settings_opened", { source: "dashboard_ward_line", ward_set: true });
+    expect(wardQueries).toBe(1);
+  });
+
+  it("shows + Add your ward when the ward is empty", async () => {
+    mockOrgList(1);
+    renderDashboard();
+    const add = await screen.findByTestId("org-ward-add");
+    expect(add).toHaveTextContent("Add your ward");
+    expect(add).toHaveAttribute("href", "/settings/organization?focus=ward");
+    expect(add).toHaveClass("no-underline");
+  });
+
+  it("shows neither a ward nor the prompt when the ward can't be read", async () => {
+    mockOrgList(1);
+    wardResult = { data: null, error: { code: "42703" } };
+    renderDashboard();
+    await screen.findByText("Smoke Test Eva", { selector: "h1" });
+    await flush();
+    expect(screen.getByTestId("org-ward-placeholder")).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByTestId("org-ward-line")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("org-ward-add")).not.toBeInTheDocument();
+  });
+
+  it("is not shown on other brands", async () => {
+    mockOrgList(1);
+    render(
+      <BrandProvider brand={{ ...getDefaultPublicBrand(), id: "ministrysignup" as never }}>
+        <DashboardPage />
+      </BrandProvider>
+    );
+    await screen.findByText("Smoke Test Eva", { selector: "h1" });
+    await flush();
+    expect(screen.queryByTestId("org-ward-placeholder")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("org-ward-add")).not.toBeInTheDocument();
+    expect(wardQueries).toBe(0);
+  });
+});

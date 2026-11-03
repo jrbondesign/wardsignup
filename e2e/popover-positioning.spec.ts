@@ -1,5 +1,14 @@
 import { test, expect } from '@playwright/test';
 
+// Helpers defined by the inline fixture page in beforeEach.
+declare global {
+  interface Window {
+    showMenu: (buttonId: string) => void;
+    menuRect: DOMRect;
+    buttonRect: DOMRect;
+  }
+}
+
 test.describe('Desktop popover positioning', () => {
   test.beforeEach(async ({ page }) => {
     await page.setContent(`

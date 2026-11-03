@@ -2,7 +2,7 @@ name: Calendar Reconcile
 
 on:
   schedule:
-    # Run hourly at :05 past the hour
+    # Run hourly at :05 past the hour (UTC; also :05 Phoenix time, UTC-7 no DST)
     - cron: '5 * * * *'
   workflow_dispatch:
 
