@@ -1,5 +1,6 @@
 /**
- * Hourly calendar-reconcile campaign loader.
+ * Calendar-reconcile campaign loader (cron runs every 3 hours, see
+ * .github/workflows/calendar-reconcile.yml).
  * Sessions store wall-clock fields as session_date + time + end_time — there is
  * no start_time column. Nested selects on campaigns.sessions.start_time 500 the
  * cron after CRON_SECRET auth succeeds.

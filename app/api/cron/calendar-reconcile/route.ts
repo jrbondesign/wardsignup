@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // Claim this cron run to prevent concurrent execution (hourly cadence)
+    // Claim this cron run to prevent concurrent execution (one run per hour bucket; the schedule is every 3 hours)
     const claim = await claimCronRun("calendar-reconcile", hourBucketDate());
     
     if (!claim.claimed) {
