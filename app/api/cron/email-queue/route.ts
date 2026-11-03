@@ -144,6 +144,8 @@ export async function GET(request: NextRequest) {
       attachments: raw.attachments ?? undefined,
       realtime: isRealtimeKind(raw.kind),
       fromQueue: true,
+      // Row id: an attempt Resend accepted but we never heard back from is not sent again.
+      idempotencyKey: `email-queue/${raw.id}`,
     });
 
     if (r.ok) {

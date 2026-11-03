@@ -1,9 +1,12 @@
 "use client";
 
+import SignupCaptcha from "@/components/event/SignupCaptcha";
 import { DAYS } from "@/components/event/event-page-shared";
 import { formatTime } from "@/lib/utils";
 import EmailTypoHint from "@/components/EmailTypoHint";
 import { signerEmailHint } from "@/lib/reminder-copy";
+import EmailNudgePrompt from "@/components/EmailNudgePrompt";
+import SignerEmailHint from "@/components/event/SignerEmailHint";
 import { type EventPageView } from "@/components/event/hooks/deriveEventPageView";
 
 /** Inline signup form for single-session events. */
@@ -14,7 +17,11 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
     eventType,
     formData,
     guestNameFields,
+    emailInputRef,
+    handleNudgeAdd,
+    handleNudgeSkip,
     handleSignup,
+    nudgeOpen,
     isSingleSession,
     sessionHeadcount,
     sessions,
@@ -22,10 +29,13 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
     showCapacityPublicly,
     showSignupsPublicly,
     signupSessionIds,
+    slotCaptcha,
     singleSession,
     singleSessionFull,
     submitting,
     success,
+    trackEmailEntered,
+    trackFormStarted,
   } = ctx;
 
   return (
@@ -108,7 +118,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
 
           <h2 className="font-serif text-2xl text-[#0D2B35] mb-5">Register for this event</h2>
 
-          <form onSubmit={handleSignup} className="space-y-4">
+          <form onSubmit={handleSignup} onFocusCapture={() => trackFormStarted("slots")} className="space-y-4">
             <div>
               <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
                 Your Name <span className="text-red-400">*</span>
@@ -123,15 +133,14 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
               <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
                 Email <span className="text-[#5A8399] font-normal">(optional)</span>
               </label>
-              <input type="email" value={formData.email}
+              <input type="email" value={formData.email} ref={emailInputRef}
                 onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                onBlur={(e) => trackEmailEntered("slots", e.target.value)}
                 placeholder="you@example.com"
                 className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70"
                 disabled={submitting} />
               <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />
-              <p className="mt-1.5 text-[11px] text-[#5A8399] leading-snug">
-                {signerEmailHint(sessions, signupSessionIds)}
-              </p>
+              <SignerEmailHint text={signerEmailHint(sessions, signupSessionIds)} />
             </div>
             <div>
               <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
@@ -158,6 +167,8 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm">{error}</div>
             )}
+            <SignupCaptcha captcha={slotCaptcha} action="event_signup" />
+            {nudgeOpen && <EmailNudgePrompt onAdd={handleNudgeAdd} onSkip={handleNudgeSkip} disabled={submitting} />}
             <button type="submit" disabled={submitting}
               className="w-full text-base font-semibold px-4 py-[15px] rounded-xl text-white bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] shadow-[0_6px_20px_rgba(14,150,176,0.38)] hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(14,150,176,0.45)] active:translate-y-0 transition-all disabled:opacity-60 disabled:cursor-default disabled:translate-y-0">
               {submitting ? "Signing up…" : "Sign Up"}

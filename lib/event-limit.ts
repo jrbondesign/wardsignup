@@ -12,18 +12,18 @@ export type EventLimitResult =
 /**
  * Shared free-tier event-cap check used by both event creation and duplication.
  * The count is RLS-scoped to campaigns whose org the user is a member of, filtered
- * by brand. Per-org overrides (getMaxCampaignsForOrg) raise the cap for specific
- * orgs; unlimited users bypass the check entirely.
+ * by brand. Per-org overrides (getMaxCampaignsForOrg, keyed by org id) raise the cap
+ * for specific orgs; unlimited users bypass the check entirely.
  */
 export async function checkEventLimit(
   supabase: SupabaseClient,
   user: { email?: string | null },
   brandId: string,
-  orgName: string | null | undefined,
+  orgId: string | null | undefined,
 ): Promise<EventLimitResult> {
   if (isUnlimitedEventsUser(user.email)) return { ok: true };
 
-  const maxCampaigns = getMaxCampaignsForOrg(orgName) ?? getMaxCampaignsPerUser();
+  const maxCampaigns = getMaxCampaignsForOrg(orgId) ?? getMaxCampaignsPerUser();
   const { count, error } = await supabase
     .from("campaigns")
     .select("*", { count: "exact", head: true })

@@ -1,9 +1,12 @@
 "use client";
 
+import SignupCaptcha from "@/components/event/SignupCaptcha";
 import { DAYS } from "@/components/event/event-page-shared";
 import { formatTime } from "@/lib/utils";
 import EmailTypoHint from "@/components/EmailTypoHint";
 import { signerEmailHint } from "@/lib/reminder-copy";
+import EmailNudgePrompt from "@/components/EmailNudgePrompt";
+import SignerEmailHint from "@/components/event/SignerEmailHint";
 import { type EventPageView } from "@/components/event/hooks/deriveEventPageView";
 
 /** Signup form modal for the selected sessions. */
@@ -13,15 +16,23 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
     error,
     formData,
     guestNameFields,
+    emailInputRef,
+    handleNudgeAdd,
+    handleNudgeSkip,
     handleSignup,
+    nudgeOpen,
     selectedSessions,
     sessions,
     setError,
     setFormData,
+    setNudgeOpen,
     setShowSignupForm,
     showSignupForm,
     signupSessionIds,
+    slotCaptcha,
     submitting,
+    trackEmailEntered,
+    trackFormStarted,
   } = ctx;
 
   return (
@@ -56,7 +67,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
           </div>
         </div>
 
-        <form onSubmit={handleSignup} className="space-y-4">
+        <form onSubmit={handleSignup} onFocusCapture={() => trackFormStarted("slots")} className="space-y-4">
           <div>
             <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
               Your Name <span className="text-red-400">*</span>
@@ -71,14 +82,13 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
             <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
               Email <span className="text-[#5A8399] font-normal">(optional)</span>
             </label>
-            <input type="email" value={formData.email}
+            <input type="email" value={formData.email} ref={emailInputRef}
               onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              onBlur={(e) => trackEmailEntered("slots", e.target.value)}
               placeholder="john@example.com"
               className="w-full text-sm text-[#0D2B35] px-[16px] py-[12px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399]/70" />
             <EmailTypoHint email={formData.email} onAccept={(fixed) => setFormData({ ...formData, email: fixed })} />
-            <p className="mt-1.5 text-[11px] text-[#5A8399] leading-snug">
-              {signerEmailHint(sessions, signupSessionIds)}
-            </p>
+            <SignerEmailHint text={signerEmailHint(sessions, signupSessionIds)} />
           </div>
           <div>
             <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
@@ -107,9 +117,11 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
             </div>
           )}
 
+          <SignupCaptcha captcha={slotCaptcha} action="event_signup" />
+          {nudgeOpen && <EmailNudgePrompt onAdd={handleNudgeAdd} onSkip={handleNudgeSkip} disabled={submitting} />}
           <div className="flex gap-3 pt-2">
             <button type="button"
-              onClick={() => { setShowSignupForm(false); setError(""); }}
+              onClick={() => { setShowSignupForm(false); setError(""); setNudgeOpen(false); }}
               className="flex-1 text-sm font-semibold px-4 py-3 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#2E5566] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all">
               Back
             </button>

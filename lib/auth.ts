@@ -165,7 +165,7 @@ function oauthCallbackRedirectUrl(): string {
   return `${window.location.origin}/auth/callback`;
 }
 
-export async function signInWithMagicLink(email: string) {
+export async function signInWithMagicLink(email: string, opts: { captchaToken?: string | null } = {}) {
   if (typeof window === "undefined") {
     return { data: null, error: { message: "Magic link is only available in the browser." } as AuthError };
   }
@@ -184,7 +184,11 @@ export async function signInWithMagicLink(email: string) {
       "Content-Type": "application/json",
       ...posthogDistinctIdHeader(),
     },
-    body: JSON.stringify({ email: email.trim(), next }),
+    body: JSON.stringify({
+      email: email.trim(),
+      next,
+      ...(opts.captchaToken ? { captchaToken: opts.captchaToken } : {}),
+    }),
   });
 
   const json = (await res.json().catch(() => ({}))) as {

@@ -5,6 +5,7 @@ import { type AdminEventView } from "@/components/admin/hooks/deriveAdminEventVi
 /** Shareable link with copy button. */
 export default function AdminShareLinkRow({ ctx }: { ctx: AdminEventView }) {
   const {
+    event,
     eventId,
     isWardBrand,
     posthog,
@@ -28,7 +29,7 @@ export default function AdminShareLinkRow({ ctx }: { ctx: AdminEventView }) {
           type="button"
           onClick={() => {
             navigator.clipboard.writeText(shareableLink);
-            posthog?.capture("event_shared", { event_id: eventId });
+            posthog?.capture("event_shared", { event_id: eventId, campaign_id: eventId, org_id: (event as { organization_id?: string | null } | null)?.organization_id ?? null });
             setToastMessage("Link copied to clipboard!");
             setShowToast(true);
           }}

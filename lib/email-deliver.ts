@@ -1,8 +1,9 @@
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { getResendForBrand } from "@/lib/resend-for-brand";
 import type { PublicBrand } from "@/lib/brand/types";
 import { phoenixDayStartUtc } from "@/lib/phoenix-time";
+import { getPostHogClient } from "@/lib/posthog-server";
 
 /**
  * Low level delivery: Resend first, Brevo as a free fallback.
@@ -19,6 +20,27 @@ import { phoenixDayStartUtc } from "@/lib/phoenix-time";
  * Once either is used up, or Resend answers 429, urgent mail goes through Brevo
  * instead. Brevo does nothing until EMAIL_FALLBACK_PROVIDER=brevo, BREVO_API_KEY
  * and BREVO_SENDER_EMAIL are set.
+ *
+ * Failover by Resend failure class (see classifyResendError):
+ * - quota (429, daily/monthly quota, rate limit): Brevo for urgent and near
+ *   real time mail; batch mail comes back overBudget so it waits for the queue.
+ * - transient (5xx, network error): one retry on Resend with the same
+ *   Idempotency-Key, so if Resend did take the first request it answers with
+ *   the original email instead of sending a second one. Still failing: Brevo.
+ * - auth (Resend key missing, invalid, suspended): Brevo.
+ * - in_progress (409, the same key is still being processed): never Brevo,
+ *   Resend may be sending it right now.
+ * - permanent (400/422 validation and other 4xx): never Brevo, the same email
+ *   would fail there too.
+ * Every send logs which provider took it. A failover also records a PostHog
+ * event and sends at most one alert email per Arizona day (via Brevo).
+ *
+ * Routing by type (bulkProvider): bulk, non urgent mail (reminders, daily
+ * digests, feedback asks; see BULK_KINDS) goes to Brevo FIRST when Brevo is
+ * configured, so Resend's 100 a day free quota stays free for sign in links,
+ * invites and signup confirmations. If Brevo refuses or errors, the email
+ * falls back to the normal Resend path above (budget, retry, idempotency key).
+ * With no Brevo configured, or EMAIL_BULK_PROVIDER=resend, nothing changes.
  */
 
 export type DeliverParams = {
@@ -31,6 +53,14 @@ export type DeliverParams = {
   replyTo?: string;
   attachments?: Array<{ filename: string; content: string }>;
   headers?: Record<string, string>;
+  /** Short label for logs, e.g. "magic_link" or "digest". Never the recipient. */
+  kind?: string;
+  /**
+   * Resend Idempotency-Key (24 hour window). Pass a stable key (for example the
+   * queue row id) so a retry of an email Resend already accepted never sends it
+   * twice. Defaults to a fresh key per call, which still covers the in-call retry.
+   */
+  idempotencyKey?: string;
 };
 
 export type DeliverResult =
@@ -65,6 +95,31 @@ export function brevoConfig(env: Env = process.env):
   const senderEmail = env.BREVO_SENDER_EMAIL?.trim();
   if (!apiKey || !senderEmail) return null;
   return { apiKey, senderEmail, senderName: env.BREVO_SENDER_NAME?.trim() || null };
+}
+
+/**
+ * Bulk, non urgent kinds. Brevo first when bulkProvider() says so. Sign in
+ * links, invites, signup confirmations, welcome and leader notices are NOT
+ * here: they stay Resend first.
+ */
+export const BULK_KINDS: ReadonlySet<string> = new Set(["reminder", "digest", "feedback", "feedback_summary"]);
+
+export function isBulkKind(kind: string | undefined | null): boolean {
+  return Boolean(kind && BULK_KINDS.has(kind));
+}
+
+/**
+ * Which provider bulk mail tries first. EMAIL_BULK_PROVIDER:
+ * - unset or "auto" (default): Brevo when brevoConfig() is complete, else Resend.
+ *   Same switch as the failover, so nothing changes until Brevo is set up.
+ * - "resend": always Resend first (the behavior before this switch existed).
+ * - "brevo": same as auto (Brevo needs its config either way).
+ * Anything else is treated as "resend", the old behavior.
+ */
+export function bulkProvider(env: Env = process.env): "resend" | "brevo" {
+  const v = env.EMAIL_BULK_PROVIDER?.trim().toLowerCase() || "auto";
+  if (v !== "auto" && v !== "brevo") return "resend";
+  return brevoConfig(env) ? "brevo" : "resend";
 }
 
 /** "Ward Signup <noreply@x.com>" to { name, email }. */
@@ -126,10 +181,115 @@ async function consumeResendDailyBudget(brandId: string, now: Date = new Date())
   );
 }
 
+export type ResendFailure = "quota" | "transient" | "auth" | "in_progress" | "permanent";
+
+type ResendError = { message?: string; statusCode?: number | null; name?: string };
+
+const QUOTA_NAMES = new Set(["daily_quota_exceeded", "monthly_quota_exceeded", "rate_limit_exceeded"]);
+const TRANSIENT_NAMES = new Set(["application_error", "internal_server_error", "service_unavailable"]);
+const AUTH_NAMES = new Set(["missing_api_key", "restricted_api_key", "suspended_api_key"]);
+
+/** Sorts a Resend error into the class that decides whether Brevo may take the email. */
+export function classifyResendError(err: ResendError | null | undefined): ResendFailure {
+  const status = typeof err?.statusCode === "number" ? err.statusCode : null;
+  const name = err?.name ?? "";
+  if (status === 429 || QUOTA_NAMES.has(name)) return "quota";
+  if (status === 409 && name === "concurrent_idempotent_requests") return "in_progress";
+  if (status !== null && status >= 500) return "transient";
+  // The SDK reports a network failure (no response) as application_error with no status.
+  if (status === null && TRANSIENT_NAMES.has(name)) return "transient";
+  if (status === 401 || AUTH_NAMES.has(name)) return "auth";
+  if (status === 403 && /api key/i.test(err?.message ?? "")) return "auth";
+  return "permanent";
+}
+
+function retryDelayMs(env: Env = process.env): number {
+  const n = Number(env.EMAIL_RESEND_RETRY_MS);
+  return Number.isFinite(n) && n >= 0 ? n : 400;
+}
+
+/** Who gets the failover alert. The founder inbox by default. */
+export function failoverAlertTo(env: Env = process.env): string | null {
+  if (env.EMAIL_FAILOVER_ALERT?.trim().toLowerCase() === "off") return null;
+  return env.EMAIL_FAILOVER_ALERT_TO?.trim() || "jonathan@wardsignup.com";
+}
+
+/** One provider line per email, for Vercel logs. No recipient, no subject. */
+function logProvider(p: DeliverParams, provider: "resend" | "brevo", reason?: string, route?: "bulk") {
+  console.info(
+    `[email] sent provider=${provider} brand=${p.brand.id} kind=${p.kind ?? "other"}${route ? ` route=${route}` : ""}${reason ? ` failover=${reason}` : ""}`,
+  );
+}
+
+/**
+ * Called once per email that went to Brevo instead of Resend. PostHog gets
+ * every event (cheap, queryable); the alert email is capped at one per brand
+ * per Arizona day through the action_rate_limit counter, failing closed so a
+ * counter outage can't turn into an alert storm. Never throws.
+ */
+async function noteFailover(
+  p: DeliverParams,
+  reason: ResendFailure | "budget" | "no_resend_key",
+  detail: string | undefined,
+  brevo: NonNullable<ReturnType<typeof brevoConfig>>,
+): Promise<void> {
+  console.warn(
+    `[email-failover] brand=${p.brand.id} kind=${p.kind ?? "other"} reason=${reason}${detail ? ` detail=${detail.slice(0, 120)}` : ""}`,
+  );
+  try {
+    if (process.env.NEXT_PUBLIC_POSTHOG_KEY) {
+      getPostHogClient().capture({
+        distinctId: `server_email_${p.brand.id}`,
+        event: "email_failover",
+        properties: { brand_id: p.brand.id, kind: p.kind ?? "other", reason, provider: "brevo" },
+      });
+    }
+  } catch (e) {
+    console.error("email_failover capture failed:", e);
+  }
+  const to = failoverAlertTo();
+  if (!to || p.to.trim().toLowerCase() === to.toLowerCase()) return;
+  try {
+    const admin = createServiceRoleClient();
+    const { data, error } = await admin.rpc("try_consume_action_rate", {
+      p_action: "email_failover_alert",
+      p_ip_hash: createHash("sha256").update(`failover-alert:${p.brand.id}`).digest("hex"),
+      p_bucket: phoenixDayStartUtc().toISOString(),
+      p_max: 1,
+    } as never);
+    if (error || data !== true) return;
+    const why =
+      reason === "budget" || reason === "quota"
+        ? "Resend is out of daily quota (our budget or Resend's 429)."
+        : reason === "transient"
+          ? "Resend returned a server or network error twice."
+          : reason === "auth" || reason === "no_resend_key"
+            ? "The Resend API key is missing, invalid or suspended."
+            : "Resend could not take the email.";
+    await sendViaBrevo(
+      {
+        brand: p.brand,
+        from: `${p.brand.name} <${brevo.senderEmail}>`,
+        to,
+        subject: `${p.brand.name} email failover to Brevo`,
+        text: `Emails are going out through Brevo instead of Resend.\n\nReason: ${why}\nFirst email: ${p.kind ?? "other"}\n\nThis alert is sent at most once per Arizona day. Count today's failovers with the PostHog event email_failover.`,
+        html: `<p>Emails are going out through Brevo instead of Resend.</p><p>Reason: ${why}<br>First email: ${(p.kind ?? "other").replace(/[^a-z0-9_-]/gi, "")}</p><p>This alert is sent at most once per Arizona day. Count today's failovers with the PostHog event <code>email_failover</code>.</p>`,
+      },
+      brevo,
+    );
+  } catch (e) {
+    console.error("email failover alert failed:", e);
+  }
+}
+
+/** Brevo API call timeout. A hung request must not stall a cron batch. */
+export const BREVO_TIMEOUT_MS = 15_000;
+
 export async function sendViaBrevo(
   p: DeliverParams,
   cfg: NonNullable<ReturnType<typeof brevoConfig>>,
   fetchImpl: typeof fetch = fetch,
+  timeoutMs: number = BREVO_TIMEOUT_MS,
 ): Promise<DeliverResult> {
   const parsed = parseFrom(p.from);
   const replyTo = p.replyTo ?? (parsed.email !== cfg.senderEmail ? parsed.email : undefined);
@@ -143,13 +303,18 @@ export async function sendViaBrevo(
     ...(p.attachments?.length
       ? { attachment: p.attachments.map((a) => ({ name: a.filename, content: a.content })) }
       : {}),
-    ...(p.headers && Object.keys(p.headers).length ? { headers: p.headers } : {}),
+    ...(p.headers && Object.keys(p.headers).length || p.idempotencyKey
+      ? { headers: { ...(p.headers ?? {}), ...(p.idempotencyKey ? { IdempotencyKey: p.idempotencyKey } : {}) } }
+      : {}),
   };
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const res = await fetchImpl("https://api.brevo.com/v3/smtp/email", {
       method: "POST",
       headers: { "api-key": cfg.apiKey, "content-type": "application/json", accept: "application/json" },
       body: JSON.stringify(body),
+      signal: controller.signal,
     });
     if (!res.ok) {
       const t = await res.text().catch(() => "");
@@ -157,7 +322,10 @@ export async function sendViaBrevo(
     }
     return { ok: true, provider: "brevo" };
   } catch (e) {
-    return { ok: false, error: `Brevo request failed: ${e instanceof Error ? e.message : String(e)}` };
+    const why = controller.signal.aborted ? `timed out after ${timeoutMs}ms` : e instanceof Error ? e.message : String(e);
+    return { ok: false, error: `Brevo request failed: ${why}` };
+  } finally {
+    clearTimeout(timer);
   }
 }
 
@@ -170,52 +338,107 @@ export async function sendViaBrevo(
  * back, so the caller can queue it for the hourly drain.
  * Other non urgent mail gets `overBudget: true` back so the caller can queue
  * it for the next Arizona day.
+ *
+ * Bulk mail (opts.bulk, or a kind in BULK_KINDS) tries Brevo first when
+ * bulkProvider() is "brevo". It does not use Resend budget then. If Brevo
+ * fails, the email takes the normal path above on Resend, and Brevo is not
+ * tried a second time for it.
  */
 export async function deliverEmail(
-  p: DeliverParams,
-  opts: { urgent: boolean; realtime?: boolean },
+  params: DeliverParams,
+  opts: { urgent: boolean; realtime?: boolean; bulk?: boolean },
 ): Promise<DeliverResult> {
+  const p: DeliverParams = { ...params, idempotencyKey: params.idempotencyKey ?? `ws/${randomUUID()}` };
   const brevoOk = opts.urgent || Boolean(opts.realtime);
-  const viaBrevo = async (cfg: NonNullable<typeof brevo>): Promise<DeliverResult> => {
+  let brevo = brevoConfig();
+
+  const bulk = opts.bulk ?? isBulkKind(p.kind);
+  if (bulk && brevo && bulkProvider() === "brevo") {
+    const first = await sendViaBrevo(p, brevo);
+    if (first.ok) {
+      logProvider(p, "brevo", undefined, "bulk");
+      return first;
+    }
+    console.warn(
+      `[email] bulk brevo failed brand=${p.brand.id} kind=${p.kind ?? "other"}, trying Resend: ${first.error.slice(0, 160)}`,
+    );
+    // Brevo just failed for this email: don't send it there again below.
+    brevo = null;
+  }
+  const viaBrevo = async (
+    cfg: NonNullable<typeof brevo>,
+    reason: ResendFailure | "budget" | "no_resend_key",
+    detail?: string,
+  ): Promise<DeliverResult> => {
     const r = await sendViaBrevo(p, cfg);
-    return r.ok ? r : { ...r, brevoFailed: true };
+    if (!r.ok) {
+      console.error(`[email] brevo failed brand=${p.brand.id} kind=${p.kind ?? "other"} after ${reason}: ${r.error}`);
+      return { ...r, brevoFailed: true };
+    }
+    logProvider(p, "brevo", reason);
+    await noteFailover(p, reason, detail, cfg);
+    return r;
   };
-  const brevo = brevoConfig();
   const resendHasRoom = await consumeResendDailyBudget(p.brand.id);
 
   if (!resendHasRoom) {
-    if (brevoOk && brevo) return viaBrevo(brevo);
+    if (brevoOk && brevo) return viaBrevo(brevo, "budget");
     if (!opts.urgent) return { ok: false, error: "Resend daily soft limit reached", overBudget: true };
     // Urgent with no fallback configured: let Resend try, it may still have room.
   }
 
   const resend = getResendForBrand(p.brand);
   if (!resend) {
-    if (brevo) return viaBrevo(brevo);
+    if (brevo) return viaBrevo(brevo, "no_resend_key");
     return { ok: false, error: `Resend API key missing for brand ${p.brand.id}` };
   }
 
-  const send = await resend.emails.send({
-    from: p.from,
-    to: p.to,
-    subject: p.subject,
-    html: p.html,
-    ...(p.text ? { text: p.text } : {}),
-    ...(p.replyTo ? { replyTo: p.replyTo } : {}),
-    ...(p.attachments?.length ? { attachments: p.attachments } : {}),
-    ...(p.headers && Object.keys(p.headers).length ? { headers: p.headers } : {}),
-  });
-  if (!send.error) return { ok: true, provider: "resend" };
+  const sendOnResend = () =>
+    resend.emails.send(
+      {
+        from: p.from,
+        to: p.to,
+        subject: p.subject,
+        html: p.html,
+        ...(p.text ? { text: p.text } : {}),
+        ...(p.replyTo ? { replyTo: p.replyTo } : {}),
+        ...(p.attachments?.length ? { attachments: p.attachments } : {}),
+        ...(p.headers && Object.keys(p.headers).length ? { headers: p.headers } : {}),
+      },
+      { idempotencyKey: p.idempotencyKey },
+    );
 
-  const err = send.error as { message?: string; statusCode?: number | null; name?: string };
-  const quota =
-    err.statusCode === 429 ||
-    err.name === "daily_quota_exceeded" ||
-    err.name === "rate_limit_exceeded" ||
-    err.name === "monthly_quota_exceeded";
-  if (quota) {
-    if (brevoOk && brevo) return viaBrevo(brevo);
-    if (!opts.urgent) return { ok: false, error: err.message || "Resend 429", overBudget: true };
+  let send = await sendOnResend();
+  let failure = send.error ? classifyResendError(send.error as ResendError) : null;
+  if (failure === "transient" || failure === "in_progress") {
+    // Same Idempotency-Key: if Resend took the first request it returns that
+    // email instead of sending another one.
+    const wait = retryDelayMs();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    send = await sendOnResend();
+    failure = send.error ? classifyResendError(send.error as ResendError) : null;
   }
-  return { ok: false, error: err.message || "send failed" };
+  if (!send.error) {
+    logProvider(p, "resend");
+    return { ok: true, provider: "resend" };
+  }
+
+  const err = send.error as ResendError;
+  const message = err.message || "send failed";
+  if (failure === "quota") {
+    if (brevoOk && brevo) return viaBrevo(brevo, "quota", err.name);
+    if (!opts.urgent) return { ok: false, error: err.message || "Resend 429", overBudget: true };
+    return { ok: false, error: message };
+  }
+  if ((failure === "transient" || failure === "auth") && brevo) {
+    return viaBrevo(brevo, failure, `${err.statusCode ?? "network"} ${err.name ?? ""}`.trim());
+  }
+  // permanent (validation) and in_progress never fail over: the first would
+  // fail on Brevo too, the second may already be on its way through Resend.
+  return { ok: false, error: message };
+}
+
+/** True when some provider can send for this brand (Resend key, or the Brevo fallback). */
+export function hasEmailProviderConfigured(brand: Pick<PublicBrand, "id">): boolean {
+  return Boolean(getResendForBrand(brand)) || Boolean(brevoConfig());
 }

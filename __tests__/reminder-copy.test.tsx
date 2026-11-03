@@ -7,12 +7,15 @@ import { join } from "path";
 import { render, screen } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import CreatorRemindersNote from "@/components/CreatorRemindersNote";
+import SignerEmailHint from "@/components/event/SignerEmailHint";
 import {
   CREATOR_REMINDERS_NOTE,
   SIGNER_EMAIL_HINT_DATED,
+  SIGNER_EMAIL_HINT_EMPHASIS,
   SIGNER_EMAIL_HINT_UNDATED,
   WELCOME_REMINDERS_LINE,
   signerEmailHint,
+  splitEmphasis,
 } from "@/lib/reminder-copy";
 
 const read = (p: string) => readFileSync(join(process.cwd(), p), "utf8");
@@ -73,6 +76,54 @@ describe("signerEmailHint", () => {
     expect(src.match(/\{signerEmailHint\(sessions, signupSessionIds\)\}/g)).toHaveLength(2);
     expect(src).toContain("const signupSessionIds = isSingleSession ? [sessions[0].id] : selectedSessions;");
     expect(src).not.toContain("reminder the day before");
+  });
+});
+
+describe("signer email hint emphasis", () => {
+  it("splits around 'get a reminder' without changing the text", () => {
+    const parts = splitEmphasis(SIGNER_EMAIL_HINT_DATED);
+    expect(parts).toEqual([
+      { text: "Add your email to ", emphasis: false },
+      { text: "get a reminder", emphasis: true },
+      { text: " before your time. We never share or sell your info.", emphasis: false },
+    ]);
+    expect(parts.map((p) => p.text).join("")).toBe(SIGNER_EMAIL_HINT_DATED);
+    expect(SIGNER_EMAIL_HINT_EMPHASIS).toBe("get a reminder");
+  });
+
+  it("leaves text without the phrase as one plain part", () => {
+    expect(splitEmphasis(SIGNER_EMAIL_HINT_UNDATED)).toEqual([{ text: SIGNER_EMAIL_HINT_UNDATED, emphasis: false }]);
+    expect(splitEmphasis("get a reminder")).toEqual([{ text: "get a reminder", emphasis: true }]);
+  });
+
+  it("renders the dated hint with 'get a reminder' in bold brand teal, wording unchanged", () => {
+    render(<SignerEmailHint text={SIGNER_EMAIL_HINT_DATED} />);
+    const hint = screen.getByTestId("signer-email-hint");
+    expect(hint.textContent).toBe("Add your email to get a reminder before your time. We never share or sell your info.");
+    const strong = hint.querySelectorAll("strong");
+    expect(strong).toHaveLength(1);
+    expect(strong[0]!.textContent).toBe("get a reminder");
+    expect(strong[0]!.className).toContain("font-semibold");
+    expect(strong[0]!.className).toContain("text-[#08647E]");
+    expect(hint.className).toContain("text-[11px] text-[#5A8399]");
+    expect(hint.innerHTML).toMatchInlineSnapshot(
+      `"<span>Add your email to </span><strong class=\"font-semibold text-[#08647E]\">get a reminder</strong><span> before your time. We never share or sell your info.</span>"`,
+    );
+  });
+
+  it("renders the undated hint plain", () => {
+    render(<SignerEmailHint text={SIGNER_EMAIL_HINT_UNDATED} />);
+    const hint = screen.getByTestId("signer-email-hint");
+    expect(hint.textContent).toBe(SIGNER_EMAIL_HINT_UNDATED);
+    expect(hint.querySelector("strong")).toBeNull();
+  });
+
+  it("both public signup forms render the hint through SignerEmailHint", () => {
+    for (const f of ["components/event/sections/SingleSessionSignup.tsx", "components/event/sections/SignupFormModal.tsx"]) {
+      const src = read(f);
+      expect(src).toContain("<SignerEmailHint text={signerEmailHint(sessions, signupSessionIds)} />");
+      expect(src).not.toMatch(/>\s*\{signerEmailHint\(/);
+    }
   });
 });
 

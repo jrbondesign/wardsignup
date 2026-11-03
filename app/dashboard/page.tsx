@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import { createClientComponentClient } from "@/lib/auth";
-import { Event } from "@/lib/types";
 import Link from "next/link";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import Navigation from "@/components/Navigation";
@@ -13,7 +12,15 @@ import { useBrand } from "@/components/BrandProvider";
 import OrgLogoButton from "@/components/OrgLogoButton";
 import OrgNameModal from "@/components/OrgNameModal";
 import OrgSettingsEntry from "@/components/OrgSettingsEntry";
-import { getCurrentOrganization } from "@/lib/organizations";
+import OrgWardLine from "@/components/OrgWardLine";
+import { loadOrgWardName } from "@/lib/ward-name";
+import {
+  dashboardCardStats,
+  loadDashboardLegacy,
+  loadDashboardViaRpc,
+  type DashboardData,
+  type DashboardEvent,
+} from "@/lib/dashboard-data";
 import ConnectToClaudeCard from "@/components/ConnectToClaudeCard";
 import { CLAUDE_MCP_ENABLED } from "@/lib/claude-mcp";
 import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } from "@/lib/limits";
@@ -139,7 +146,7 @@ export default function DashboardPage() {
   const router = useRouter();
   const posthog = usePostHog();
   const [user, setUser] = useState<any>(null);
-  const [events, setEvents] = useState<Event[]>([]);
+  const [events, setEvents] = useState<DashboardEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ id: string; name: string } | null>(null);
@@ -152,8 +159,11 @@ export default function DashboardPage() {
   const [showAllTemplates, setShowAllTemplates] = useState(false);
   const [orgNeedsNaming, setOrgNeedsNaming] = useState<{ id: string; name: string } | null>(null);
   const [orgName, setOrgName] = useState<string | null>(null);
+  const [orgId, setOrgId] = useState<string | null>(null);
+  // undefined while loading; null when the org has no Ward/Unit yet.
+  const [wardName, setWardName] = useState<string | null | undefined>(undefined);
 
-  const maxEvents = getMaxCampaignsForOrg(orgName) ?? getMaxCampaignsPerUser();
+  const maxEvents = getMaxCampaignsForOrg(orgId) ?? getMaxCampaignsPerUser();
   const isUnlimited = isUnlimitedEventsUser(user?.email);
   const atLimit = !isUnlimited && events.length >= maxEvents;
 
@@ -226,6 +236,12 @@ export default function DashboardPage() {
     const loadUserAndEvents = async () => {
       const supabase = createClientComponentClient();
 
+      // Start the one call dashboard RPC now, in parallel with getUser(). It is
+      // safe to start early: PostgREST verifies the JWT and the RPC runs under
+      // the caller's RLS. We still wait for getUser() before showing anything,
+      // because middleware lets pages render unverified when Supabase is slow.
+      const rpcPromise = loadDashboardViaRpc(supabase, brand.id);
+
       const { data: { user: authUser }, error: authError } = await supabase.auth.getUser();
 
       if (authError || !authUser) {
@@ -236,11 +252,25 @@ export default function DashboardPage() {
       setUser(authUser);
       posthog?.identify(authUser.id, { email: authUser.email });
 
-      // Honor the user's saved org selection (organizer_profiles.selected_org_id) so
-      // multi-org users land on the org they picked. If it was backfilled
-      // (needs_naming = true), a blocking modal asks them to rename before doing
-      // anything else.
-      const org = await getCurrentOrganization(supabase, authUser, brand.id);
+      // The RPC honors the user's saved org selection (organizer_profiles.selected_org_id)
+      // exactly like getCurrentOrganization, and scopes events to that org. If it
+      // is unavailable, fall back to the old reads.
+      let dashboard: DashboardData | null = await rpcPromise;
+      if (!dashboard) {
+        try {
+          dashboard = await loadDashboardLegacy(supabase, authUser, brand.id);
+        } catch (fetchError) {
+          setError("Failed to load events");
+          console.error(fetchError);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // If the org was backfilled (needs_naming = true), a blocking modal asks
+      // them to rename before doing anything else.
+      const org = dashboard.org;
+      setOrgId(org?.id ?? null);
       if (org?.needs_naming) {
         setOrgNeedsNaming({ id: org.id, name: org.name });
       } else if (org?.name) {
@@ -251,41 +281,19 @@ export default function DashboardPage() {
       const profileLogoUrl = null;
       setLogoUrl(profileLogoUrl);
 
-      // Scope campaigns to the active org so multi-org users only see the events for
-      // whichever org they selected. RLS already restricts visibility to orgs they
-      // belong to; this narrows further to the chosen one.
-      let campaignsQuery = supabase
-        .from("campaigns")
-        .select(`
-          *,
-          sessions (
-            id,
-            capacity,
-            session_date,
-            signups (id)
-          ),
-          campaign_items (
-            id,
-            item_signups (id)
-          )
-        `)
-        .eq("brand_id", brand.id)
-        .order("created_at", { ascending: false });
-      if (org) campaignsQuery = campaignsQuery.eq("organization_id", org.id);
-      const { data: campaigns, error: fetchError } = await campaignsQuery;
-
-      if (fetchError) {
-        setError("Failed to load events");
-        console.error(fetchError);
-      } else {
-        setEvents(campaigns || []);
-      }
+      setEvents(dashboard.events);
 
       setLoading(false);
+
+      // Ward line above the org name (ward brand only). Read on its own after
+      // the page shows so it never delays the dashboard; read only.
+      if (isWardBrand && org?.id) {
+        void loadOrgWardName(supabase, org.id).then(setWardName);
+      }
     };
 
     loadUserAndEvents();
-  }, [router, brand.id, posthog]);
+  }, [router, brand.id, posthog, isWardBrand]);
 
   useEffect(() => {
     const handleClickOutside = () => setOpenDropdown(null);
@@ -343,8 +351,9 @@ export default function DashboardPage() {
 
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
-            <div>
-              <div className="flex items-center gap-3 mb-1">
+            <div className="min-w-0">
+              {isWardBrand && <OrgWardLine wardName={wardName} />}
+              <div className="flex items-center gap-3">
                 {/* Future: Org logo support */}
                 <h1 className="font-serif text-[clamp(28px,4vw,40px)] text-[#0D2B35] tracking-[-0.5px] leading-tight">
                   {orgName ?? "My Events"}
@@ -470,20 +479,7 @@ export default function DashboardPage() {
           ) : (
             <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
               {events.map((event) => {
-                const eventType = (event as any).event_type;
-                const isItems = eventType === "items";
-                const sessions = (event as any).sessions || [];
-                const campaignItems = (event as any).campaign_items || [];
-                const totalCapacity = isItems
-                  ? campaignItems.length
-                  : sessions.reduce((sum: number, s: any) => sum + (s.capacity || 0), 0);
-                const totalSignups = isItems
-                  ? campaignItems.reduce((sum: number, it: any) => sum + (it.item_signups?.length || 0), 0)
-                  : sessions.reduce((sum: number, s: any) => sum + (s.signups?.length || 0), 0);
-                const remaining = isItems
-                  ? campaignItems.filter((it: any) => (it.item_signups?.length ?? 0) === 0).length
-                  : totalCapacity - totalSignups;
-                const fillPct = totalCapacity > 0 ? Math.round((totalSignups / totalCapacity) * 100) : 0;
+                const { isItems, totalCapacity, totalSignups, remaining, fillPct } = dashboardCardStats(event);
                 const labels = isItems
                   ? { total: "Items", signedUp: "Claimed", remaining: "Unclaimed" }
                   : { total: "Total spots", signedUp: "Signed up", remaining: "Remaining" };
@@ -524,9 +520,9 @@ export default function DashboardPage() {
                               type="button"
                               onClick={() => {
                                 const anchorDate = earliestYmd([
-                                  (event as any).event_date,
-                                  ...(Array.isArray((event as any).event_dates) ? (event as any).event_dates : []),
-                                  ...(((event as any).sessions ?? []) as any[]).map((s) => s?.session_date),
+                                  event.event_date,
+                                  ...(Array.isArray(event.event_dates) ? (event.event_dates as (string | null)[]) : []),
+                                  ...event.session_dates,
                                 ]);
                                 setDuplicateModal({ id: event.id, name: event.name, anchorDate });
                                 setOpenDropdown(null);

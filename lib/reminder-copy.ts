@@ -16,6 +16,26 @@ export const CREATOR_REMINDERS_NOTE =
 export const SIGNER_EMAIL_HINT_DATED =
   "Add your email to get a reminder before your time. We never share or sell your info.";
 
+/** Phrase shown in bold inside the signer email hint (wording unchanged). */
+export const SIGNER_EMAIL_HINT_EMPHASIS = "get a reminder";
+
+/**
+ * Split hint text around the emphasized phrase so the form can bold it.
+ * Text without the phrase comes back as a single plain part.
+ */
+export function splitEmphasis(
+  text: string,
+  phrase: string = SIGNER_EMAIL_HINT_EMPHASIS,
+): { text: string; emphasis: boolean }[] {
+  const at = phrase ? text.indexOf(phrase) : -1;
+  if (at < 0) return [{ text, emphasis: false }];
+  return [
+    { text: text.slice(0, at), emphasis: false },
+    { text: phrase, emphasis: true },
+    { text: text.slice(at + phrase.length), emphasis: false },
+  ].filter((p) => p.text.length > 0);
+}
+
 /** Signer email hint on undated / recurring / items events. */
 export const SIGNER_EMAIL_HINT_UNDATED =
   "Optional. For updates from the organizer. We never share or sell your info.";

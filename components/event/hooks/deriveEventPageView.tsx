@@ -3,19 +3,36 @@
 import { SessionWithSignups } from "@/components/event/event-page-shared";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
 import { type EventPageCtx } from "@/components/event/hooks/useEventPage";
+import { buildFunnelProps } from "@/lib/signup-funnel";
+import {
+  EMAIL_NUDGE_EVENTS,
+  hasSkippedEmailNudge,
+  rememberEmailNudgeSkip,
+  shouldShowEmailNudge,
+} from "@/lib/email-nudge";
+import { formatSessionSlotLabel } from "@/lib/slot-label";
+import { saveSignupSuccessInfo } from "@/lib/signup-success-handoff";
 
 export type LoadedEventPageCtx = Omit<EventPageCtx, "event"> & { event: NonNullable<EventPageCtx["event"]> };
 
 /** Signup handlers and values computed from a loaded event: grouped sessions, single-session mode and guest fields. */
 export function deriveEventPageView(ctx: LoadedEventPageCtx) {
   const {
+    captureNudge,
+    customCaptcha,
     customItem,
+    emailInputRef,
+    event,
     eventId,
     eventType,
     fetchData,
     formData,
+    funnelCtx,
     guestNames,
+    itemCaptcha,
     itemFormData,
+    nudgeShownRef,
+    nudgeVariant,
     posthog,
     router,
     selectedCalendarDate,
@@ -31,14 +48,18 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setItemFormData,
     setItemSubmitting,
     setItemSuccess,
+    setNudgeOpen,
     setSelectedCalendarDate,
     setSelectedSessions,
     setSubmitting,
     showSignupsPublicly,
+    slotCaptcha,
     submitting,
+    trackFormStarted,
   } = ctx;
 
   const toggleSessionSelection = (sessionId: string) => {
+    trackFormStarted("slots", "slot_selected");
     setSelectedSessions((prev) =>
       prev.includes(sessionId) ? prev.filter((id) => id !== sessionId) : [...prev, sessionId]
     );
@@ -58,12 +79,17 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     if (!itemFormData.name.trim()) { setItemError("Please enter your name"); return; }
     setItemSubmitting(true);
     setItemError("");
+    let captchaUsed = false;
     try {
+      const captchaToken = await itemCaptcha.getToken();
+      if (itemCaptcha.enabled && !captchaToken) throw new Error(itemCaptcha.missingMessage);
+      captchaUsed = itemCaptcha.enabled;
       const { getAttributionForSubmission } = await import("@/lib/attribution");
       const res = await fetch("/api/item-signups", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
         body: JSON.stringify({
+          ...(captchaToken ? { captchaToken } : {}),
           item_id: itemId,
           campaign_id: eventId,
           member_name: itemFormData.name,
@@ -77,7 +103,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         const d = await res.json();
         throw new Error(d.error || "Failed to sign up");
       }
-      posthog?.capture("item_signup_completed", { campaign_id: eventId, item_id: itemId, has_email: Boolean(itemFormData.email), quantity: itemFormData.quantity });
+      posthog?.capture("item_signup_completed", buildFunnelProps(funnelCtx, { item_id: itemId, has_email: Boolean(itemFormData.email.trim()), quantity: itemFormData.quantity }));
       setItemSuccess(true);
       setItemFormData({ name: "", email: "", note: "", quantity: 1 });
       setExpandedItem(null);
@@ -86,6 +112,8 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     } catch (err: any) {
       setItemError(err.message || "Failed to sign up. Please try again.");
     } finally {
+      // Turnstile tokens are single use: get a fresh one for the next try.
+      if (captchaUsed) itemCaptcha.reset();
       setItemSubmitting(false);
     }
   };
@@ -96,12 +124,17 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     if (!customItem.name.trim()) { setCustomError("Please enter your name"); return; }
     setCustomSubmitting(true);
     setCustomError("");
+    let captchaUsed = false;
     try {
+      const captchaToken = await customCaptcha.getToken();
+      if (customCaptcha.enabled && !captchaToken) throw new Error(customCaptcha.missingMessage);
+      captchaUsed = customCaptcha.enabled;
       const { getAttributionForSubmission } = await import("@/lib/attribution");
       const res = await fetch("/api/item-signups", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
         body: JSON.stringify({
+          ...(captchaToken ? { captchaToken } : {}),
           campaign_id: eventId,
           custom_label: customItem.label.trim(),
           member_name: customItem.name.trim(),
@@ -114,18 +147,19 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         const d = await res.json();
         throw new Error(d.error || "Failed to add your contribution");
       }
-      posthog?.capture("item_signup_completed", { campaign_id: eventId, custom: true });
+      posthog?.capture("item_signup_completed", buildFunnelProps(funnelCtx, { custom: true }));
       setCustomItem({ label: "", name: "", note: "" });
       fetchData();
     } catch (err: any) {
       setCustomError(err.message || "Failed to add your contribution");
     } finally {
+      if (captchaUsed) customCaptcha.reset();
       setCustomSubmitting(false);
     }
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSignup = async (e?: React.FormEvent, opts: { skipNudge?: boolean } = {}) => {
+    e?.preventDefault();
     // For single-session events (rsvp/spots with one session), auto-use that session
     const sessionsToSignUp = isSingleSession && sessions.length === 1
       ? [sessions[0].id]
@@ -133,10 +167,35 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     if (sessionsToSignUp.length === 0) { setError("Please select at least one slot"); return; }
     if (!formData.name.trim()) { setError("Please enter your name"); return; }
 
+    // Test arm only: one nudge per signup when a dated slot has no email.
+    // Never blocks: Skip submits right away.
+    if (
+      !opts.skipNudge &&
+      shouldShowEmailNudge({
+        variant: nudgeVariant(),
+        sheetType: eventType,
+        email: formData.email,
+        sessions,
+        selectedIds: sessionsToSignUp,
+        shownThisSignup: nudgeShownRef.current,
+        skippedBefore: hasSkippedEmailNudge(),
+      })
+    ) {
+      nudgeShownRef.current += 1;
+      setNudgeOpen(true);
+      captureNudge(EMAIL_NUDGE_EVENTS.shown);
+      return;
+    }
+    setNudgeOpen(false);
+
     setSubmitting(true);
     setError("");
 
+    let captchaUsed = false;
     try {
+      const captchaToken = await slotCaptcha.getToken();
+      if (slotCaptcha.enabled && !captchaToken) throw new Error(slotCaptcha.missingMessage);
+      captchaUsed = slotCaptcha.enabled;
       const cleanGuests = guestNames.map((n) => n.trim()).filter(Boolean);
 
       // Single bulk request → single confirmation email covering every slot.
@@ -145,6 +204,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
         body: JSON.stringify({
+          ...(captchaToken ? { captchaToken } : {}),
           campaign_id: eventId,
           session_ids: sessionsToSignUp,
           member_name: formData.name,
@@ -165,11 +225,29 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         throw new Error(firstFailure.error);
       }
 
-      posthog?.capture("signup_completed", { campaign_id: eventId, session_count: selectedSessions.length, has_email: Boolean(formData.email), has_phone: Boolean(formData.phone) });
+      posthog?.capture("signup_completed", buildFunnelProps(funnelCtx, { session_count: sessionsToSignUp.length, has_email: Boolean(formData.email.trim()), has_phone: Boolean(formData.phone.trim()) }));
 
       // Redirect to dedicated success page with the primary cancel_token.
       const cancelToken = json?.primary_cancel_token;
       if (cancelToken) {
+        // Same fields /api/signups/cancel/lookup returns for the primary slot,
+        // so the success page can render immediately.
+        const primarySessionId = (slotResults.find((res) => !res.error) ?? slotResults[0])?.session_id;
+        const primary = sessions.find((s) => s.id === primarySessionId);
+        if (primary) {
+          saveSignupSuccessInfo(cancelToken, {
+            member_name: formData.name.trim(),
+            guest_names: event.allow_guests === false ? [] : cleanGuests.slice(0, 10),
+            campaign_name: event.name,
+            slot_label: formatSessionSlotLabel(primary, { eventTimezone: event.event_timezone ?? null }),
+            event_url: `${window.location.origin}/event/${eventId}`,
+            session_date: primary.session_date ?? null,
+            session_time: primary.time ?? null,
+            session_end_time: primary.end_time ?? null,
+            event_timezone: event.event_timezone ?? null,
+            event_end_date: event.event_end_date ?? null,
+          });
+        }
         router.push(`/signup-success/${cancelToken}?event=${eventId}`);
       } else {
         router.push(`/event/${eventId}`);
@@ -179,8 +257,22 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     } catch (err: any) {
       setError(err.message || "Failed to sign up. Please try again.");
     } finally {
+      // Turnstile tokens are single use: get a fresh one for the next try.
+      if (captchaUsed) slotCaptcha.reset();
       setSubmitting(false);
     }
+  };
+
+  const handleNudgeAdd = () => {
+    setNudgeOpen(false);
+    captureNudge(EMAIL_NUDGE_EVENTS.add);
+    emailInputRef.current?.focus();
+  };
+  const handleNudgeSkip = () => {
+    setNudgeOpen(false);
+    rememberEmailNudgeSkip();
+    captureNudge(EMAIL_NUDGE_EVENTS.skip);
+    void handleSignup(undefined, { skipNudge: true });
   };
 
   const handleCalendarDateClick = (day: number, year: number, month: number) => {
@@ -310,6 +402,8 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     handleItemSignup,
     handleCustomItemSignup,
     handleSignup,
+    handleNudgeAdd,
+    handleNudgeSkip,
     handleCalendarDateClick,
     filteredSessions,
     sessionHeadcount,

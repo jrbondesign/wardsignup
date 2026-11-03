@@ -58,6 +58,22 @@ export default async function TithingDeclarationPage() {
           "@type": "Answer",
           "text": "No. Ward Signup is an independent product not affiliated with or endorsed by The Church of Jesus Christ of Latter-day Saints. Use it only for appointment scheduling logistics, not for tracking declaration status or financial records. Use official Church systems for those purposes."
         }
+      },
+      {
+        "@type": "Question",
+        "name": "Is there a free tithing declaration sign up sheet template?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes. Ward Signup is free for up to 10 events, so you can make an online tithing declaration sign up sheet without paying. There is also a printable sheet on this page for members who prefer paper."
+        }
+      },
+      {
+        "@type": "Question",
+        "name": "Do members get a reminder before their appointment?",
+        "acceptedAnswer": {
+          "@type": "Answer",
+          "text": "Yes, if they leave their email. Email is optional and no account is needed. Members who leave an email get a confirmation when they sign up and a reminder about a day before their time. People who sign up less than two days ahead get the confirmation only. Reminders are by email, not text."
+        }
       }
     ]
   };
@@ -86,7 +102,7 @@ export default async function TithingDeclarationPage() {
       {
         "@type": "HowToStep",
         "name": "Track appointments",
-        "text": "View all scheduled appointments in your dashboard. Members automatically receive confirmation and reminder emails."
+        "text": "View all scheduled appointments in your dashboard. Members who leave an email get a confirmation, and a reminder about a day before."
       }
     ]
   };
@@ -183,10 +199,55 @@ export default async function TithingDeclarationPage() {
                   Track appointments
                 </h3>
                 <p className="text-[16px] text-[#5A8399] leading-[1.7]">
-                  View all scheduled appointments in your dashboard. Members automatically receive confirmation and reminder emails.
+                  View all scheduled appointments in your dashboard. Members who leave an email get a confirmation, and a reminder about a day before.
                 </p>
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Sign up sheet online */}
+      <section className="py-[88px] px-6 bg-[#F4FAFB]">
+        <div className="max-w-[760px] mx-auto">
+          <h2 className="font-serif text-[clamp(28px,4vw,40px)] tracking-[-0.6px] text-[#0D2B35] mb-6 leading-[1.15]">
+            Tithing declaration sign up sheet online
+          </h2>
+          <p className="text-[17px] text-[#2E5566] leading-[1.75] mb-5">
+            Most wards still post a paper tithing declaration sign up sheet in the foyer. Ward Signup gives you the same sheet as one link. Members open it on any phone or computer, pick a time, and enter their name, with no account and no app. The clerk or executive secretary sees every booking in one place.
+          </p>
+          <p className="text-[17px] text-[#2E5566] leading-[1.75]">
+            If your ward calls it tithing settlement, it works the same way. Name the event whatever your ward uses.
+          </p>
+        </div>
+      </section>
+
+      {/* Bishop and counselors */}
+      <section className="py-[88px] px-6 bg-white">
+        <div className="max-w-[760px] mx-auto">
+          <h2 className="font-serif text-[clamp(28px,4vw,40px)] tracking-[-0.6px] text-[#0D2B35] mb-6 leading-[1.15]">
+            Separate times for the bishop and each counselor
+          </h2>
+          <p className="text-[17px] text-[#2E5566] leading-[1.75] mb-5">
+            Make one section of times and rename it &ldquo;Bishop&rdquo;. Use Duplicate section and rename the copy &ldquo;1st Counselor&rdquo;, then do the same for the 2nd Counselor, and adjust each leader&rsquo;s times. Members see each leader&rsquo;s times under his name on one link. When each time is set to 1 spot, a time closes as soon as someone takes it, so two families never land in the same slot.
+          </p>
+          <p className="text-[17px] text-[#2E5566] leading-[1.75]">
+            A daily summary of new signups goes to the contact set on the event and to the account owner who created it. If each leader wants his own summary, make a separate sheet with him as the contact. The account owner still gets each sheet&rsquo;s summary.
+          </p>
+          <div className="mt-12 pt-8 border-t border-[#0E96B0]/10 text-left">
+            <h3 className="font-serif text-[20px] text-[#0D2B35] mb-3">
+              Print a flyer or a paper backup
+            </h3>
+            <p className="text-[16px] text-[#2E5566] leading-[1.7] mb-3">
+              Open your event from your dashboard and choose <strong>Print flyer</strong> to print a flyer with your sign up QR code and times already on it. Post it in the foyer or the bulletin so members can book from their phone.
+            </p>
+            <p className="text-[16px] text-[#2E5566] leading-[1.7]">
+              For members who still want paper,{" "}
+              <a href="/tithing-declaration-sign-up-sheet.pdf" className="text-[#0E96B0] hover:text-[#08647E] underline">
+                download a free printable tithing declaration sign up sheet (PDF)
+              </a>
+              .
+            </p>
           </div>
         </div>
       </section>
@@ -218,7 +279,7 @@ export default async function TithingDeclarationPage() {
                 { feature: "Real-time availability", paper: "No — paper gets outdated", digital: "Yes — updates instantly" },
                 { feature: "Double-booking risk", paper: "High — manual tracking", digital: "Zero — slots close when full" },
                 { feature: "Confirmation emails", paper: "No", digital: "Yes — automatic" },
-                { feature: "Reminder emails", paper: "No", digital: "Yes — 24 hours before" },
+                { feature: "Reminder emails", paper: "No", digital: "Yes, by email if provided" },
                 { feature: "Accessible from anywhere", paper: "No — foyer only", digital: "Yes — share one link" },
                 { feature: "Setup time", paper: "Print, post, hope people see it", digital: "10 minutes to live" },
               ].map((row, i) => (
@@ -312,6 +373,24 @@ export default async function TithingDeclarationPage() {
               </h3>
               <p className="text-[17px] leading-[1.7] text-[#2E5566]">
                 <strong>No.</strong> Ward Signup is an independent product not affiliated with or endorsed by The Church of Jesus Christ of Latter-day Saints. Use it only for appointment scheduling logistics, not for tracking declaration status or financial records. Use official Church systems for those purposes.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="font-serif text-[20px] text-[#0D2B35] mb-3">
+                Is there a free tithing declaration sign up sheet template?
+              </h3>
+              <p className="text-[17px] leading-[1.7] text-[#2E5566]">
+                <strong>Yes.</strong> Ward Signup is free for up to 10 events, so you can make an online tithing declaration sign up sheet without paying. There is also a printable sheet on this page for members who prefer paper.
+              </p>
+            </div>
+
+            <div>
+              <h3 className="font-serif text-[20px] text-[#0D2B35] mb-3">
+                Do members get a reminder before their appointment?
+              </h3>
+              <p className="text-[17px] leading-[1.7] text-[#2E5566]">
+                <strong>Yes, if they leave their email.</strong> Email is optional and no account is needed. Members who leave an email get a confirmation when they sign up and a reminder about a day before their time. People who sign up less than two days ahead get the confirmation only. Reminders are by email, not text.
               </p>
             </div>
           </div>
