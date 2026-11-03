@@ -1,5 +1,5 @@
 import EventPageClient from "@/components/event/EventPageClient";
-import { getServerEventCover, getServerEventPage } from "@/lib/public-event-page-server";
+import { getServerEventCover, getServerEventSnapshot } from "@/lib/public-event-page-server";
 
 /**
  * Public event page. The event, its slots and public signups are read on the
@@ -10,6 +10,14 @@ import { getServerEventCover, getServerEventPage } from "@/lib/public-event-page
  */
 export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [initialPage, initialCover] = await Promise.all([getServerEventPage(id), getServerEventCover(id)]);
-  return <EventPageClient eventId={id} initialPage={initialPage} initialCover={initialCover} />;
+  const [snapshot, initialCover] = await Promise.all([getServerEventSnapshot(id), getServerEventCover(id)]);
+  const initialPage = snapshot === undefined ? undefined : snapshot?.page ?? null;
+  return (
+    <EventPageClient
+      eventId={id}
+      initialPage={initialPage}
+      initialLoadedAt={snapshot?.loadedAt}
+      initialCover={initialCover}
+    />
+  );
 }

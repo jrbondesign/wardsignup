@@ -6,6 +6,8 @@ import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 
 jest.mock("@supabase/supabase-js", () => ({ createClient: jest.fn() }));
+// unstable_cache needs Next's incremental cache; run the aggregate directly in tests.
+jest.mock("next/cache", () => ({ unstable_cache: (fn: unknown) => fn }));
 jest.mock("@/lib/posthog-query", () => ({
   posthogWeeklyEventCounts: jest.fn(async () => null),
   posthogCoreWeekly: jest.fn(async () => null),

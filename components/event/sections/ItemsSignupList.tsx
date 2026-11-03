@@ -3,11 +3,13 @@
 import { orderBySection } from "@/components/event/event-page-shared";
 import { Fragment } from "react";
 import EmailTypoHint from "@/components/EmailTypoHint";
+import SignupCaptcha from "@/components/event/SignupCaptcha";
 import { type EventPageView } from "@/components/event/hooks/deriveEventPageView";
 
 /** Item list and custom-item form for items events. */
 export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
   const {
+    customCaptcha,
     customError,
     customItem,
     customSignups,
@@ -16,6 +18,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
     expandedItem,
     handleCustomItemSignup,
     handleItemSignup,
+    itemCaptcha,
     itemError,
     itemFormData,
     itemSubmitting,
@@ -199,6 +202,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
                         disabled={itemSubmitting}
                       />
                     </div>
+                    <SignupCaptcha captcha={itemCaptcha} action="item_signup" />
                     <button
                       type="submit"
                       disabled={itemSubmitting}
@@ -272,6 +276,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
               disabled={customSubmitting}
             />
           </div>
+          <SignupCaptcha captcha={customCaptcha} action="custom_item_signup" />
           <button
             type="submit"
             disabled={customSubmitting || !customItem.label.trim() || !customItem.name.trim()}

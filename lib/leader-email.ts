@@ -5,7 +5,7 @@ import {
 } from "@/lib/brand";
 import { buildOrganizerEmailFooterHtml } from "@/lib/site-footer";
 import { formatSessionSlotLabel } from "@/lib/organizer-email";
-import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
+import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { consumeEmailKeyRate, sendGuardedEmail } from "@/lib/email-send";
 import { leaderCoveredByOrganizerAlerts, leaderNotifyMaxPerHour } from "@/lib/email-throttle";
 import { buildEventIcs, icsFilenameForCampaign, type IcsSession } from "@/lib/ics";

@@ -1,9 +1,11 @@
 import { NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { createSignupIfCapacityRpc, mapSignupRpcError } from "@/lib/supabase";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { getClientIp } from "@/lib/request-ip";
+import { verifyTurnstile, turnstileRejectionMessage } from "@/lib/turnstile";
 import { sendParticipantSignupConfirmation } from "@/lib/participant-email";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
@@ -39,6 +41,18 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Slot ID, event ID, and name are required" },
         { status: 400 }
+      );
+    }
+
+    // Cloudflare Turnstile (no-op until both Turnstile keys are set). Checked
+    // before the rate limit and before create_signup_if_capacity, so bots
+    // neither take slots nor use up a shared network's signup allowance.
+    // Siteverify outages fail open (see lib/turnstile.ts).
+    const captcha = await verifyTurnstile(body.captchaToken, getClientIp(request));
+    if (!captcha.ok) {
+      return NextResponse.json(
+        { error: turnstileRejectionMessage(captcha.reason), captcha: true },
+        { status: 403 },
       );
     }
 
@@ -238,6 +252,7 @@ export async function POST(request: Request) {
     after(() => posthog.flush());
 
     const cancelToken = (data as Record<string, unknown>).cancel_token as string | null | undefined;
+    revalidateEventPage(campaign_id);
     return NextResponse.json({ signup: data, cancel_token: cancelToken ?? null });
   } catch (error) {
     console.error("Error creating signup:", error);

@@ -32,13 +32,15 @@ export interface EventPageClientProps {
   eventId: string;
   /** Server loaded data: object = loaded, null = no such event, undefined = load in the browser. */
   initialPage?: PublicEventPageData | null;
+  /** When the server read initialPage (ms epoch). */
+  initialLoadedAt?: number;
   /** Server loaded cover: object = show, null = none or flag off, undefined = fetch in the browser. */
   initialCover?: PublicCover | null;
 }
 
 
-export default function EventPageClient({ eventId, initialPage, initialCover }: EventPageClientProps) {
-  const ctx = useEventPage(eventId, { initialPage, initialCover });
+export default function EventPageClient({ eventId, initialPage, initialLoadedAt, initialCover }: EventPageClientProps) {
+  const ctx = useEventPage(eventId, { initialPage, initialLoadedAt, initialCover });
   const hydrated = useHydrated();
   const {
     brand,

@@ -1,4 +1,5 @@
 import { NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
@@ -64,6 +65,7 @@ export async function PATCH(
       return NextResponse.json({ error: "Failed to update session" }, { status: 500 });
     }
 
+    revalidateEventPage((session as { campaign_id?: string | null }).campaign_id);
     return NextResponse.json({ session: data });
   } catch (err) {
     console.error("PATCH /api/sessions/[id] unexpected error:", err);
@@ -135,6 +137,7 @@ export async function DELETE(
       });
     }
 
+    revalidateEventPage(campaignId);
     return NextResponse.json({ success: true });
   } catch (err) {
     console.error("DELETE /api/sessions/[id] unexpected error:", err);

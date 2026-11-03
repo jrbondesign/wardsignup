@@ -14,7 +14,7 @@ jest.mock("@/lib/brand", () => ({
   inviteEmailFrom: jest.fn(() => "WardSignup <hello@example.com>"),
   publicSiteOriginFromRequest: jest.fn(() => "https://wardsignup.com"),
 }));
-jest.mock("@/lib/resend-for-brand", () => ({ hasResendConfiguredForBrand: jest.fn(() => true) }));
+jest.mock("@/lib/email-deliver", () => ({ hasEmailProviderConfigured: jest.fn(() => true) }));
 jest.mock("@/lib/email-send", () => ({ sendGuardedEmail: jest.fn() }));
 jest.mock("@/lib/site-footer", () => ({ buildBrandSignatureFooterHtml: jest.fn(() => "") }));
 jest.mock("@/lib/posthog-server", () => ({ getPostHogClient: jest.fn() }));
