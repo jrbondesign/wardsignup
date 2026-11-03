@@ -1,3 +1,4 @@
+import { captureServerException } from "@/lib/posthog-server";
 import { NextRequest, NextResponse } from "next/server";
 import { claimCronRun } from "@/lib/rate-limit";
 import { phoenixDayStartUtc } from "@/lib/phoenix-time";
@@ -58,6 +59,7 @@ export async function GET(request: NextRequest) {
     });
   } catch (err) {
     console.error("geography-refresh cron:", err);
+    captureServerException(err, { route: "cron:geography-refresh" });
     return NextResponse.json(
       { error: "Geography refresh failed" },
       { status: 500 },

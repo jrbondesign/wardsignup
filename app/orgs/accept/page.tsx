@@ -8,6 +8,7 @@ import Navigation from "@/components/Navigation";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { maskEmail } from "@/lib/email-mask";
 import { usePostHog } from "posthog-js/react";
+import { resetPostHogOnSignOut } from "@/lib/posthog-client";
 import CallingField from "@/components/CallingField";
 import { joinCalling, splitCalling } from "@/lib/callings";
 import { acceptInviteWithCalling } from "@/lib/invite-accept";
@@ -244,6 +245,7 @@ function AcceptInner() {
   const handleSignOut = async () => {
     const supabase = createClientComponentClient();
     await supabase.auth.signOut();
+    resetPostHogOnSignOut();
     router.refresh();
   };
 

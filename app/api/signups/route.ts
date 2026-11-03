@@ -1,3 +1,4 @@
+import { captureServerException } from "@/lib/posthog-server";
 import { NextResponse, after } from "next/server";
 import { revalidateEventPage } from "@/lib/event-page-cache";
 import { createClient } from "@supabase/supabase-js";
@@ -218,6 +219,7 @@ export async function POST(request: Request) {
           }
         } catch (e) {
           console.error("Signup notification email:", e);
+          captureServerException(e, { route: "/api/signups" });
         }
       });
 
@@ -228,6 +230,7 @@ export async function POST(request: Request) {
             await syncCampaignCalendar(campaign_id);
           } catch (e) {
             console.error("Calendar sync after signup:", e);
+            captureServerException(e, { route: "/api/signups" });
           }
         });
       }
@@ -256,6 +259,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ signup: data, cancel_token: cancelToken ?? null });
   } catch (error) {
     console.error("Error creating signup:", error);
+    captureServerException(error, { route: "/api/signups" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
