@@ -6,7 +6,7 @@ import { campaignMatchesHostBrand } from "@/lib/campaign-brand-guard";
 import { userCanAdminCampaign, userCanDeleteCampaign } from "@/lib/campaign-access";
 import { isValidIanaTimezone } from "@/lib/event-timezone";
 import type { Campaign } from "@/lib/types";
-import { getPostHogClient } from "@/lib/posthog-server";
+import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { removeCoverIfUnreferenced } from "@/lib/event-media";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
@@ -90,6 +90,7 @@ export async function DELETE(
     );
   } catch (error) {
     console.error("Error in DELETE /api/events/[id]:", error);
+    captureServerException(error, { route: "/api/events/[id]" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -392,6 +393,7 @@ export async function PATCH(
           await syncCampaignCalendar(eventId);
         } catch (e) {
           console.error("Calendar sync after event update:", e);
+          captureServerException(e, { route: "/api/events/[id]" });
         }
       });
     }
@@ -403,6 +405,7 @@ export async function PATCH(
     );
   } catch (error) {
     console.error("Error in PATCH /api/events/[id]:", error);
+    captureServerException(error, { route: "/api/events/[id]" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

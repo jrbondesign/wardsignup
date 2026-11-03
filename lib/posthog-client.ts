@@ -14,3 +14,17 @@ export function posthogDistinctIdHeader(): Record<string, string> {
     return {};
   }
 }
+
+/**
+ * Call on sign out: unlinks this browser from the signed-out person so the next
+ * organizer on a shared ward computer starts as a fresh anonymous visitor.
+ * Never throws; a no-op on the server or when PostHog isn't loaded.
+ */
+export function resetPostHogOnSignOut(): void {
+  if (typeof window === "undefined") return;
+  try {
+    posthog.reset();
+  } catch {
+    // analytics must never block sign out
+  }
+}

@@ -1,3 +1,4 @@
+import { captureServerException } from "@/lib/posthog-server";
 import { NextResponse, after } from "next/server";
 import { revalidateEventPage } from "@/lib/event-page-cache";
 import { createClient } from "@supabase/supabase-js";
@@ -154,6 +155,7 @@ export async function POST(request: Request) {
           if (!lr.ok) console.error("Leader notification send:", lr.error);
         } catch (e) {
           console.error("Item signup leader notification:", e);
+          captureServerException(e, { route: "/api/item-signups" });
         }
       });
     }

@@ -7,6 +7,7 @@ import Image from "next/image";
 import { useBrand } from "@/components/BrandProvider";
 import { createClientComponentClient } from "@/lib/auth";
 import { usePostHog } from "posthog-js/react";
+import { resetPostHogOnSignOut } from "@/lib/posthog-client";
 import { GearIcon } from "@/components/OrgSettingsEntry";
 
 export default function Navigation() {
@@ -30,6 +31,9 @@ export default function Navigation() {
   const handleSignOut = async () => {
     const supabase = createClientComponentClient();
     await supabase.auth.signOut();
+    // Unlink this browser from the signed-out organizer so a shared ward
+    // computer doesn't merge two people into one PostHog person.
+    resetPostHogOnSignOut();
     router.push("/");
   };
 
