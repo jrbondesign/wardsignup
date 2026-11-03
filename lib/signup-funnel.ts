@@ -54,6 +54,29 @@ export function buildFunnelProps(
   };
 }
 
+type SuperPropertyClient = {
+  register?(props: Record<string, string>): void;
+  unregister?(key: string): void;
+} | null | undefined;
+
+/**
+ * Puts the ward id on every later PostHog event from this browser as a super
+ * property, including `$feature_flag_called` (the experiment exposure), which
+ * buildFunnelProps can't reach. Same privacy rule: the id only, never PII.
+ * register, not register_once: one browser can open sheets from different
+ * wards, so the newest sheet wins. A missing or empty id removes it so a
+ * previous ward never sticks to this sheet. Never throws.
+ */
+export function syncOrgIdSuperProperty(client: SuperPropertyClient, orgId: string | null | undefined): void {
+  try {
+    if (!client) return;
+    if (typeof orgId === "string" && orgId.trim() !== "") client.register?.({ org_id: orgId });
+    else client.unregister?.("org_id");
+  } catch {
+    // Analytics must never break the signup page.
+  }
+}
+
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /** Loose syntactic check, only used to decide whether to fire signup_email_entered. */
