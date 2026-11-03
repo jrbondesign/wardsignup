@@ -1,7 +1,13 @@
 import { NextResponse } from 'next/server';
 import { getAuthFromRequest } from '@/lib/auth';
 import { isGcalSyncFeatureEnabled, isGcalSyncEnabledForOrg } from '@/lib/gcal-feature';
-import { buildAuthUrl, type OAuthState } from '@/lib/google-oauth';
+import {
+  buildAuthUrl,
+  sanitizeReturnPath,
+  OAUTH_NONCE_COOKIE,
+  type OAuthState,
+} from '@/lib/google-oauth';
+import { userIsAcceptedOrgMember } from '@/lib/campaign-access';
 import { randomBytes } from 'crypto';
 
 /**
@@ -22,10 +28,10 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: auth.message }, { status: auth.status });
     }
 
-    const { user } = auth;
+    const { user, supabase } = auth;
     const url = new URL(request.url);
     const orgId = url.searchParams.get('org_id');
-    const returnPath = url.searchParams.get('return_path') || '/settings/organization';
+    const returnPath = sanitizeReturnPath(url.searchParams.get('return_path'));
 
     if (!orgId) {
       return NextResponse.json({ error: 'org_id required' }, { status: 400 });
@@ -39,6 +45,13 @@ export async function GET(request: Request) {
       );
     }
 
+    if (!(await userIsAcceptedOrgMember(supabase, user, orgId))) {
+      return NextResponse.json(
+        { error: 'You are not a member of this organization' },
+        { status: 403 }
+      );
+    }
+
     const state: OAuthState = {
       userId: user.id,
       orgId,
@@ -48,7 +61,17 @@ export async function GET(request: Request) {
     };
 
     const authUrl = buildAuthUrl(state);
-    return NextResponse.json({ url: authUrl });
+    const response = NextResponse.json({ url: authUrl });
+    // Callback requires this cookie to match state.nonce, so a signed state
+    // cannot be replayed in another person's browser.
+    response.cookies.set(OAUTH_NONCE_COOKIE, state.nonce, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/api/integrations/google/callback',
+      maxAge: 10 * 60,
+    });
+    return response;
   } catch (err) {
     console.error('[google/connect] error:', err);
     return NextResponse.json(

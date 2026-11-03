@@ -92,7 +92,7 @@ test.describe.serial('Complete Event Flow', () => {
     // Get shareable link
     const linkInput = page.locator('input[readonly]');
     shareableLink = await linkInput.inputValue();
-    expect(shareableLink).toContain(`/campaign/${campaignId}`);
+    expect(shareableLink).toContain(`/campaign/${eventId}`);
   });
 
   test.skip('should allow member to view and sign up for sessions', async ({ page }) => {
@@ -133,7 +133,7 @@ test.describe.serial('Complete Event Flow', () => {
     // OUTDATED: This test uses PIN-based auth which has been removed
     // TODO: Update to use Supabase magic link authentication
     // Navigate to admin dashboard
-    await page.goto(`/admin/${campaignId}?pin=${adminPin}`);
+    await page.goto(`/admin/${eventId}`);
 
     // Verify updated stats
     await expect(page.getByText('Signed Up')).toBeVisible();

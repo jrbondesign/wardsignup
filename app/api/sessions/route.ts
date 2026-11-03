@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { getAuthFromRequest } from "@/lib/auth";
 import { getBrandFromHost } from "@/lib/brand";
 import { campaignMatchesHostBrand } from "@/lib/campaign-brand-guard";
@@ -164,11 +165,14 @@ export async function POST(request: Request) {
       distinctId: user.id,
       event: "sessions_created",
       properties: {
+        org_id: campaign.organization_id ?? null,
         campaign_id,
+        event_id: campaign_id,
         session_count: sessions.length,
       },
     });
 
+    revalidateEventPage(campaign_id);
     return NextResponse.json({ sessions: data });
   } catch (error) {
     console.error("Error creating sessions:", error);

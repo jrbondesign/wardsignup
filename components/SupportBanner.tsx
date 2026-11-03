@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import Link from "next/link";
 import {
   SUPPORT_BANNER_DISMISSED_KEY,
@@ -13,25 +13,23 @@ import { useBrand } from "@/components/BrandProvider";
  * Thin dismissible homepage banner. Gated by NEXT_PUBLIC_SUPPORT_BANNER_ENABLED.
  * Fixed just below the marketing nav so the full-bleed hero stays intact.
  */
+const subscribeNoop = () => () => {};
+
+function readDismissed(): boolean {
+  try {
+    return localStorage.getItem(SUPPORT_BANNER_DISMISSED_KEY) === "1";
+  } catch {
+    // show anyway
+    return false;
+  }
+}
+
 export default function SupportBanner() {
   const brand = useBrand();
-  const [show, setShow] = useState(false);
-
-  useEffect(() => {
-    if (!isSupportBannerEnabled(brand)) {
-      setShow(false);
-      return;
-    }
-    try {
-      if (localStorage.getItem(SUPPORT_BANNER_DISMISSED_KEY) === "1") {
-        setShow(false);
-        return;
-      }
-    } catch {
-      // show anyway
-    }
-    setShow(true);
-  }, [brand]);
+  // Server snapshot reports "dismissed" so SSR/hydration render nothing, as before.
+  const storedDismissed = useSyncExternalStore(subscribeNoop, readDismissed, () => true);
+  const [dismissed, setDismissed] = useState(false);
+  const show = isSupportBannerEnabled(brand) && !storedDismissed && !dismissed;
 
   if (!show) return null;
 
@@ -41,7 +39,7 @@ export default function SupportBanner() {
     } catch {
       // ignore
     }
-    setShow(false);
+    setDismissed(true);
   };
 
   return (

@@ -6,7 +6,7 @@ import {
 } from "@/lib/brand";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { escapeHtml } from "@/lib/html-escape";
-import { getResendForBrand } from "@/lib/resend-for-brand";
+import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { withUtm } from "@/lib/utm";
 import { buildWelcomeEmail } from "@/lib/welcome-email";
@@ -108,8 +108,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const resend = getResendForBrand(brand);
-    if (!resend) {
+    if (!hasEmailProviderConfigured(brand)) {
       console.error("welcome: Resend API key missing for brand", brand.id);
       return NextResponse.json(
         { error: "Email is not configured." },
@@ -220,11 +219,12 @@ export async function POST(request: NextRequest) {
     });
 
     // Send welcome email (must succeed before we mark welcome_sent)
-    // Non urgent: queued until just after the UTC quota reset when sent late in the UTC day.
+    // Near real time: sends now (Resend, or Brevo when Resend is out of budget).
+    // Only if neither can take it is it queued for the hourly drain.
     const welcomeSend = await sendGuardedEmail({
       brand,
       category: "transactional",
-      deferrable: true,
+      realtime: true,
       kind: "welcome",
       from: welcomeEmailFrom(brand),
       replyTo: welcomeReplyTo,

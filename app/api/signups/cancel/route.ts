@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { consumeActionRate } from "@/lib/rate-limit";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
@@ -58,6 +59,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    revalidateEventPage((signup as { campaign_id?: string | null }).campaign_id);
     return NextResponse.json({ ok: true });
   } catch (e) {
     console.error("signups/cancel:", e);

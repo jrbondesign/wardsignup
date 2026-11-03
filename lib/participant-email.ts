@@ -6,7 +6,7 @@ import {
 } from "@/lib/brand";
 import { buildParticipantEmailFooterHtml } from "@/lib/site-footer";
 import { formatSessionSlotLabel } from "@/lib/organizer-email";
-import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
+import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import type { Campaign } from "@/lib/types";
 import { withUtm } from "@/lib/utm";
@@ -102,7 +102,7 @@ export async function sendParticipantSignupConfirmation(params: {
   guestNames?: string[];
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
   }
 
@@ -166,6 +166,7 @@ export async function sendParticipantSignupConfirmation(params: {
     brand,
     urgent: true,
       category: "transactional",
+    kind: "signup_confirmation",
     from,
     to: params.to.trim(),
     subject: `You’re signed up: ${params.campaign.name}`,
@@ -187,7 +188,7 @@ export async function sendParticipantReminderEmail(params: {
   cancelToken?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
   }
 
@@ -250,6 +251,8 @@ export async function sendParticipantReminderEmail(params: {
     brand,
     urgent: true,
       category: "notification",
+    // Bulk kind: Brevo first when configured (lib/email-deliver.ts BULK_KINDS).
+    kind: "reminder",
     from,
     to: params.to.trim(),
     subject: `Reminder tomorrow: ${params.campaign.name}`,
@@ -293,7 +296,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
   }
 
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
   }
 
@@ -391,6 +394,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
     brand,
     urgent: true,
       category: "transactional",
+    kind: "signup_confirmation",
     from,
     to: params.to.trim(),
     subject: `You’re signed up: ${params.campaign.name} (${params.sessions.length} slots)`,

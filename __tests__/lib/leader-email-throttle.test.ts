@@ -36,7 +36,7 @@ it("skips all per-signup leader emails (now covered by digest)", async () => {
     memberName: "Pat",
   });
   expect(r.ok).toBe(false);
-  expect(r.error).toContain("digest");
+  expect(!r.ok && r.error).toContain("digest");
   expect(consume).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
 });
@@ -52,7 +52,7 @@ it("skips even when organizer alerts cover the leader", async () => {
     memberName: "Pat",
   });
   expect(r.ok).toBe(false);
-  expect(r.error).toContain("digest");
+  expect(!r.ok && r.error).toContain("digest");
   expect(consume).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
 });
@@ -65,7 +65,7 @@ it("skips even with leader_signup_email_enabled true", async () => {
     memberName: "Pat",
   });
   expect(r.ok).toBe(false);
-  expect(r.error).toContain("digest");
+  expect(!r.ok && r.error).toContain("digest");
   expect(consume).not.toHaveBeenCalled();
   expect(send).not.toHaveBeenCalled();
 });

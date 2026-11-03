@@ -104,9 +104,9 @@ export default function OrgSwitcher({ onSwitch }: Props) {
       setOpen(false);
       if (onSwitch) onSwitch();
       else if (typeof window !== "undefined") {
-        // Use href= rather than reload() so the request bypasses the bfcache
+        // Navigate (assign) rather than reload() so the request bypasses the bfcache
         // and re-runs the dashboard's data fetch with the new selected org.
-        window.location.href = window.location.pathname + window.location.search;
+        window.location.assign(window.location.pathname + window.location.search);
       }
     } catch (e) {
       console.error("OrgSwitcher: select threw", e);

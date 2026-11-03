@@ -1,9 +1,12 @@
 import { captureServerException } from "@/lib/posthog-server";
 import { NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { orgIdForCampaign } from "@/lib/analytics-context";
 import { getClientIp } from "@/lib/request-ip";
+import { verifyTurnstile, turnstileRejectionMessage } from "@/lib/turnstile";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 
@@ -15,6 +18,20 @@ function hashIp(ip: string): string {
 /** POST /api/item-signups — public signup for a campaign item */
 export async function POST(request: Request) {
   try {
+    const body = await request.json();
+
+    // Cloudflare Turnstile (no-op until both Turnstile keys are set). Checked
+    // before the rate limit and the signup RPC, so bots neither take items
+    // nor use up a shared network's signup allowance. Siteverify outages fail
+    // open (see lib/turnstile.ts).
+    const captcha = await verifyTurnstile(body?.captchaToken, getClientIp(request));
+    if (!captcha.ok) {
+      return NextResponse.json(
+        { error: turnstileRejectionMessage(captcha.reason), captcha: true },
+        { status: 403 },
+      );
+    }
+
     // Rate limiting — same bucket as session signups to share quota across both types
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -38,7 +55,6 @@ export async function POST(request: Request) {
       }
     }
 
-    const body = await request.json();
     const { item_id, campaign_id, member_name, member_email, signup_note } = body;
     const rawQuantity = body.quantity;
     const rawCustomLabel = typeof body.custom_label === "string" ? body.custom_label.trim() : "";
@@ -146,16 +162,20 @@ export async function POST(request: Request) {
 
     const distinctId = request.headers.get("x-posthog-distinct-id") ?? `anon_signup_${crypto.randomUUID()}`;
     const posthogClient = getPostHogClient();
+    const orgId = await orgIdForCampaign(admin, campaign_id);
     posthogClient.capture({
       distinctId,
       event: "item_signup_created",
       properties: {
+        org_id: orgId,
         item_id,
         campaign_id,
+        event_id: campaign_id,
         has_email: Boolean(member_email?.trim()),
       },
     });
 
+    revalidateEventPage(campaign_id);
     return NextResponse.json({ signup: data });
   } catch (err) {
     console.error(err);

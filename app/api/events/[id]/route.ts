@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { getAuthFromRequest } from "@/lib/auth";
 import { getBrandFromHost } from "@/lib/brand";
 import { campaignMatchesHostBrand } from "@/lib/campaign-brand-guard";
@@ -76,10 +77,13 @@ export async function DELETE(
       distinctId: user.id,
       event: "event_deleted",
       properties: {
+        org_id: (event as Campaign).organization_id ?? null,
         event_id: eventId,
+        campaign_id: eventId,
       },
     });
 
+    revalidateEventPage(eventId);
     return NextResponse.json(
       { success: true, message: "Event deleted successfully" },
       { status: 200 }
@@ -394,6 +398,7 @@ export async function PATCH(
       });
     }
 
+    revalidateEventPage(eventId);
     return NextResponse.json(
       { success: true, event: updatedEvent },
       { status: 200 }

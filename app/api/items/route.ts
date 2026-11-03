@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
 
@@ -126,6 +127,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to create items" }, { status: 500 });
     }
 
+    revalidateEventPage(campaign_id);
     return NextResponse.json({ items: data });
   } catch (err: any) {
     if (err?.message) {
@@ -223,6 +225,7 @@ export async function PUT(request: Request) {
       await supabase.from("campaign_items").insert(insertRows as never);
     }
 
+    revalidateEventPage(campaign_id);
     return NextResponse.json({ success: true });
   } catch (err: any) {
     if (err?.message) {
