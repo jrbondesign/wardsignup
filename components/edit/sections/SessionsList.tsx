@@ -248,8 +248,9 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
           </div>
 
           {editingSessionIndex === index && (
-            <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3">
-              <div className="col-span-2 md:col-span-3">
+            <div className="mt-4 space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
                 <label className="block text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1">
                   Class name <span className="normal-case font-normal text-[#5A8399]">(optional)</span>
                 </label>
@@ -261,7 +262,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                   className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
                 />
               </div>
-              <div className="col-span-2 md:col-span-2">
+              <div>
                 <label className="block text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1">
                   Section <span className="normal-case font-normal text-[#5A8399]">(optional)</span>
                 </label>
@@ -274,6 +275,8 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                   className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
                 />
               </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1">
                   Start
@@ -281,6 +284,8 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                 <TimeInput
                   value={session.time}
                   onChange={(v) => updateSession(index, "time", v)}
+                  ariaLabel="Start time"
+                  required
                   className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
                 />
               </div>
@@ -291,7 +296,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                 <TimeInput
                   value={session.end_time ?? ""}
                   onChange={(v) => updateSession(index, "end_time", v)}
-                  placeholder="e.g. 5pm"
+                  ariaLabel="End time"
                   className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
                 />
               </div>
@@ -325,7 +330,8 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                   className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
                 />
               </div>
-              <div className="md:col-span-2">
+              </div>
+              <div>
                 <label className="block text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1">
                   Location
                 </label>
@@ -337,7 +343,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                   className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
                 />
               </div>
-              <div className="col-span-2 md:col-span-5">
+              <div>
                 <label className="block text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1">
                   Notes
                 </label>
@@ -349,7 +355,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                   className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70 resize-none"
                 />
               </div>
-              <div className="col-span-2 md:col-span-5 flex justify-end">
+              <div className="flex justify-end">
                 <button
                   type="button"
                   onClick={(e) => {

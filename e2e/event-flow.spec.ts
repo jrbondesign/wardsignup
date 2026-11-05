@@ -45,7 +45,8 @@ test.describe.serial('Complete Event Flow', () => {
 
     // Update first session
     await page.locator('select').first().selectOption('2'); // Tuesday
-    await page.locator('input[type="time"]').first().fill('19:00');
+    await page.getByLabel('Start time hour').first().selectOption('7');
+    await page.getByLabel('Start time AM or PM').first().selectOption('PM');
     await page.locator('input[type="number"]').first().fill('2');
     await page.getByPlaceholder('e.g., Detention Center').fill('Test Location');
 
@@ -57,8 +58,8 @@ test.describe.serial('Complete Event Flow', () => {
     const session2Selects = page.locator('select').nth(1);
     await session2Selects.selectOption('4'); // Thursday
 
-    const session2Times = page.locator('input[type="time"]').nth(1);
-    await session2Times.fill('15:00');
+    await page.getByLabel('Start time hour').nth(1).selectOption('3');
+    await page.getByLabel('Start time AM or PM').nth(1).selectOption('PM');
 
     const session2Capacity = page.locator('input[type="number"]').nth(1);
     await session2Capacity.fill('1');

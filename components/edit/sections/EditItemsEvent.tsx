@@ -157,7 +157,12 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
               <div>
                 <label className="inline-flex items-center gap-2 cursor-pointer mb-2 select-none">
                   <input type="checkbox" checked={itemsApproximateTime}
-                    onChange={(e) => setItemsApproximateTime(e.target.checked)}
+                    onChange={(e) => {
+                      setItemsApproximateTime(e.target.checked);
+                      setItemsEventStartTime("");
+                      setItemsEventEndTime("");
+                      setItemsError("");
+                    }}
                     className="w-4 h-4 rounded border-[rgba(14,150,176,0.4)] text-[#0E96B0] focus:ring-[#0E96B0]"
                     disabled={itemsSaving} />
                   <span className="text-[12px] font-medium text-[#2E5566]">
@@ -176,6 +181,7 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
                     ) : (
                       <TimeInput value={itemsEventStartTime}
                         onChange={(v) => { setItemsEventStartTime(v); setItemsError(""); }}
+                        ariaLabel="Start time"
                         disabled={itemsSaving}
                         className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70" />
                     )}
@@ -191,7 +197,7 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
                     ) : (
                       <TimeInput value={itemsEventEndTime}
                         onChange={(v) => { setItemsEventEndTime(v); setItemsError(""); }}
-                        placeholder="e.g. 5pm"
+                        ariaLabel="End time"
                         disabled={itemsSaving}
                         className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70" />
                     )}

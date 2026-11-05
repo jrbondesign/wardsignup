@@ -271,7 +271,7 @@ function SpotsTime({ state, set }: Props) {
                     {windows.map((p, idx) => (
                       <div
                         key={p.id}
-                        className="grid grid-cols-[minmax(110px,auto)_1fr_1fr_auto] items-center gap-2 bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl px-3 py-2"
+                        className="grid grid-cols-1 sm:grid-cols-[minmax(110px,auto)_1fr_1fr_auto] items-center gap-2 bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl px-3 py-2"
                       >
                         <span className="text-[13px] font-medium text-[#0D2B35]">
                           {idx === 0 ? label : ""}
@@ -279,13 +279,14 @@ function SpotsTime({ state, set }: Props) {
                         <TimeInput
                           value={p.start}
                           onChange={(v) => updatePickedDate(p.id, { start: v })}
-                          placeholder="Start"
+                          ariaLabel={`Start time for ${label}`}
+                          required
                           className={inputCls}
                         />
                         <TimeInput
                           value={p.end}
                           onChange={(v) => updatePickedDate(p.id, { end: v })}
-                          placeholder="End (optional)"
+                          ariaLabel={`End time for ${label}`}
                           className={inputCls}
                         />
                         <button
@@ -352,12 +353,14 @@ function SpotsTime({ state, set }: Props) {
       )}
 
       {!isSpecific && (
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
             <label className={labelCls}>Start Time</label>
             <TimeInput
               value={state.spotsStartTime}
               onChange={(v) => set({ spotsStartTime: v })}
+              ariaLabel="Start time"
+              required
               className={inputCls}
             />
           </div>
@@ -368,7 +371,7 @@ function SpotsTime({ state, set }: Props) {
             <TimeInput
               value={state.spotsEndTime}
               onChange={(v) => set({ spotsEndTime: v })}
-              placeholder="e.g. 5pm"
+              ariaLabel="End time"
               className={inputCls}
             />
           </div>
@@ -552,6 +555,8 @@ function TimeFields({ state, set }: Props) {
                 <TimeInput
                   value={state.startTime}
                   onChange={(v) => set({ startTime: v })}
+                  ariaLabel="Start time"
+                  required
                   className={inputCls}
                 />
               )}
@@ -573,7 +578,7 @@ function TimeFields({ state, set }: Props) {
                 <TimeInput
                   value={state.endTime}
                   onChange={(v) => set({ endTime: v })}
-                  placeholder="e.g. 5pm"
+                  ariaLabel="End time"
                   className={inputCls}
                 />
               )}
@@ -583,7 +588,13 @@ function TimeFields({ state, set }: Props) {
             <input
               type="checkbox"
               checked={useApprox}
-              onChange={(e) => set({ approximateTime: e.target.checked })}
+              onChange={(e) =>
+                set({
+                  approximateTime: e.target.checked,
+                  startTime: "",
+                  endTime: "",
+                })
+              }
               className="w-4 h-4 rounded border-[rgba(14,150,176,0.4)] text-[#0E96B0] focus:ring-[#0E96B0]"
             />
             <span className="text-[12px] text-[#5A8399]">
@@ -621,7 +632,7 @@ function ExtraTimes({ state, set }: Props) {
     <div className="space-y-2">
       <div className="text-[12px] font-medium text-[#2E5566]">Additional times</div>
       {state.extraTimes.map((row, i) => (
-        <div key={i} className="grid grid-cols-[1fr_120px_auto] gap-2 items-center">
+        <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_minmax(11rem,14rem)_auto] gap-2 items-center">
           <input
             type="text"
             value={row.label}
@@ -632,7 +643,7 @@ function ExtraTimes({ state, set }: Props) {
           <TimeInput
             value={row.time}
             onChange={(v) => updateRow(i, { time: v })}
-            placeholder="Time"
+            ariaLabel={row.label.trim() ? `${row.label} time` : "Additional time"}
             className={inputCls}
           />
           <button

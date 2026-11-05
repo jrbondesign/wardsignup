@@ -1,20 +1,21 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 
 interface TimeInputProps {
   value: string;
   onChange: (next: string) => void;
-  className?: string;
-  /** Kept for call-site compatibility; unused now that AM/PM is a dropdown. */
+  /** Unused; kept so existing call sites typecheck. */
   placeholder?: string;
   disabled?: boolean;
   required?: boolean;
   ariaLabel?: string;
   id?: string;
+  /** Optional className is ignored for layout; compact built-in styles are used. */
+  className?: string;
 }
 
-type Meridiem = "AM" | "PM";
+export type Meridiem = "" | "AM" | "PM";
 
 export type TimeParts = {
   hour12: string;
@@ -22,16 +23,16 @@ export type TimeParts = {
   meridiem: Meridiem;
 };
 
-/** Split a canonical "HH:MM" (24h) into 12-hour parts. Empty value → blank hour/minute. */
+/** Split a canonical "HH:MM" (24h) into 12-hour parts. Empty value → all blank. */
 export function hhmmToParts(value: string): TimeParts {
   if (!value || !value.trim()) {
-    return { hour12: "", minute: "", meridiem: "AM" };
+    return { hour12: "", minute: "", meridiem: "" };
   }
   const [hStr, mStr] = value.split(":");
   const h = Number(hStr);
   const m = Number(mStr);
   if (Number.isNaN(h) || Number.isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) {
-    return { hour12: "", minute: "", meridiem: "AM" };
+    return { hour12: "", minute: "", meridiem: "" };
   }
   const meridiem: Meridiem = h >= 12 ? "PM" : "AM";
   let hour12 = h % 12;
@@ -45,10 +46,11 @@ export function hhmmToParts(value: string): TimeParts {
 
 /**
  * Build a canonical 24-hour "HH:MM" from 12-hour parts.
- * 12 AM → 00:xx, 12 PM → 12:xx. Returns "" if hour or minute is blank.
+ * Requires hour, minute, and AM/PM. 12 AM → 00:xx, 12 PM → 12:xx.
+ * Returns "" when any part is missing.
  */
 export function partsToHhmm(hour12: string, minute: string, meridiem: Meridiem): string {
-  if (!hour12 || !minute) return "";
+  if (!hour12 || !minute || (meridiem !== "AM" && meridiem !== "PM")) return "";
   let h = parseInt(hour12, 10);
   const m = parseInt(minute, 10);
   if (Number.isNaN(h) || Number.isNaN(m) || h < 1 || h > 12 || m < 0 || m > 59) return "";
@@ -57,18 +59,27 @@ export function partsToHhmm(hour12: string, minute: string, meridiem: Meridiem):
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
 
+/** True when the user has started filling the control but has not finished all three parts. */
+export function isPartialTime(parts: TimeParts): boolean {
+  const any = !!(parts.hour12 || parts.minute || parts.meridiem);
+  if (!any) return false;
+  return partsToHhmm(parts.hour12, parts.minute, parts.meridiem) === "";
+}
+
 const HOURS = Array.from({ length: 12 }, (_, i) => String(i + 1));
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+
+/** Compact select chrome shared by hour, minute, and AM/PM. */
+const selectBase =
+  "min-w-0 text-sm leading-tight text-[#0D2B35] px-1.5 py-2 rounded-lg bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60";
 
 /**
  * Time picker with hour (1–12), minute, and AM/PM dropdown.
  * Stores the same 24-hour "HH:MM" string the rest of the app expects.
- * Built so mobile users can pick AM/PM without typing letters.
  */
 export default function TimeInput({
   value,
   onChange,
-  className,
   disabled,
   required,
   ariaLabel,
@@ -76,84 +87,106 @@ export default function TimeInput({
 }: TimeInputProps) {
   const autoId = useId();
   const baseId = id || autoId;
-  // Local parts so clearing hour or minute mid-edit does not wipe the other.
   const [parts, setParts] = useState<TimeParts>(() => hhmmToParts(value));
+  const [syncedValue, setSyncedValue] = useState(value);
 
-  useEffect(() => {
-    const current = partsToHhmm(parts.hour12, parts.minute, parts.meridiem);
-    if (value !== current) {
-      setParts(hhmmToParts(value));
+  // Sync from parent during render (avoids set-state-in-effect lint).
+  // Keep local partial edits when the parent holds "" because we emitted incomplete.
+  const fromParts = partsToHhmm(parts.hour12, parts.minute, parts.meridiem);
+  const incomplete =
+    !!(parts.hour12 || parts.minute || parts.meridiem) && fromParts === "";
+  if (value !== syncedValue) {
+    setSyncedValue(value);
+    if (value !== fromParts) {
+      if (!(value === "" && incomplete)) {
+        setParts(hhmmToParts(value));
+      }
     }
-    // Only re-sync when the parent canonical value changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- parts intentionally omitted
-  }, [value]);
-
-  const fieldCls = [className, "!w-auto flex-1 min-w-0"].filter(Boolean).join(" ");
-  const meridiemCls = [className, "!w-auto flex-none min-w-[4.5rem]"].filter(Boolean).join(" ");
+  }
 
   const emit = (next: Partial<TimeParts>) => {
-    const merged: TimeParts = {
+    let merged: TimeParts = {
       hour12: next.hour12 !== undefined ? next.hour12 : parts.hour12,
       minute: next.minute !== undefined ? next.minute : parts.minute,
       meridiem: next.meridiem !== undefined ? next.meridiem : parts.meridiem,
     };
+    // Clearing the hour clears the whole control.
+    if (next.hour12 === "") {
+      merged = { hour12: "", minute: "", meridiem: "" };
+    } else if (next.hour12 && !merged.minute) {
+      // Picking an hour with no minute defaults minute to 00.
+      merged = { ...merged, minute: "00" };
+    }
     setParts(merged);
     const hhmm = partsToHhmm(merged.hour12, merged.minute, merged.meridiem);
     if (hhmm !== value) onChange(hhmm);
   };
 
   const groupLabel = ariaLabel || "Time";
+  const showPartial = isPartialTime(parts);
+  const hintId = `${baseId}-hint`;
 
   return (
-    <div
-      role="group"
-      aria-label={groupLabel}
-      className="flex gap-2 min-w-0 w-full items-stretch"
-    >
-      <select
-        id={baseId}
-        aria-label={`${groupLabel} hour`}
-        value={parts.hour12}
-        disabled={disabled}
-        required={required}
-        onChange={(e) => emit({ hour12: e.target.value })}
-        className={fieldCls}
+    <div className="min-w-0 w-full">
+      <div
+        role="group"
+        aria-label={groupLabel}
+        aria-describedby={showPartial ? hintId : undefined}
+        className="flex gap-1.5 min-w-0 w-full items-stretch"
       >
-        <option value="">{required ? "Hour" : ""}</option>
-        {HOURS.map((h) => (
-          <option key={h} value={h}>
-            {h}
-          </option>
-        ))}
-      </select>
-      <select
-        id={`${baseId}-minute`}
-        aria-label={`${groupLabel} minute`}
-        value={parts.minute}
-        disabled={disabled}
-        required={required}
-        onChange={(e) => emit({ minute: e.target.value })}
-        className={fieldCls}
-      >
-        <option value="">{required ? "Min" : ""}</option>
-        {MINUTES.map((m) => (
-          <option key={m} value={m}>
-            {m}
-          </option>
-        ))}
-      </select>
-      <select
-        id={`${baseId}-meridiem`}
-        aria-label={`${groupLabel} AM or PM`}
-        value={parts.meridiem}
-        disabled={disabled}
-        required={required}
-        onChange={(e) => emit({ meridiem: e.target.value as Meridiem })}
-        className={meridiemCls}
-      >
-        <option value="AM">AM</option>
-        <option value="PM">PM</option>
-      </select>
+        <select
+          id={baseId}
+          aria-label={`${groupLabel} hour`}
+          value={parts.hour12}
+          disabled={disabled}
+          required={required}
+          onChange={(e) => emit({ hour12: e.target.value })}
+          className={`${selectBase} flex-1 min-w-[2.75rem]`}
+        >
+          <option value="">Hour</option>
+          {HOURS.map((h) => (
+            <option key={h} value={h}>
+              {h}
+            </option>
+          ))}
+        </select>
+        <select
+          id={`${baseId}-minute`}
+          aria-label={`${groupLabel} minute`}
+          value={parts.minute}
+          disabled={disabled}
+          required={required}
+          onChange={(e) => emit({ minute: e.target.value })}
+          className={`${selectBase} flex-1 min-w-[2.75rem]`}
+        >
+          <option value="">Min</option>
+          {MINUTES.map((m) => (
+            <option key={m} value={m}>
+              {m}
+            </option>
+          ))}
+        </select>
+        <select
+          id={`${baseId}-meridiem`}
+          aria-label={`${groupLabel} AM or PM`}
+          value={parts.meridiem}
+          disabled={disabled}
+          required={required}
+          onChange={(e) => emit({ meridiem: e.target.value as Meridiem })}
+          className={`${selectBase} flex-none w-[4.25rem]`}
+        >
+          <option value="">AM/PM</option>
+          <option value="AM">AM</option>
+          <option value="PM">PM</option>
+        </select>
+      </div>
+      {showPartial && (
+        <p id={hintId} className="mt-1 text-[12px] text-amber-800">
+          {required
+            ? "Pick hour, minute, and AM or PM to set this time."
+            : "This time is incomplete. Pick hour, minute, and AM or PM, or clear the hour."}
+        </p>
+      )}
     </div>
   );
 }

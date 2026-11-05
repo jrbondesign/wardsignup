@@ -118,6 +118,8 @@ export default function BulkAddSessionsForm({ ctx }: { ctx: EditEventCtx }) {
             <TimeInput
               value={bulkTime}
               onChange={setBulkTime}
+              ariaLabel="Start time"
+              required
               className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
             />
           </div>
@@ -128,7 +130,7 @@ export default function BulkAddSessionsForm({ ctx }: { ctx: EditEventCtx }) {
             <TimeInput
               value={bulkEndTime}
               onChange={setBulkEndTime}
-              placeholder="e.g. 5pm"
+              ariaLabel="End time"
               className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
             />
           </div>

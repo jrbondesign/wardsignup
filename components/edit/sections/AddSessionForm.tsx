@@ -130,12 +130,15 @@ export default function AddSessionForm({ ctx }: { ctx: EditEventCtx }) {
           <div className="min-w-0">
             <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">Start Time *</label>
             <TimeInput value={newSessionTime} onChange={setNewSessionTime}
+              ariaLabel="Start time"
+              required
               className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
             />
           </div>
           <div className="min-w-0">
             <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">End Time</label>
-            <TimeInput value={newSessionEndTime} onChange={setNewSessionEndTime} placeholder="e.g. 5pm"
+            <TimeInput value={newSessionEndTime} onChange={setNewSessionEndTime}
+              ariaLabel="End time"
               className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
             />
           </div>
