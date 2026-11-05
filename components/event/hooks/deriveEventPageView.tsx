@@ -243,6 +243,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
             slot_label: formatSessionSlotLabel(primary, {
               eventTimezone: event.event_timezone ?? null,
               eventEndDate: event.event_end_date ?? null,
+              eventType: event.event_type ?? null,
             }),
             event_url: `${window.location.origin}/event/${eventId}`,
             session_date: primary.session_date ?? null,
@@ -250,6 +251,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
             session_end_time: primary.end_time ?? null,
             event_timezone: event.event_timezone ?? null,
             event_end_date: event.event_end_date ?? null,
+            event_type: event.event_type ?? null,
           });
         }
         router.push(`/signup-success/${cancelToken}?event=${eventId}`);

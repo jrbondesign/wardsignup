@@ -374,3 +374,8 @@ export function createTimeOrderIssue(state: CreateFormState): { rowId: string } 
 export function isMultiDayRsvp(state: CreateFormState): boolean {
   return state.eventType === "rsvp" && state.multiDay && !!state.endDate && state.endDate > state.date;
 }
+
+/** Persist event_end_date only for a multi-day RSVP, not leftover dates after a type switch. */
+export function eventEndDateForSave(state: CreateFormState): string | null {
+  return isMultiDayRsvp(state) ? state.endDate : null;
+}

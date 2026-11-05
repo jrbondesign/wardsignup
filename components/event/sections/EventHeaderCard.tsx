@@ -49,6 +49,7 @@ export default function EventHeaderCard({ ctx }: { ctx: EventPageView }) {
             event_start_time?: string | null;
             event_end_time?: string | null;
             event_end_date?: string | null;
+            event_type?: string | null;
             event_times?: { label: string; time: string }[];
             event_locations?: { label: string; address: string }[];
           };
@@ -63,7 +64,7 @@ export default function EventHeaderCard({ ctx }: { ctx: EventPageView }) {
           const hasMultiDates = multiDates.length > 1;
           // End earlier than Start ends the next day, except on a multi-day RSVP
           // where it ends on the last date.
-          const multiDayRsvp = !!(ev.event_end_date && ev.event_date && ev.event_end_date > ev.event_date);
+          const multiDayRsvp = eventType === "rsvp" && !!(ev.event_end_date && ev.event_date && ev.event_end_date > ev.event_date);
           const endSuffix = multiDayRsvp ? "" : nextDaySuffix(ev.event_start_time, ev.event_end_time);
           const timeSuffix =
             ev.event_start_time || ev.event_end_time

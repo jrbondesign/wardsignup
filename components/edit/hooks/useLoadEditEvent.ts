@@ -186,7 +186,11 @@ export function useLoadEditEvent(ctx: EditEventState) {
         setEventName(loadedName);
         setEventDescription(loadedDesc);
         setEventTimezone(loadedTz);
-        setEventEndDate(typeof (event as any).event_end_date === "string" ? (event as any).event_end_date : null);
+        setEventEndDate(
+          (event as any).event_type === "rsvp" && typeof (event as any).event_end_date === "string"
+            ? (event as any).event_end_date
+            : null,
+        );
         setCoverUrl((event as any).cover_image_url ?? null);
           setCoverPosition((event as any).cover_position ?? null);
 

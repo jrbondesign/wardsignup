@@ -131,7 +131,7 @@ export async function POST(
       show_capacity_publicly: source.show_capacity_publicly,
       list_on_directory: source.list_on_directory,
       event_date: shiftNullableYmd(source.event_date, shiftDays),
-      event_end_date: shiftNullableYmd(source.event_end_date, shiftDays),
+      event_end_date: source.event_type === "rsvp" ? shiftNullableYmd(source.event_end_date, shiftDays) : null,
       event_start_time: source.event_start_time,
       event_end_time: source.event_end_time,
       event_times: source.event_times ?? [],
