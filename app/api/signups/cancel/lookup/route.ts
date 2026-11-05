@@ -63,6 +63,7 @@ export async function GET(request: NextRequest) {
 
   const slotLabel = formatSessionSlotLabel(session as Parameters<typeof formatSessionSlotLabel>[0], {
     eventTimezone: (campaign as { event_timezone?: string | null }).event_timezone ?? null,
+    eventEndDate: (campaign as { event_end_date?: string | null }).event_end_date ?? null,
   });
 
   const { siteOrigin } = publicSiteOriginAndBrandForCampaign(

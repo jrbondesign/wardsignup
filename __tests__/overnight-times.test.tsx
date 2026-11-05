@@ -16,7 +16,7 @@ import {
 import { buildEventIcs, buildVeventLines } from "@/lib/ics";
 import { googleDateTimesForSession } from "@/lib/google-calendar-sync-format";
 import { signupGoogleCalendarUrl, signupIcs } from "@/lib/signup-success-calendar";
-import { endTimeNote, formatTimeRange, isTithingWindowInvalid, nextDaySuffix } from "@/lib/utils";
+import { endTimeNote, formatTimeRange, NEXT_DAY_SUFFIX, nextDaySuffix, tithingWindowError } from "@/lib/utils";
 import { generateSpotsSessions } from "@/lib/spots-session-generator";
 import { generateTithingDeclarationSessions } from "@/lib/tithing-reschedule";
 import { firstUpcomingMonth } from "@/components/event/hooks/useEventPageData";
@@ -179,9 +179,9 @@ describe("signup success calendar links", () => {
 
 describe("display", () => {
   it("formatTimeRange marks overnight ranges", () => {
-    expect(formatTimeRange("22:00", "01:00")).toMatch(/ to .* \(next day\)$/);
-    expect(formatTimeRange("09:00", "10:00")).not.toMatch(/next day/);
-    expect(nextDaySuffix("22:00:00", "01:00:00")).toBe(" (next day)");
+    expect(formatTimeRange("22:00", "01:00")).toMatch(/ to .* \(next\u00A0day\)$/);
+    expect(formatTimeRange("09:00", "10:00")).not.toMatch(/next/);
+    expect(nextDaySuffix("22:00:00", "01:00:00")).toBe(NEXT_DAY_SUFFIX);
   });
 
   it("End time label note reads (next day) for overnight", () => {
@@ -239,9 +239,9 @@ describe("spots generator", () => {
 
 describe("tithing reschedule (blocked overnight)", () => {
   it("flags overnight and equal windows and generates nothing for them", () => {
-    expect(isTithingWindowInvalid("21:00", "01:00")).toBe(true);
-    expect(isTithingWindowInvalid("09:00", "09:00")).toBe(true);
-    expect(isTithingWindowInvalid("09:00", "12:00")).toBe(false);
+    expect(tithingWindowError("21:00", "01:00", 15)).toMatch(/past midnight/);
+    expect(tithingWindowError("09:00", "09:00", 15)).toBe("End time can't be the same as start time.");
+    expect(tithingWindowError("09:00", "12:00", 15)).toBeNull();
     const out = generateTithingDeclarationSessions({
       rangeStart: new Date(2026, 10, 20),
       rangeEnd: new Date(2026, 10, 20),

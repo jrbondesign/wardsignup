@@ -240,7 +240,10 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
             member_name: formData.name.trim(),
             guest_names: event.allow_guests === false ? [] : cleanGuests.slice(0, 10),
             campaign_name: event.name,
-            slot_label: formatSessionSlotLabel(primary, { eventTimezone: event.event_timezone ?? null }),
+            slot_label: formatSessionSlotLabel(primary, {
+              eventTimezone: event.event_timezone ?? null,
+              eventEndDate: event.event_end_date ?? null,
+            }),
             event_url: `${window.location.origin}/event/${eventId}`,
             session_date: primary.session_date ?? null,
             session_time: primary.time ?? null,

@@ -10,7 +10,7 @@ import {
   readSignupSuccessRaw,
   type SignupSuccessInfo,
 } from "@/lib/signup-success-handoff";
-import { signupGoogleCalendarUrl, signupIcs } from "@/lib/signup-success-calendar";
+import { hasSignupCalendar, signupGoogleCalendarUrl, signupIcs } from "@/lib/signup-success-calendar";
 
 type SignupInfo = SignupSuccessInfo;
 
@@ -123,7 +123,7 @@ export default function SignupSuccessPage() {
             </div>
 
             {/* Add to calendar */}
-            {state.info.session_date && (
+            {hasSignupCalendar(state.info) && (
               <div className="mb-4">
                 <p className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-2">Add to calendar</p>
                 <div className="grid grid-cols-2 gap-2">

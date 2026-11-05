@@ -95,6 +95,7 @@ export async function sendParticipantSignupConfirmation(params: {
 
   const slotLabel = formatSessionSlotLabel(params.session, {
     eventTimezone: params.campaign.event_timezone,
+    eventEndDate: params.campaign.event_end_date ?? null,
   });
   const eventTitle = escapeHtml(params.campaign.name);
   const name = escapeHtml(params.memberName.trim());
@@ -181,6 +182,7 @@ export async function sendParticipantReminderEmail(params: {
 
   const slotLabel = formatSessionSlotLabel(params.session, {
     eventTimezone: params.campaign.event_timezone,
+    eventEndDate: params.campaign.event_end_date ?? null,
   });
   const eventTitle = escapeHtml(params.campaign.name);
   const name = escapeHtml(params.memberName.trim());
@@ -313,7 +315,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
         ? `&nbsp;·&nbsp;<a href="${escapeHtml(slotCancelUrl)}" style="color:#5A8399;font-size:13px;">Cancel</a>`
         : "";
       return `<li style="margin:0 0 4px;font-size:15px;">${escapeHtml(
-        formatSessionSlotLabel(s, { eventTimezone: params.campaign.event_timezone }),
+        formatSessionSlotLabel(s, { eventTimezone: params.campaign.event_timezone, eventEndDate: params.campaign.event_end_date ?? null }),
       )}${slotCancel}</li>`;
     })
     .join("");
@@ -341,7 +343,10 @@ export async function sendParticipantBatchSignupConfirmation(params: {
 
   const calendarButtons = calendarLinks
     .map((url, i) => {
-      const label = formatSessionSlotLabel(params.sessions[i], { eventTimezone: params.campaign.event_timezone });
+      const label = formatSessionSlotLabel(params.sessions[i], {
+        eventTimezone: params.campaign.event_timezone,
+        eventEndDate: params.campaign.event_end_date ?? null,
+      });
       return `<a href="${escapeHtml(url)}" style="display:inline-block;margin:0 8px 8px 0;padding:8px 16px;border-radius:8px;border:1.5px solid rgba(14,150,176,0.30);font-size:13px;font-weight:600;color:#0E96B0;text-decoration:none;">Google: ${escapeHtml(label)}</a>`;
     })
     .join("");

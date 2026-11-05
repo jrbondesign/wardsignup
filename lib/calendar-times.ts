@@ -58,6 +58,16 @@ export function addDaysIso(date: string, days: number): string {
 }
 
 /**
+ * True when a dated session belongs to an event that runs past its own date
+ * (a multi-day RSVP: event_end_date after session_date). Such a range spans
+ * the whole event, so "(next day)" is not shown for it.
+ */
+export function spansMultipleDays(date: string | null | undefined, eventEndDate: string | null | undefined): boolean {
+  const iso = /^\d{4}-\d{2}-\d{2}$/;
+  return !!date && !!eventEndDate && iso.test(date) && iso.test(eventEndDate) && eventEndDate > date;
+}
+
+/**
  * The calendar date a dated session finishes on: the next day for an overnight
  * range, otherwise its own date. Use for "has this slot passed" checks.
  */

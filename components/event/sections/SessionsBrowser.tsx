@@ -2,13 +2,15 @@
 
 import { DAYS, orderSessionsBySection } from "@/components/event/event-page-shared";
 import { Fragment } from "react";
-import { formatTime, nextDaySuffix } from "@/lib/utils";
+import { formatTime, nextDaySuffix, spansMultipleDays } from "@/lib/utils";
+import { sessionCalendarMarks } from "@/lib/session-calendar-marks";
 import { type EventPageView } from "@/components/event/hooks/deriveEventPageView";
 
 /** Calendar and day-list views of sessions to pick from. */
 export default function SessionsBrowser({ ctx }: { ctx: EventPageView }) {
   const {
     calendarMonth,
+    event,
     eventType,
     groupedSessions,
     handleCalendarDateClick,
@@ -74,29 +76,9 @@ export default function SessionsBrowser({ ctx }: { ctx: EventPageView }) {
               const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
               const todayDate = today.getDate();
 
-              // Compute which days have sessions and which have available spots
-              const sessionDays = new Set<number>();
-              const availableDays = new Set<number>();
-              // In the current month, past days shouldn't be markable.
-              const isPastDay = (d: number) => isCurrentMonth && d < todayDate;
-              for (const session of sessions) {
-                const hasSpot = sessionHeadcount(session) < session.capacity;
-                if (session.session_date) {
-                  const [sy, sm, sd] = session.session_date.split("-").map(Number);
-                  if (sy === year && sm - 1 === month && !isPastDay(sd)) {
-                    sessionDays.add(sd);
-                    if (hasSpot) availableDays.add(sd);
-                  }
-                } else {
-                  for (let d = 1; d <= daysInMonth; d++) {
-                    if (isPastDay(d)) continue;
-                    if (new Date(year, month, d).getDay() === session.day_of_week) {
-                      sessionDays.add(d);
-                      if (hasSpot) availableDays.add(d);
-                    }
-                  }
-                }
-              }
+              // Days with sessions and with open spots. Past days in the current month
+              // aren't marked, unless an overnight slot from that day is still running.
+              const { sessionDays, availableDays } = sessionCalendarMarks(sessions, year, month, today, sessionHeadcount);
 
               const cells = [];
               for (let i = 0; i < firstDayOfWeek; i++) {
@@ -211,7 +193,7 @@ export default function SessionsBrowser({ ctx }: { ctx: EventPageView }) {
                               {session.label || (
                                 <>
                                   {formatTime(session.time)}
-                                  {session.end_time && ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time)}`}
+                                  {session.end_time && ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time, { multiDay: spansMultipleDays(session.session_date, event.event_end_date) })}`}
                                 </>
                               )}
                               {session.location && <span className="text-[#5A8399] font-normal"> · {session.location}</span>}
@@ -219,7 +201,7 @@ export default function SessionsBrowser({ ctx }: { ctx: EventPageView }) {
                             {session.label && (
                               <div className="text-xs text-[#5A8399] mt-0.5">
                                 {formatTime(session.time)}
-                                {session.end_time && ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time)}`}
+                                {session.end_time && ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time, { multiDay: spansMultipleDays(session.session_date, event.event_end_date) })}`}
                               </div>
                             )}
                             {session.notes && <div className="text-xs text-[#5A8399] mt-0.5">{session.notes}</div>}

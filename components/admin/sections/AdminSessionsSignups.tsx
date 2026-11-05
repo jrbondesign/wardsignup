@@ -3,13 +3,14 @@
 import { formatSessionDate, formatSlotLabel, orderSessionsBySection } from "@/components/admin/admin-page-shared";
 import Link from "next/link";
 import { Fragment } from "react";
-import { formatTime, nextDaySuffix } from "@/lib/utils";
+import { formatTime, nextDaySuffix, spansMultipleDays } from "@/lib/utils";
 import SignupOptionsMenu from "@/components/SignupOptionsMenu";
 import { type AdminEventView } from "@/components/admin/hooks/deriveAdminEventView";
 
 /** Sessions grouped by day with their signups. */
 export default function AdminSessionsSignups({ ctx }: { ctx: AdminEventView }) {
   const {
+    event,
     eventId,
     eventType,
     groupedSessions,
@@ -75,7 +76,7 @@ export default function AdminSessionsSignups({ ctx }: { ctx: AdminEventView }) {
                             {session.label || (
                               <>
                                 {formatTime(session.time)}
-                                {session.end_time && ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time)}`}
+                                {session.end_time && ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time, { multiDay: spansMultipleDays(session.session_date, event.event_end_date) })}`}
                               </>
                             )}
                             {session.location && (
@@ -85,7 +86,7 @@ export default function AdminSessionsSignups({ ctx }: { ctx: AdminEventView }) {
                           {session.label && (
                             <div className="text-xs text-[#5A8399] mt-0.5">
                               {formatTime(session.time)}
-                              {session.end_time && ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time)}`}
+                              {session.end_time && ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time, { multiDay: spansMultipleDays(session.session_date, event.event_end_date) })}`}
                             </div>
                           )}
                           {session.notes && (
