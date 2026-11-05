@@ -87,6 +87,17 @@ export default async function UseCasesIndexPage() {
 
                   <div>
                     <h3 className="text-[19px] font-semibold text-[#0D2B35] mb-2">
+                      <Link href="/use-cases/ward-christmas-party" className="text-[#0E96B0] hover:text-[#08647E]">
+                        Ward Christmas party signup sheet
+                      </Link>
+                    </h3>
+                    <p className="text-[17px] text-[#2E5566] leading-[1.7]">
+                      Soup, rolls, desserts and jobs like setup, nativity helpers and cleanup, with counts so you know what is still needed.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h3 className="text-[19px] font-semibold text-[#0D2B35] mb-2">
                       <Link href="/use-cases/ward-secretary-signup" className="text-[#0E96B0] hover:text-[#08647E]">
                         Online signup sheets for ward secretaries
                       </Link>

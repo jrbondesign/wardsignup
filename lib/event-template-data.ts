@@ -22,7 +22,8 @@ export type TemplateKey =
   | "interviews"
   | "ward-potluck"
   | "service-project"
-  | "moving-help";
+  | "moving-help"
+  | "ward-christmas-party";
 
 export type EventCategory = "single" | "sessions" | "bring";
 
@@ -65,7 +66,10 @@ export interface EventTemplate {
    *  Use for events where capacity is for the whole trip/event, not per-day. */
   singleSessionForEntireEvent?: boolean;
   /** Default items to pre-populate on the setup-items page (bring/do events only) */
-  defaultItems?: { label: string; quantity: number }[];
+  defaultItems?: { label: string; quantity: number; section?: string }[];
+  /** Optional preview image shown when the template is picked (public/ path).
+   *  Display only: event covers are uploaded per event and gated per org. */
+  previewImage?: string;
   /** Alternative description used when a dual-mode template switches to RSVP mode */
   defaultDescriptionRsvp?: string;
   /** Brands this template is offered to. Omitted = available to every brand. */
@@ -158,6 +162,36 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     defaultName: "Bishop Interviews",
     defaultDescription:
       "Schedule a time to meet with the Bishop. Appointments are kept confidential. Please arrive a few minutes early.",
+  },
+  {
+    key: "ward-christmas-party",
+    icon: "⭐",
+    label: "Ward Christmas Party",
+    desc: "Food to bring and jobs to fill, with counts.",
+    catId: "bring",
+    catLabel: "Bring or Do",
+    badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
+    catTextColor: "text-emerald-600",
+    allowGuestsDefault: false,
+    previewImage: "/templates/ward-christmas-party.webp",
+    defaultName: "Ward Christmas Party",
+    defaultDescription:
+      "Join us as a ward to celebrate the birth of our Savior. Please sign up to bring food or help with a job. Pick an item, choose how many you will bring, and add your name. No account is needed. The counts are a starting point, so leaders can change them to fit our ward. Thank you for helping make this a warm night together.",
+    defaultItems: [
+      { label: "Soup (serves 10 to 20)", quantity: 40, section: "Food" },
+      { label: "Gluten free soup (serves 10 to 20)", quantity: 5, section: "Food" },
+      { label: "Rolls and butter (2 dozen)", quantity: 25, section: "Food" },
+      { label: "Dessert (2 dozen)", quantity: 25, section: "Food" },
+      { label: "Gluten free dessert (2 dozen)", quantity: 2, section: "Food" },
+      { label: "Setup crew", quantity: 6, section: "Jobs" },
+      { label: "Decorations", quantity: 4, section: "Jobs" },
+      { label: "Greeters", quantity: 2, section: "Jobs" },
+      { label: "Serving food", quantity: 6, section: "Jobs" },
+      { label: "Kids activity", quantity: 3, section: "Jobs" },
+      { label: "Nativity helpers", quantity: 4, section: "Jobs" },
+      { label: "Music", quantity: 2, section: "Jobs" },
+      { label: "Cleanup crew", quantity: 8, section: "Jobs" },
+    ],
   },
   // ── Bring or Do ──────────────────────────────────────────────────────────
   {
