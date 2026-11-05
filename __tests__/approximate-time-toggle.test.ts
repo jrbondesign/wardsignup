@@ -132,6 +132,48 @@ describe("switchApproximateMode", () => {
     expect(back.startTime).toBe("after dinner");
   });
 
+  it("shows a newly picked time instead of the old plain text", () => {
+    const toApprox = switchApproximateMode({
+      toApproximate: true,
+      startTime: "19:00",
+      endTime: "21:00",
+      memory: { ...EMPTY_APPROXIMATE_TIME_MEMORY },
+    });
+    const toExact = switchApproximateMode({
+      toApproximate: false,
+      startTime: "8pm",
+      endTime: toApprox.endTime,
+      memory: toApprox.memory,
+    });
+    expect(toExact.startTime).toBe("20:00");
+    // User then picks 9 PM for Start and leaves End alone.
+    const again = switchApproximateMode({
+      toApproximate: true,
+      startTime: "21:00",
+      endTime: toExact.endTime,
+      memory: toExact.memory,
+    });
+    expect(again.startTime).toBe("9:00 PM");
+    expect(again.endTime).toBe("9:00 PM");
+  });
+
+  it("restores the old plain text when the picked time is unchanged", () => {
+    const toExact = switchApproximateMode({
+      toApproximate: false,
+      startTime: "around 8pm",
+      endTime: "by lunch",
+      memory: { ...EMPTY_APPROXIMATE_TIME_MEMORY },
+    });
+    const back = switchApproximateMode({
+      toApproximate: true,
+      startTime: toExact.startTime,
+      endTime: toExact.endTime,
+      memory: toExact.memory,
+    });
+    expect(back.startTime).toBe("around 8pm");
+    expect(back.endTime).toBe("by lunch");
+  });
+
   it("parses en-CA style text when there is no remembered exact", () => {
     const result = switchApproximateMode({
       toApproximate: false,

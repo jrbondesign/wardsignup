@@ -91,9 +91,11 @@ const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"))
  * the control looks the same in iOS Safari and Chrome.
  * Phone padding and min widths are as tight as the placeholders allow so a group
  * fits in 212px (the narrowest panel at 320); sm and up get roomier padding.
+ * Every sm: size is repeated as @min-[35rem]: so a TimeRangeRow that goes side by
+ * side below sm (cards 560px+ on 600 to 639px screens) gets the same compact sizing.
  */
 const selectBase =
-  "appearance-none bg-no-repeat bg-[position:right_5px_center] sm:bg-[position:right_8px_center] min-w-0 h-11 sm:h-10 py-0 pl-1.5 pr-[18px] sm:pl-2.5 sm:pr-[22px] text-sm text-[#0D2B35] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60 flex-1 sm:flex-none";
+  "appearance-none bg-no-repeat bg-[position:right_5px_center] sm:bg-[position:right_8px_center] @min-[35rem]:bg-[position:right_8px_center] min-w-0 h-11 sm:h-10 @min-[35rem]:h-10 py-0 pl-1.5 pr-[18px] sm:pl-2.5 @min-[35rem]:pl-2.5 sm:pr-[22px] @min-[35rem]:pr-[22px] text-sm text-[#0D2B35] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60 flex-1 sm:flex-none @min-[35rem]:flex-none";
 
 const CHEVRON_STYLE = {
   backgroundImage:
@@ -183,7 +185,7 @@ export default function TimeInput({
         aria-label={label ? undefined : groupLabel}
         aria-describedby={!label && showPartial ? hintId : undefined}
         data-time-partial={showPartial ? "true" : undefined}
-        className="flex gap-1 min-w-0 w-full sm:w-auto items-stretch"
+        className="flex gap-1 min-w-0 w-full sm:w-auto @min-[35rem]:w-auto items-stretch"
       >
         <select
           id={baseId}
@@ -193,7 +195,7 @@ export default function TimeInput({
           required={required}
           onChange={(e) => emit({ hour12: e.target.value })}
           style={CHEVRON_STYLE}
-          className={`${selectBase} min-w-[3.625rem] sm:w-[4.75rem]`}
+          className={`${selectBase} min-w-[3.625rem] sm:w-[4.75rem] @min-[35rem]:w-[4.75rem]`}
         >
           <option value="">Hour</option>
           {HOURS.map((h) => (
@@ -210,7 +212,7 @@ export default function TimeInput({
           required={required}
           onChange={(e) => emit({ minute: e.target.value })}
           style={CHEVRON_STYLE}
-          className={`${selectBase} min-w-[4.5rem] sm:w-[5rem]`}
+          className={`${selectBase} min-w-[4.5rem] sm:w-[5rem] @min-[35rem]:w-[5rem]`}
         >
           <option value="">Minute</option>
           {MINUTES.map((m) => (
@@ -228,7 +230,7 @@ export default function TimeInput({
           required={required}
           onChange={(e) => emit({ meridiem: e.target.value as Meridiem })}
           style={CHEVRON_STYLE}
-          className={`${selectBase} min-w-[4.625rem] sm:w-[5.5rem]`}
+          className={`${selectBase} min-w-[4.625rem] sm:w-[5.5rem] @min-[35rem]:w-[5.5rem]`}
         >
           <option value="">AM/PM</option>
           <option value="AM">AM</option>
@@ -239,7 +241,7 @@ export default function TimeInput({
 
   // sm:w-0 + min-w-full keeps the hint from widening the group and pushing End to a new line.
   const hint = showPartial && (
-        <p id={hintId} className="mt-1 text-[12px] text-amber-800 sm:w-0 sm:min-w-full">
+        <p id={hintId} className="mt-1 text-[12px] text-amber-800 sm:w-0 @min-[35rem]:w-0 sm:min-w-full @min-[35rem]:min-w-full">
           {required
             ? "Pick hour, minute, and AM or PM to set this time."
             : "This time is incomplete. Pick hour, minute, and AM or PM, or clear the hour."}
@@ -248,7 +250,7 @@ export default function TimeInput({
 
   if (!label) {
     return (
-      <div className="min-w-0 w-full sm:w-auto">
+      <div className="min-w-0 w-full sm:w-auto @min-[35rem]:w-auto">
         {selects}
         {hint}
       </div>
@@ -258,7 +260,7 @@ export default function TimeInput({
   return (
     <fieldset
       aria-describedby={showPartial ? hintId : undefined}
-      className="min-w-0 w-full sm:w-auto m-0 p-0 border-0"
+      className="min-w-0 w-full sm:w-auto @min-[35rem]:w-auto m-0 p-0 border-0"
     >
       <legend className={`p-0 ${TIME_LABEL_CLASS[labelVariant]}`}>
         {label}

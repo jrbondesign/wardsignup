@@ -680,20 +680,23 @@ function ExtraTimes({ state, set }: Props) {
             <button
               type="button"
               onClick={() => removeRow(i)}
-              aria-label="Remove time"
+              aria-label={row.label.trim() ? `Remove ${row.label.trim()} time` : `Remove additional time ${i + 1}`}
               className="shrink-0 inline-flex items-center justify-center h-11 w-11 rounded-xl text-[#5A8399] hover:text-red-600 hover:bg-red-50 text-lg leading-none"
             >
               ×
             </button>
           </div>
-          <TimeInput
-            value={row.time}
-            onChange={(v) => updateRow(i, { time: v })}
-            label="Time"
-            labelVariant="micro"
-            ariaLabel={row.label.trim() ? `${row.label} time` : "Additional time"}
-            className={inputCls}
-          />
+          {/* @container so the selects use compact sizing whenever the card is 560px+, like Start and End. */}
+          <div className="@container min-w-0">
+            <TimeInput
+              value={row.time}
+              onChange={(v) => updateRow(i, { time: v })}
+              label="Time"
+              labelVariant="micro"
+              ariaLabel={row.label.trim() ? `${row.label} time` : "Additional time"}
+              className={inputCls}
+            />
+          </div>
         </div>
       ))}
       <button type="button" onClick={addRow} className={linkBtnCls}>

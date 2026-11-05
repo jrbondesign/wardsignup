@@ -300,7 +300,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                 />
                 }
                 after={
-              <div className="sm:w-[5.5rem]">
+              <div className="sm:w-[5.5rem] @min-[35rem]:w-[5.5rem]">
                 <label htmlFor={`session-spots-${index}`} className="block text-[11px] leading-4 font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1">
                   Spots
                 </label>
@@ -328,7 +328,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                   onBlur={() => commitCapacityDraft(index)}
                   onFocus={selectAllSpotsOnFocus}
                   onMouseUp={keepSpotsSelectionOnMouseUp}
-                  className="w-full h-11 sm:h-10 text-sm text-[#0D2B35] px-3 py-0 border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
+                  className="w-full h-11 sm:h-10 @min-[35rem]:h-10 text-sm text-[#0D2B35] px-3 py-0 border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
                 />
               </div>
                 }

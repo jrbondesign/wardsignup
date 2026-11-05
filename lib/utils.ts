@@ -143,8 +143,12 @@ export function switchApproximateMode(args: {
   const { toApproximate, startTime, endTime, memory } = args;
   if (toApproximate) {
     const hasApprox = !!(memory.approxStart.trim() || memory.approxEnd.trim());
-    const nextStart = hasApprox ? memory.approxStart : startTime ? formatTimeEnUs(startTime) : "";
-    const nextEnd = hasApprox ? memory.approxEnd : endTime ? formatTimeEnUs(endTime) : "";
+    // Restore the remembered text only while the picked time is unchanged since the
+    // last switch; a newly picked time shows formatted (e.g. "9:00 PM").
+    const pick = (exact: string, rememberedExact: string, approx: string) =>
+      hasApprox && exact === rememberedExact ? approx : exact ? formatTimeEnUs(exact) : "";
+    const nextStart = pick(startTime, memory.exactStart, memory.approxStart);
+    const nextEnd = pick(endTime, memory.exactEnd, memory.approxEnd);
     return {
       startTime: nextStart,
       endTime: nextEnd,
@@ -181,7 +185,8 @@ export function switchApproximateMode(args: {
   return {
     startTime: start.value,
     endTime: end.value,
-    memory: nextMemory,
+    // Record the exact values this switch produced so a later pick can be detected.
+    memory: { ...nextMemory, exactStart: start.value, exactEnd: end.value },
     note: start.failed || end.failed ? APPROXIMATE_PARSE_NOTE : "",
   };
 }

@@ -14,20 +14,26 @@ function renderRsvp(extraTimes: CreateFormState["extraTimes"]) {
 }
 
 describe("Additional times remove button", () => {
-  it("is named Remove time and removes only its own row", () => {
+  it("gives each Remove a distinct name and removes only its own row", () => {
     const set = renderRsvp([
       { label: "Meet at church", time: "17:30" },
       { label: "Dinner", time: "18:00" },
+      { label: "  ", time: "" },
     ]);
-    const buttons = screen.getAllByRole("button", { name: "Remove time" });
-    expect(buttons).toHaveLength(2);
-    fireEvent.click(buttons[1]);
-    expect(set).toHaveBeenCalledWith({ extraTimes: [{ label: "Meet at church", time: "17:30" }] });
+    expect(screen.getByRole("button", { name: "Remove Meet at church time" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Remove additional time 3" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove Dinner time" }));
+    expect(set).toHaveBeenCalledWith({
+      extraTimes: [
+        { label: "Meet at church", time: "17:30" },
+        { label: "  ", time: "" },
+      ],
+    });
   });
 
   it("sits on the label line, outside the time selects group", () => {
     renderRsvp([{ label: "", time: "" }]);
-    const button = screen.getByRole("button", { name: "Remove time" });
+    const button = screen.getByRole("button", { name: "Remove additional time 1" });
     const group = screen.getByRole("group", { name: "Time" });
     expect(group.contains(button)).toBe(false);
     // Same line as the label input, so the 44px target never covers AM/PM.
