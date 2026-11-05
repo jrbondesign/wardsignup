@@ -1,3 +1,4 @@
+import { isEndSameAsStart, isOvernightRange, normalizeHHMM, rangeMinutes } from "@/lib/calendar-times";
 /**
  * Format a "HH:mm" (or "HH:mm:ss") time string for display using the runtime
  * default locale. Hour cycle (12h vs 24h) follows the device/browser locale —
@@ -27,12 +28,41 @@ export function formatTimeEnUs(time: string): string {
   return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-/** Locale-aware range like "1:00 PM – 2:00 PM" or "13:00 – 14:00" per device. */
-export function formatTimeRange(start: string, end?: string | null): string {
+/** Shown after an overnight range. The no-break space keeps "(next day)" on one line. */
+export const NEXT_DAY_SUFFIX = " (next\u00A0day)";
+
+export type TimeRangeOptions = {
+  /** Multi-day RSVP (event_end_date after the session date): the range spans the event, so no "(next day)". */
+  multiDay?: boolean;
+};
+
+/** " (next day)" when End is earlier than Start (and the event isn't multi-day), else "". */
+export function nextDaySuffix(
+  start: string | null | undefined,
+  end: string | null | undefined,
+  options?: TimeRangeOptions,
+): string {
+  return !options?.multiDay && isOvernightRange(start, end) ? NEXT_DAY_SUFFIX : "";
+}
+
+/** End time label note: "(next day)" for an overnight range, else the usual note. */
+export function endTimeNote(
+  start: string | null | undefined,
+  end: string | null | undefined,
+  fallback = "(optional)",
+): string {
+  return isOvernightRange(start, end) ? "(next day)" : fallback;
+}
+
+/**
+ * Locale-aware range like "1:00 PM to 2:00 PM" or "13:00 to 14:00" per device.
+ * An End earlier than Start ends the next day: "10:00 PM to 1:00 AM (next day)".
+ */
+export function formatTimeRange(start: string, end?: string | null, options?: TimeRangeOptions): string {
   const a = formatTime(start);
   const endTrim = end?.trim() ?? "";
   if (!endTrim) return a;
-  return `${a} – ${formatTime(endTrim)}`;
+  return `${a} to ${formatTime(endTrim)}${nextDaySuffix(start, endTrim, options)}`;
 }
 
 /**
@@ -201,8 +231,42 @@ export function startTimePanelError(time: string, hasPartial: boolean): string |
   return null;
 }
 
-/** Items page time errors, shown next to the time fields instead of the page banner. */
-export const ITEMS_TIME_ORDER_ERROR = "End time must be after start time.";
+/**
+ * Items page time errors, shown next to the time fields instead of the page banner.
+ * End earlier than Start is allowed (it ends the next day); only End equal to
+ * Start is rejected.
+ */
+export const ITEMS_TIME_ORDER_ERROR = "End time can't be the same as start time.";
+/** Same message on create, so create and edit read alike. */
+export const TIME_ORDER_ERROR = ITEMS_TIME_ORDER_ERROR;
+export { isEndSameAsStart, isOvernightRange, spansMultipleDays } from "@/lib/calendar-times";
+/**
+ * Tithing appointment windows are split into same-day slots, so they can't run
+ * past midnight. Shown under End time in the edit reschedule panel.
+ */
+export const TITHING_WINDOW_ORDER_ERROR =
+  "Appointment hours can't run past midnight. Pick an end time after the start time.";
+export const TITHING_NO_SLOTS_ERROR = "No appointment slots fit these dates and days, so nothing was changed.";
+export const TITHING_END_REQUIRED_ERROR = "Choose an end time for the appointment hours.";
+export function tithingWindowTooShortError(durationMinutes: number): string {
+  return `Appointment hours are shorter than one ${durationMinutes} minute appointment. Pick a later end time or a shorter length.`;
+}
+/**
+ * Inline End time message for a tithing appointment window, or null when the
+ * window can be split into at least one appointment. Each case would otherwise
+ * generate 0 slots and replace the whole schedule. A missing start is left to
+ * the Start time check.
+ */
+export function tithingWindowError(start: string, end: string, durationMinutes: number): string | null {
+  if (!normalizeHHMM(start)) return null;
+  if (!normalizeHHMM(end)) return TITHING_END_REQUIRED_ERROR;
+  if (isEndSameAsStart(start, end)) return TIME_ORDER_ERROR;
+  if (isOvernightRange(start, end)) return TITHING_WINDOW_ORDER_ERROR;
+  if (durationMinutes > 0 && (rangeMinutes(start, end) ?? 0) < durationMinutes) {
+    return tithingWindowTooShortError(durationMinutes);
+  }
+  return null;
+}
 export const ITEMS_TIME_PARTIAL_ERROR = "Finish choosing hour, minute, and AM or PM.";
 export function isItemsTimeError(message: string): boolean {
   return message === ITEMS_TIME_ORDER_ERROR || message === ITEMS_TIME_PARTIAL_ERROR;

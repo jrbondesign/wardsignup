@@ -2,7 +2,7 @@
 
 import SignupCaptcha from "@/components/event/SignupCaptcha";
 import { DAYS } from "@/components/event/event-page-shared";
-import { formatTime } from "@/lib/utils";
+import { formatTime, nextDaySuffix, spansMultipleDays } from "@/lib/utils";
 import EmailTypoHint from "@/components/EmailTypoHint";
 import { signerEmailHint } from "@/lib/reminder-copy";
 import EmailNudgePrompt from "@/components/EmailNudgePrompt";
@@ -14,6 +14,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
   const {
     allowGuests,
     error,
+    event,
     formData,
     guestNameFields,
     emailInputRef,
@@ -60,7 +61,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
                         return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                       })()
                     : DAYS[session.day_of_week]}
-                  {" · "}{formatTime(session.time)}{session.end_time ? ` – ${formatTime(session.end_time)}` : ""}
+                  {" · "}{formatTime(session.time)}{session.end_time ? ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time, { multiDay: spansMultipleDays(session.session_date, event.event_end_date) })}` : ""}
                 </div>
               );
             })}

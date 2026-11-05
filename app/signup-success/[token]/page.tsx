@@ -10,85 +10,17 @@ import {
   readSignupSuccessRaw,
   type SignupSuccessInfo,
 } from "@/lib/signup-success-handoff";
+import { hasSignupCalendar, signupGoogleCalendarUrl, signupIcs } from "@/lib/signup-success-calendar";
 
 type SignupInfo = SignupSuccessInfo;
 
 const noopSubscribe = () => () => {};
 
-// e.g. "17:00" → "18:00"
-function addOneHour(time: string): string {
-  const [h, m] = time.split(":").map(Number);
-  return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
-// "2026-04-18" + "17:00" → "20260418T170000"
-function toCalDate(date: string, time: string): string {
-  return date.replace(/-/g, "") + "T" + time.replace(":", "") + "00";
-}
-
-function isMultiDay(info: SignupInfo): boolean {
-  return Boolean(
-    info.session_date &&
-      info.event_end_date &&
-      /^\d{4}-\d{2}-\d{2}$/.test(info.event_end_date) &&
-      info.event_end_date > info.session_date,
-  );
-}
-
-function buildGoogleCalendarUrl(info: SignupInfo): string {
-  if (!info.session_date || !info.session_time) return "";
-  const start = toCalDate(info.session_date, info.session_time);
-  const endTime = info.session_end_time || addOneHour(info.session_time);
-  const end = toCalDate(info.session_date, endTime);
-  const params = new URLSearchParams({
-    action: "TEMPLATE",
-    text: info.campaign_name,
-    dates: `${start}/${end}`,
-    details: `Sign up or manage your spot: ${info.event_url}`,
-  });
-  // Multi-day events: emit a daily recurrence rule so Google creates one event
-  // per day with the same start/end time across the range.
-  if (isMultiDay(info) && info.event_end_date) {
-    const untilDate = info.event_end_date.replace(/-/g, "");
-    params.set("recur", `RRULE:FREQ=DAILY;UNTIL=${untilDate}T235959Z`);
-  }
-  return `https://calendar.google.com/calendar/render?${params.toString()}`;
-}
+const buildGoogleCalendarUrl = signupGoogleCalendarUrl;
 
 function downloadIcal(info: SignupInfo) {
-  if (!info.session_date || !info.session_time) return;
-  const tz = info.event_timezone;
-  const endTime = info.session_end_time || addOneHour(info.session_time);
-  const start = toCalDate(info.session_date, info.session_time);
-  const end = toCalDate(info.session_date, endTime);
-  const dtStart = tz ? `DTSTART;TZID=${tz}:${start}` : `DTSTART:${start}`;
-  const dtEnd = tz ? `DTEND;TZID=${tz}:${end}` : `DTEND:${end}`;
-  const uid = `${info.session_date}-${info.session_time}@wardsignup.com`.replace(/[^a-zA-Z0-9@.-]/g, "-");
-
-  // Multi-day events: a single VEVENT with RRULE:FREQ=DAILY;UNTIL=… renders as
-  // one repeating series in Apple/Google/Outlook calendars (rather than N
-  // separate imports, which Apple Calendar groups awkwardly across days).
-  const rrule = isMultiDay(info) && info.event_end_date
-    ? [`RRULE:FREQ=DAILY;UNTIL=${info.event_end_date.replace(/-/g, "")}T235959Z`]
-    : [];
-
-  const ics = [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//Ward Signup//EN",
-    "CALSCALE:GREGORIAN",
-    "METHOD:PUBLISH",
-    "BEGIN:VEVENT",
-    dtStart,
-    dtEnd,
-    ...rrule,
-    `SUMMARY:${info.campaign_name}`,
-    `DESCRIPTION:Sign up or manage your spot: ${info.event_url}`,
-    `URL:${info.event_url}`,
-    `UID:${uid}`,
-    "END:VEVENT",
-    "END:VCALENDAR",
-  ].join("\r\n");
+  const ics = signupIcs(info);
+  if (!ics) return;
 
   const blob = new Blob([ics], { type: "text/calendar;charset=utf-8" });
   const url = URL.createObjectURL(blob);
@@ -191,7 +123,7 @@ export default function SignupSuccessPage() {
             </div>
 
             {/* Add to calendar */}
-            {state.info.session_date && (
+            {hasSignupCalendar(state.info) && (
               <div className="mb-4">
                 <p className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-2">Add to calendar</p>
                 <div className="grid grid-cols-2 gap-2">

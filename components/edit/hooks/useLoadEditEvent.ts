@@ -25,6 +25,7 @@ export function useLoadEditEvent(ctx: EditEventState) {
     setError,
     setEventDescription,
     setEventName,
+    setEventEndDate,
     setEventTimezone,
     setInstantEnabled,
     setInviteLeader,
@@ -185,6 +186,7 @@ export function useLoadEditEvent(ctx: EditEventState) {
         setEventName(loadedName);
         setEventDescription(loadedDesc);
         setEventTimezone(loadedTz);
+        setEventEndDate(typeof (event as any).event_end_date === "string" ? (event as any).event_end_date : null);
         setCoverUrl((event as any).cover_image_url ?? null);
           setCoverPosition((event as any).cover_position ?? null);
 

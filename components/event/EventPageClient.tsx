@@ -1,5 +1,6 @@
 "use client";
 
+import { sessionLastDate } from "@/lib/calendar-times";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import Link from "next/link";
 import Image from "next/image";
@@ -183,7 +184,7 @@ export default function EventPageClient({ eventId, initialPage, initialLoadedAt,
                   today.setHours(0, 0, 0, 0);
                   const allPast = sessions.every((s) => {
                     if (!s.session_date) return false;
-                    const [y, m, d] = s.session_date.split("-").map(Number);
+                    const [y, m, d] = sessionLastDate(s.session_date, s.time, s.end_time).split("-").map(Number);
                     return new Date(y, m - 1, d) < today;
                   });
                   if (allPast) return "This event has ended. All slots have passed.";

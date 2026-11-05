@@ -21,8 +21,11 @@ import {
   SPOTS_SCHEDULE_FIELDS,
   ITEMS_LIST_FIELDS,
   discardedFieldsOnSwitch,
+  cleanExtraTimesForSave,
+  createTimeOrderIssue,
   type CreateFormState,
 } from "@/lib/create-form-state";
+import { focusTimeRow } from "@/lib/utils";
 import { generateSpotsSessions } from "@/lib/spots-session-generator";
 import { applyPreset, getAlternateRsvpDescription } from "@/lib/event-presets";
 import { getEventTemplate, type TemplateKey } from "@/lib/event-template-data";
@@ -291,6 +294,13 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
         return;
       }
     }
+    // End can't equal Start (earlier means next day). The message shows inline under End time,
+    // like edit; move focus to the End hour.
+    const orderIssue = createTimeOrderIssue(state);
+    if (orderIssue) {
+      focusTimeRow(orderIssue.rowId, 3);
+      return;
+    }
     let plannedSpotsSessions: ReturnType<typeof generateSpotsSessions> = [];
     if (state.eventType === "spots") {
       if (state.spotsDateMode === "range") {
@@ -370,9 +380,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
 
       // PATCH event-level extras (event_date / event_times / event_locations,
       // visibility flags, organizer notification prefs).
-      const cleanExtraTimes = state.extraTimes
-        .map((t) => ({ label: t.label.trim(), time: t.time.trim() }))
-        .filter((t) => t.label && t.time);
+      const cleanExtraTimes = cleanExtraTimesForSave(state.extraTimes);
       const cleanExtraLocations = state.extraLocations
         .map((l) => ({ label: l.label.trim(), address: l.address.trim() }))
         .filter((l) => l.label || l.address);

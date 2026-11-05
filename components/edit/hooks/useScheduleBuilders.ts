@@ -1,7 +1,7 @@
 "use client";
 
 import { SessionData, resolveSpotsDraft, scrollToEditSection } from "@/components/edit/edit-page-shared";
-import { focusTimeRow, startTimePanelError } from "@/lib/utils";
+import { focusTimeRow, startTimePanelError, TITHING_NO_SLOTS_ERROR, tithingWindowError } from "@/lib/utils";
 import { generateTithingDeclarationSessions } from "@/lib/tithing-reschedule";
 import { type EditEventState } from "./useEditEventState";
 import { type EditEventSettings } from "./useEditEventSettings";
@@ -114,6 +114,16 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
   const applyReschedule = () => {
     if (!rescheduleStart || !rescheduleEnd) return;
     if (!requireStartTime(rescheduleTime, "edit-reschedule-time", () => setShowReschedule(true))) return;
+    // Tithing appointments split one same-day window into fixed slots. A
+    // missing, equal, overnight or too short window would generate 0 slots
+    // and replace the schedule with nothing, so stop here. The reason is shown
+    // under End time (tithingWindowError); move focus there.
+    if (isTithingReschedule && tithingWindowError(rescheduleTime, rescheduleEndTime, tithingDuration)) {
+      setShowReschedule(true);
+      scrollToEditSection("edit-reschedule-time");
+      setTimeout(() => focusTimeRow("edit-reschedule-time", 3), 0);
+      return;
+    }
     if (signupCount > 0) {
       setShowRescheduleConfirm(true);
       return;
@@ -124,6 +134,13 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
   const commitReschedule = () => {
     if (!rescheduleStart || !rescheduleEnd) return;
     if (!requireStartTime(rescheduleTime, "edit-reschedule-time", () => setShowReschedule(true))) return;
+    // Same guard as applyReschedule (the confirm dialog calls this directly).
+    if (isTithingReschedule && tithingWindowError(rescheduleTime, rescheduleEndTime, tithingDuration)) {
+      setShowReschedule(true);
+      scrollToEditSection("edit-reschedule-time");
+      setTimeout(() => focusTimeRow("edit-reschedule-time", 3), 0);
+      return;
+    }
     if (signupCount > 0) {
       // Reschedule confirm already warned; don't double-confirm on save.
       allowDestructiveDeletesOnceRef.current = true;
@@ -173,6 +190,14 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
           }
           return s;
         })();
+
+    // Never replace a tithing schedule with nothing (for example, no chosen
+    // weekday falls in the range). Apply is disabled for this, so this is a backstop.
+    if (isTithingReschedule && newSessions.length === 0) {
+      setShowReschedule(true);
+      setError(TITHING_NO_SLOTS_ERROR);
+      return;
+    }
 
     setTithingCapacity(tCap);
     setRescheduleCapacity(rCap);

@@ -6,7 +6,7 @@ import Link from "next/link";
 import QRCode from "qrcode";
 import { supabase, getPublicCampaignById, getPublicDirectorySlugForCampaign } from "@/lib/supabase";
 import type { Session, CampaignItemWithSignups } from "@/lib/types";
-import { formatTime } from "@/lib/utils";
+import { formatTime, nextDaySuffix, spansMultipleDays } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
 import { usePublicCover } from "@/lib/use-public-cover";
@@ -289,6 +289,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
             showCapacityPublicly={showCapacityPublicly}
             sessionHeadcount={sessionHeadcount}
             isRsvp={eventType === "rsvp"}
+            eventEndDate={event?.event_end_date ?? null}
           />
         )}
 
@@ -556,11 +557,13 @@ function SessionsList({
   showCapacityPublicly,
   sessionHeadcount,
   isRsvp,
+  eventEndDate,
 }: {
   sessions: SessionWithSignups[];
   showCapacityPublicly: boolean;
   sessionHeadcount: (s: SessionWithSignups) => number;
   isRsvp: boolean;
+  eventEndDate: string | null;
 }) {
   if (sessions.length === 0) return null;
 
@@ -586,7 +589,7 @@ function SessionsList({
               })()
             : DAYS[s.day_of_week];
           const timeStr =
-            formatTime(s.time) + (s.end_time ? ` – ${formatTime(s.end_time)}` : "");
+            formatTime(s.time) + (s.end_time ? ` to ${formatTime(s.end_time)}${nextDaySuffix(s.time, s.end_time, { multiDay: spansMultipleDays(s.session_date, eventEndDate) })}` : "");
 
           return (
             <div key={s.id} className="flyer-session">

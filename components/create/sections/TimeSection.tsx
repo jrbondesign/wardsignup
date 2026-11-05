@@ -5,8 +5,19 @@ import TimeInput, { TimeRangeRow, TimeTextLabel } from "@/components/TimeInput";
 import DateRangePicker from "@/components/DateRangePicker";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
 import SlotEditor, { type SlotRow } from "@/components/create/SlotEditor";
-import type { CreateFormState, LabeledTime } from "@/lib/create-form-state";
 import {
+  CREATE_EVENT_TIMES_ROW_ID,
+  CREATE_SPOTS_TIMES_ROW_ID,
+  createSpotsWindowRowId,
+  createTimeOrderIssue,
+  isMultiDayRsvp,
+  type CreateFormState,
+  type LabeledTime,
+} from "@/lib/create-form-state";
+import {
+  TIME_ORDER_ERROR,
+  isEndSameAsStart,
+  isOvernightRange,
   EMPTY_APPROXIMATE_TIME_MEMORY,
   type ApproximateTimeMemory,
   switchApproximateMode,
@@ -296,6 +307,7 @@ function SpotsTime({ state, set }: Props) {
                           </button>
                         </div>
                         <TimeRangeRow
+                          id={createSpotsWindowRowId(p.id)}
                           start={
                             <TimeInput
                               value={p.start}
@@ -312,8 +324,9 @@ function SpotsTime({ state, set }: Props) {
                               value={p.end}
                               onChange={(v) => updatePickedDate(p.id, { end: v })}
                               label="End time"
-                              labelNote="(optional)"
+                              labelNote={isOvernightRange(p.start, p.end) ? "(next day)" : "(optional)"}
                               ariaLabel={`End time for ${label}`}
+                              error={isEndSameAsStart(p.start, p.end) ? TIME_ORDER_ERROR : undefined}
                               className={inputCls}
                             />
                           }
@@ -371,6 +384,7 @@ function SpotsTime({ state, set }: Props) {
 
       {!isSpecific && (
         <TimeRangeRow
+          id={CREATE_SPOTS_TIMES_ROW_ID}
           start={
             <TimeInput
               value={state.spotsStartTime}
@@ -386,7 +400,8 @@ function SpotsTime({ state, set }: Props) {
               value={state.spotsEndTime}
               onChange={(v) => set({ spotsEndTime: v })}
               label="End time"
-              labelNote="(optional)"
+              labelNote={isOvernightRange(state.spotsStartTime, state.spotsEndTime) ? "(next day)" : "(optional)"}
+              error={isEndSameAsStart(state.spotsStartTime, state.spotsEndTime) ? TIME_ORDER_ERROR : undefined}
               className={inputCls}
             />
           }
@@ -555,6 +570,7 @@ function TimeFields({ state, set }: Props) {
       {state.hasTime && (
         <>
           <TimeRangeRow
+            id={CREATE_EVENT_TIMES_ROW_ID}
             start={
               useApprox ? (
                 <div className="min-w-0 w-full sm:w-auto sm:flex-1">
@@ -599,7 +615,8 @@ function TimeFields({ state, set }: Props) {
                   value={state.endTime}
                   onChange={(v) => set({ endTime: v })}
                   label="End time"
-                  labelNote="(optional)"
+                  labelNote={!isMultiDayRsvp(state) && isOvernightRange(state.startTime, state.endTime) ? "(next day)" : "(optional)"}
+                  error={createTimeOrderIssue(state)?.rowId === CREATE_EVENT_TIMES_ROW_ID ? TIME_ORDER_ERROR : undefined}
                   className={inputCls}
                 />
               )
