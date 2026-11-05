@@ -1,6 +1,7 @@
 "use client";
 
 import { SessionData, resolveSpotsDraft, scrollToEditSection } from "@/components/edit/edit-page-shared";
+import { focusTimeRow, startTimePanelError } from "@/lib/utils";
 import { generateTithingDeclarationSessions } from "@/lib/tithing-reschedule";
 import { type EditEventState } from "./useEditEventState";
 import { type EditEventSettings } from "./useEditEventSettings";
@@ -88,8 +89,31 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
     }
   };
 
+
+  const timePanelHasPartial = (elementId: string) => {
+    if (typeof document === "undefined") return false;
+    const el = document.getElementById(elementId);
+    if (!el) return false;
+    // Panels use nativeValidity={false}, so check the data flag instead of :invalid.
+    return !!el.querySelector('[data-time-partial="true"]');
+  };
+
+  const requireStartTime = (time: string, panelId: string, open: () => void) => {
+    const message = startTimePanelError(time, timePanelHasPartial(panelId));
+    if (message) {
+      open();
+      setError(message);
+      scrollToEditSection(panelId);
+      // Focus the unfinished select (or Hour when empty) once the panel has rendered.
+      setTimeout(() => focusTimeRow(panelId), 0);
+      return false;
+    }
+    return true;
+  };
+
   const applyReschedule = () => {
     if (!rescheduleStart || !rescheduleEnd) return;
+    if (!requireStartTime(rescheduleTime, "edit-reschedule-time", () => setShowReschedule(true))) return;
     if (signupCount > 0) {
       setShowRescheduleConfirm(true);
       return;
@@ -99,6 +123,7 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
 
   const commitReschedule = () => {
     if (!rescheduleStart || !rescheduleEnd) return;
+    if (!requireStartTime(rescheduleTime, "edit-reschedule-time", () => setShowReschedule(true))) return;
     if (signupCount > 0) {
       // Reschedule confirm already warned; don't double-confirm on save.
       allowDestructiveDeletesOnceRef.current = true;
@@ -196,6 +221,7 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
       scrollToEditSection("edit-bulk-days");
       return;
     }
+    if (!requireStartTime(bulkTime, "edit-bulk-time", () => setShowBulk(true))) return;
 
     const bCap = resolveSpotsDraft(bulkCapacityDraft, bulkCapacity);
 
@@ -288,6 +314,7 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
       scrollToEditSection("edit-individual-date");
       return;
     }
+    if (!requireStartTime(newSessionTime, "edit-individual-time", () => setShowAddSession(true))) return;
     setError(null);
 
     let dow = newSessionDayOfWeek;

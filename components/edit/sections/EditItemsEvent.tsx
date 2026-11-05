@@ -1,12 +1,18 @@
 "use client";
-
+import { useRef, useState } from "react";
+import {
+  EMPTY_APPROXIMATE_TIME_MEMORY,
+  type ApproximateTimeMemory,
+  switchApproximateMode,
+} from "@/lib/utils";
 import Navigation from "@/components/Navigation";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import Link from "next/link";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import { COVER_SIZE_HINT, coverObjectPosition } from "@/lib/cover-position";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
-import TimeInput from "@/components/TimeInput";
+import TimeInput, { TimeRangeRow, TimeTextLabel } from "@/components/TimeInput";
+import { ITEMS_TIME_PARTIAL_ERROR, isItemsTimeError } from "@/lib/utils";
 import ItemsSection from "@/components/create/sections/ItemsSection";
 import { INITIAL_FORM_STATE } from "@/lib/create-form-state";
 import { type EditEventCtx } from "@/components/edit/hooks/useEditEvent";
@@ -43,6 +49,9 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
     setItemsList,
   } = ctx;
 
+  const approxMemoryRef = useRef<ApproximateTimeMemory>({ ...EMPTY_APPROXIMATE_TIME_MEMORY });
+  const [approxNote, setApproxNote] = useState("");
+
   const filledItems = itemsList.filter((it) => it.label.trim());
   return (
     <>
@@ -66,7 +75,7 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
             Back to event
           </Link>
-          {itemsError && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm">{itemsError}</div>}
+          {itemsError && !isItemsTimeError(itemsError) && <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-5 text-sm">{itemsError}</div>}
           {/* Event details */}
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden mb-4">
             <div className="p-4 md:p-8">
@@ -157,53 +166,82 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
               <div>
                 <label className="inline-flex items-center gap-2 cursor-pointer mb-2 select-none">
                   <input type="checkbox" checked={itemsApproximateTime}
-                    onChange={(e) => setItemsApproximateTime(e.target.checked)}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      const result = switchApproximateMode({
+                        toApproximate: next,
+                        startTime: itemsEventStartTime,
+                        endTime: itemsEventEndTime,
+                        memory: approxMemoryRef.current,
+                      });
+                      approxMemoryRef.current = result.memory;
+                      setApproxNote(result.note);
+                      setItemsEventStartTime(result.startTime);
+                      setItemsEventEndTime(result.endTime);
+                      setItemsApproximateTime(next);
+                      setItemsError("");
+                    }}
                     className="w-4 h-4 rounded border-[rgba(14,150,176,0.4)] text-[#0E96B0] focus:ring-[#0E96B0]"
                     disabled={itemsSaving} />
                   <span className="text-[12px] font-medium text-[#2E5566]">
-                    Approximate time <span className="text-[#5A8399] font-normal">(use plain text like &quot;around 9–10am&quot;)</span>
+                    Approximate time <span className="text-[#5A8399] font-normal">(use plain text like &quot;around 9 to 10am&quot;)</span>
                   </span>
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="min-w-0">
-                    <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">Start Time <span className="font-normal text-[#5A8399]">(optional)</span></label>
-                    {itemsApproximateTime ? (
-                      <input type="text" value={itemsEventStartTime}
-                        onChange={(e) => { setItemsEventStartTime(e.target.value); setItemsError(""); }}
-                        placeholder="e.g. around 9am" maxLength={100}
-                        className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
-                        disabled={itemsSaving} />
+                {approxNote ? (
+                  <p className="mb-2 text-[12px] text-amber-800">{approxNote}</p>
+                ) : null}
+                <TimeRangeRow
+                  id="edit-items-times"
+                  start={
+                    itemsApproximateTime ? (
+                      <div className="min-w-0 w-full sm:w-auto sm:flex-1">
+                        <TimeTextLabel htmlFor="items-start-text" label="Start time" labelNote="(optional)" />
+                        <input id="items-start-text" type="text" value={itemsEventStartTime}
+                          onChange={(e) => { setItemsEventStartTime(e.target.value); setItemsError(""); }}
+                          placeholder="e.g. around 9am" maxLength={100}
+                          className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
+                          disabled={itemsSaving} />
+                      </div>
                     ) : (
                       <TimeInput value={itemsEventStartTime}
                         onChange={(v) => { setItemsEventStartTime(v); setItemsError(""); }}
+                        label="Start time"
+                        labelNote="(optional)"
                         disabled={itemsSaving}
                         className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70" />
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">End Time <span className="font-normal text-[#5A8399]">(optional)</span></label>
-                    {itemsApproximateTime ? (
-                      <input type="text" value={itemsEventEndTime}
-                        onChange={(e) => { setItemsEventEndTime(e.target.value); setItemsError(""); }}
-                        placeholder="e.g. by lunchtime" maxLength={100}
-                        className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
-                        disabled={itemsSaving} />
+                    )
+                  }
+                  end={
+                    itemsApproximateTime ? (
+                      <div className="min-w-0 w-full sm:w-auto sm:flex-1">
+                        <TimeTextLabel htmlFor="items-end-text" label="End time" labelNote="(optional)" />
+                        <input id="items-end-text" type="text" value={itemsEventEndTime}
+                          onChange={(e) => { setItemsEventEndTime(e.target.value); setItemsError(""); }}
+                          placeholder="e.g. by lunchtime" maxLength={100}
+                          className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70"
+                          disabled={itemsSaving} />
+                      </div>
                     ) : (
                       <TimeInput value={itemsEventEndTime}
                         onChange={(v) => { setItemsEventEndTime(v); setItemsError(""); }}
-                        placeholder="e.g. 5pm"
+                        label="End time"
+                        labelNote="(optional)"
                         disabled={itemsSaving}
                         className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70" />
-                    )}
-                  </div>
-                </div>
+                    )
+                  }
+                />
+                {/* The partial time case already shows its hint under the field and gets focus. */}
+                {itemsError && isItemsTimeError(itemsError) && itemsError !== ITEMS_TIME_PARTIAL_ERROR ? (
+                  <p role="alert" className="mt-2 text-[13px] text-red-700">{itemsError}</p>
+                ) : null}
               </div>
             </div>
           </div>
           {/* Items */}
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-4 md:p-8">
             <h2 className="font-serif text-[22px] text-[#0D2B35] mb-2">Items</h2>
-            <p className="text-[15px] text-[#5A8399] mb-7">List the things people can claim — a dish to bring, a job to do, anything goes. Each item is Unlimited by default; switch to a numeric cap to limit signups.</p>
+            <p className="text-[15px] text-[#5A8399] mb-7">List the things people can claim, like a dish to bring, a job to do, anything goes. Each item is Unlimited by default; switch to a numeric cap to limit signups.</p>
             <ItemsSection
               state={{
                 ...INITIAL_FORM_STATE,
