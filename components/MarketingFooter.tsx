@@ -34,6 +34,11 @@ export default function MarketingFooter() {
             </Link>
           )}
           {isWardBrand && (
+            <Link href="/use-cases/ward-christmas-party" className="text-[13px] text-white/40 hover:text-white/78 transition-colors no-underline">
+              Christmas Party Signup
+            </Link>
+          )}
+          {isWardBrand && (
             <Link href="/ad-free" className="text-[13px] text-white/40 hover:text-white/78 transition-colors no-underline">
               Ad free sheets
             </Link>
