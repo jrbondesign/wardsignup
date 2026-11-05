@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useMemo } from "react";
+import { useEffect, useId, useState } from "react";
 
 interface TimeInputProps {
   value: string;
@@ -76,16 +76,29 @@ export default function TimeInput({
 }: TimeInputProps) {
   const autoId = useId();
   const baseId = id || autoId;
-  const parts = useMemo(() => hhmmToParts(value), [value]);
+  // Local parts so clearing hour or minute mid-edit does not wipe the other.
+  const [parts, setParts] = useState<TimeParts>(() => hhmmToParts(value));
+
+  useEffect(() => {
+    const current = partsToHhmm(parts.hour12, parts.minute, parts.meridiem);
+    if (value !== current) {
+      setParts(hhmmToParts(value));
+    }
+    // Only re-sync when the parent canonical value changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- parts intentionally omitted
+  }, [value]);
 
   const fieldCls = [className, "!w-auto flex-1 min-w-0"].filter(Boolean).join(" ");
   const meridiemCls = [className, "!w-auto flex-none min-w-[4.5rem]"].filter(Boolean).join(" ");
 
   const emit = (next: Partial<TimeParts>) => {
-    const hour12 = next.hour12 !== undefined ? next.hour12 : parts.hour12;
-    const minute = next.minute !== undefined ? next.minute : parts.minute;
-    const meridiem = next.meridiem !== undefined ? next.meridiem : parts.meridiem;
-    const hhmm = partsToHhmm(hour12, minute, meridiem);
+    const merged: TimeParts = {
+      hour12: next.hour12 !== undefined ? next.hour12 : parts.hour12,
+      minute: next.minute !== undefined ? next.minute : parts.minute,
+      meridiem: next.meridiem !== undefined ? next.meridiem : parts.meridiem,
+    };
+    setParts(merged);
+    const hhmm = partsToHhmm(merged.hour12, merged.minute, merged.meridiem);
     if (hhmm !== value) onChange(hhmm);
   };
 

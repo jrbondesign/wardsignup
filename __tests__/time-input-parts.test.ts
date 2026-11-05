@@ -43,3 +43,11 @@ describe("partsToHhmm", () => {
     }
   });
 });
+
+describe("partial edit semantics", () => {
+  it("keeps a complete value when only meridiem would change incomplete parts", () => {
+    // Documented contract: incomplete hour/minute always maps to "".
+    expect(partsToHhmm("4", "", "PM")).toBe("");
+    expect(partsToHhmm("", "30", "PM")).toBe("");
+  });
+});
