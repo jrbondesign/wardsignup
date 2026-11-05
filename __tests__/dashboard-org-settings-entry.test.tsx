@@ -4,7 +4,7 @@
  * Also covers the matching link in the navigation drawer and the dashboard
  * header wiring (subtitle and gear removed, New Event filled primary).
  */
-import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 const capture = jest.fn();
@@ -333,5 +333,71 @@ describe("Dashboard ward line", () => {
     expect(screen.queryByTestId("org-ward-placeholder")).not.toBeInTheDocument();
     expect(screen.queryByTestId("org-ward-add")).not.toBeInTheDocument();
     expect(wardQueries).toBe(0);
+  });
+});
+
+describe("Dashboard card More sheet", () => {
+  function renderDashboard() {
+    return render(
+      <BrandProvider brand={getDefaultPublicBrand()}>
+        <DashboardPage />
+      </BrandProvider>
+    );
+  }
+
+  beforeEach(() => {
+    rpcResult = {
+      data: {
+        org: { id: "org1", name: "Ward From RPC", needs_naming: false, brand_id: "wardsignup" },
+        events: [
+          {
+            id: "e9",
+            name: "Temple Night",
+            created_at: "2026-10-01T00:00:00Z",
+            event_type: "spots",
+            event_date: null,
+            event_dates: null,
+            session_dates: ["2026-11-01"],
+            total_capacity: 10,
+            total_signups: 4,
+            item_count: 0,
+            item_signups: 0,
+            unclaimed_items: 0,
+          },
+        ],
+      },
+      error: null,
+    };
+  });
+
+  it("uses a 44px labelled three dot button that opens the grouped sheet and returns focus", async () => {
+    mockOrgList(1);
+    renderDashboard();
+    const more = await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 });
+    expect(more).toHaveClass("size-11");
+    expect(more).toHaveAttribute("aria-haspopup", "dialog");
+    more.focus();
+    fireEvent.click(more);
+    const dialog = screen.getByRole("dialog", { name: "Temple Night" });
+    expect(dialog).toHaveAccessibleDescription("Sunday, November 1 · 4 of 10 spots filled");
+    for (const g of ["Edit", "Share", "Manage"]) expect(within(dialog).getByRole("group", { name: g })).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: /Edit event/ })).toHaveAttribute("href", "/edit/e9");
+    expect(within(dialog).queryByText("Add cover photo")).not.toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(more).toHaveFocus();
+    await flush();
+  });
+
+  it("Delete event asks first with Keep event and Delete event", async () => {
+    mockOrgList(1);
+    renderDashboard();
+    fireEvent.click(await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /Delete event/ }));
+    const confirm = screen.getByRole("alertdialog", { name: "Delete Temple Night?" });
+    expect(within(confirm).getByRole("button", { name: "Keep event" })).toHaveFocus();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Keep event" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await flush();
   });
 });
