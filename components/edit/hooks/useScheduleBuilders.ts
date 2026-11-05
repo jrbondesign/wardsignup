@@ -1,7 +1,7 @@
 "use client";
 
 import { SessionData, resolveSpotsDraft, scrollToEditSection } from "@/components/edit/edit-page-shared";
-import { startTimePanelError } from "@/lib/utils";
+import { focusTimeRow, startTimePanelError } from "@/lib/utils";
 import { generateTithingDeclarationSessions } from "@/lib/tithing-reschedule";
 import { type EditEventState } from "./useEditEventState";
 import { type EditEventSettings } from "./useEditEventSettings";
@@ -104,6 +104,8 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
       open();
       setError(message);
       scrollToEditSection(panelId);
+      // Focus the unfinished select (or Hour when empty) once the panel has rendered.
+      setTimeout(() => focusTimeRow(panelId), 0);
       return false;
     }
     return true;

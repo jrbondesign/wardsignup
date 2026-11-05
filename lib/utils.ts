@@ -108,6 +108,9 @@ export type ApproximateTimeMemory = {
   exactEnd: string;
   approxStart: string;
   approxEnd: string;
+  /** Text shown when switching to approximate, to tell later edits apart. */
+  shownStart: string;
+  shownEnd: string;
 };
 
 export const EMPTY_APPROXIMATE_TIME_MEMORY: ApproximateTimeMemory = {
@@ -115,7 +118,12 @@ export const EMPTY_APPROXIMATE_TIME_MEMORY: ApproximateTimeMemory = {
   exactEnd: "",
   approxStart: "",
   approxEnd: "",
+  shownStart: "",
+  shownEnd: "",
 };
+
+export const APPROXIMATE_PARSE_NOTE =
+  "Could not turn that into a time. Your text was kept and comes back if you switch to plain text again.";
 
 /**
  * Switch between exact TimeInput values and approximate free text without silent data loss.
@@ -134,24 +142,19 @@ export function switchApproximateMode(args: {
 } {
   const { toApproximate, startTime, endTime, memory } = args;
   if (toApproximate) {
-    const nextMemory: ApproximateTimeMemory = {
-      ...memory,
-      exactStart: startTime,
-      exactEnd: endTime,
-    };
     const hasApprox = !!(memory.approxStart.trim() || memory.approxEnd.trim());
+    const nextStart = hasApprox ? memory.approxStart : startTime ? formatTimeEnUs(startTime) : "";
+    const nextEnd = hasApprox ? memory.approxEnd : endTime ? formatTimeEnUs(endTime) : "";
     return {
-      startTime: hasApprox
-        ? memory.approxStart
-        : startTime
-          ? formatTimeEnUs(startTime)
-          : "",
-      endTime: hasApprox
-        ? memory.approxEnd
-        : endTime
-          ? formatTimeEnUs(endTime)
-          : "",
-      memory: nextMemory,
+      startTime: nextStart,
+      endTime: nextEnd,
+      memory: {
+        ...memory,
+        exactStart: startTime,
+        exactEnd: endTime,
+        shownStart: nextStart,
+        shownEnd: nextEnd,
+      },
       note: "",
     };
   }
@@ -161,27 +164,25 @@ export function switchApproximateMode(args: {
     approxStart: startTime,
     approxEnd: endTime,
   };
-  const hasExact = !!(memory.exactStart.trim() || memory.exactEnd.trim());
-  if (hasExact) {
-    return {
-      startTime: memory.exactStart,
-      endTime: memory.exactEnd,
-      memory: nextMemory,
-      note: "",
-    };
-  }
 
-  const startTrim = startTime.trim();
-  const endTrim = endTime.trim();
-  const parsedStart = startTrim ? parseLooseTime(startTrim) : "";
-  const parsedEnd = endTrim ? parseLooseTime(endTrim) : "";
-  const startFail = !!startTrim && parsedStart === null;
-  const endFail = !!endTrim && parsedEnd === null;
+  // Per field: an untouched text restores the remembered exact value (keeps HH:MM:SS).
+  // A newer edit wins when it parses; if it does not, keep the remembered exact value.
+  const resolve = (text: string, shown: string, exact: string): { value: string; failed: boolean } => {
+    const trimmed = text.trim();
+    const edited = text !== shown;
+    if (!edited && exact.trim()) return { value: exact, failed: false };
+    if (!trimmed) return { value: edited ? "" : exact, failed: false };
+    const parsed = parseLooseTime(trimmed);
+    if (parsed !== null) return { value: parsed, failed: false };
+    return { value: exact, failed: true };
+  };
+  const start = resolve(startTime, memory.shownStart, memory.exactStart);
+  const end = resolve(endTime, memory.shownEnd, memory.exactEnd);
   return {
-    startTime: parsedStart ?? "",
-    endTime: parsedEnd ?? "",
+    startTime: start.value,
+    endTime: end.value,
     memory: nextMemory,
-    note: startFail || endFail ? "Could not turn that into a time" : "",
+    note: start.failed || end.failed ? APPROXIMATE_PARSE_NOTE : "",
   };
 }
 

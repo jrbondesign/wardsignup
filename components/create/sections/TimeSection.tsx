@@ -665,32 +665,35 @@ function ExtraTimes({ state, set }: Props) {
     <div className="space-y-2">
       <div className="text-[12px] font-medium text-[#2E5566]">Additional times</div>
       {state.extraTimes.map((row, i) => (
-        <div key={i} className="space-y-2">
-          <input
-            type="text"
-            value={row.label}
-            onChange={(e) => updateRow(i, { label: e.target.value })}
-            placeholder="Label (e.g. Meet at church)"
-            className={inputCls}
-          />
+        // Label and Remove share the top line so the 44px Remove target never
+        // sits on top of the time selects, even at 320px.
+        <div key={i} className="space-y-2" data-extra-time-row="">
           <div className="flex gap-2 items-center min-w-0">
-            <div className="flex-1 sm:flex-none min-w-0">
-              <TimeInput
-                value={row.time}
-                onChange={(v) => updateRow(i, { time: v })}
-                ariaLabel={row.label.trim() ? `${row.label} time` : "Additional time"}
-                className={inputCls}
-              />
-            </div>
+            <input
+              type="text"
+              value={row.label}
+              onChange={(e) => updateRow(i, { label: e.target.value })}
+              placeholder="Label (e.g. Meet at church)"
+              aria-label={`Label for additional time ${i + 1}`}
+              className={`${inputCls} flex-1 min-w-0`}
+            />
             <button
               type="button"
               onClick={() => removeRow(i)}
-              aria-label="Remove"
-              className="shrink-0 min-h-11 min-w-11 sm:min-h-10 sm:min-w-10 text-[#5A8399] hover:text-red-600 px-2 text-lg leading-none"
+              aria-label="Remove time"
+              className="shrink-0 inline-flex items-center justify-center h-11 w-11 rounded-xl text-[#5A8399] hover:text-red-600 hover:bg-red-50 text-lg leading-none"
             >
               ×
             </button>
           </div>
+          <TimeInput
+            value={row.time}
+            onChange={(v) => updateRow(i, { time: v })}
+            label="Time"
+            labelVariant="micro"
+            ariaLabel={row.label.trim() ? `${row.label} time` : "Additional time"}
+            className={inputCls}
+          />
         </div>
       ))}
       <button type="button" onClick={addRow} className={linkBtnCls}>

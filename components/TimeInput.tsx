@@ -89,14 +89,15 @@ const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"))
  * group stays compact instead of stretching across the card. The native arrow is
  * replaced by a small chevron so placeholders like "Minute" and "AM/PM" fit and
  * the control looks the same in iOS Safari and Chrome.
+ * Phone padding and min widths are as tight as the placeholders allow so a group
+ * fits in 212px (the narrowest panel at 320); sm and up get roomier padding.
  */
 const selectBase =
-  "appearance-none bg-no-repeat min-w-0 h-11 sm:h-10 py-0 pl-1.5 pr-[22px] text-sm text-[#0D2B35] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60 flex-1 sm:flex-none";
+  "appearance-none bg-no-repeat bg-[position:right_5px_center] sm:bg-[position:right_8px_center] min-w-0 h-11 sm:h-10 py-0 pl-1.5 pr-[18px] sm:pl-2.5 sm:pr-[22px] text-sm text-[#0D2B35] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60 flex-1 sm:flex-none";
 
 const CHEVRON_STYLE = {
   backgroundImage:
     "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%235A8399' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E\")",
-  backgroundPosition: "right 7px center",
   backgroundSize: "10px 7px",
 } as const;
 
@@ -192,7 +193,7 @@ export default function TimeInput({
           required={required}
           onChange={(e) => emit({ hour12: e.target.value })}
           style={CHEVRON_STYLE}
-          className={`${selectBase} min-w-[3.75rem] sm:w-[4.75rem]`}
+          className={`${selectBase} min-w-[3.625rem] sm:w-[4.75rem]`}
         >
           <option value="">Hour</option>
           {HOURS.map((h) => (
@@ -209,7 +210,7 @@ export default function TimeInput({
           required={required}
           onChange={(e) => emit({ minute: e.target.value })}
           style={CHEVRON_STYLE}
-          className={`${selectBase} min-w-[4.625rem] sm:w-[5rem]`}
+          className={`${selectBase} min-w-[4.5rem] sm:w-[5rem]`}
         >
           <option value="">Minute</option>
           {MINUTES.map((m) => (
@@ -227,7 +228,7 @@ export default function TimeInput({
           required={required}
           onChange={(e) => emit({ meridiem: e.target.value as Meridiem })}
           style={CHEVRON_STYLE}
-          className={`${selectBase} min-w-[4.75rem] sm:w-[5.5rem]`}
+          className={`${selectBase} min-w-[4.625rem] sm:w-[5.5rem]`}
         >
           <option value="">AM/PM</option>
           <option value="AM">AM</option>
@@ -291,8 +292,9 @@ export function TimeTextLabel({
 }
 
 /**
- * Lays out a Start and End pair: stacked with 12px between on phones, one line
- * with a "to" between them from sm up. Wraps End under Start if the card is narrow.
+ * Lays out a Start and End pair. Uses a container query so the pair only sits on
+ * one line (with "to" between) when the card is at least 560px wide; otherwise the
+ * two stack with 12px between and no "to", so "to" never hangs at the end of a line.
  */
 export function TimeRangeRow({
   start,
@@ -304,30 +306,35 @@ export function TimeRangeRow({
 }: {
   start: ReactNode;
   end: ReactNode;
-  /** Optional extra field on the same line, such as Spots. */
+  /** Optional extra field after End, such as Spots. It may wrap to its own line. */
   after?: ReactNode;
   labelVariant?: "default" | "micro";
   id?: string;
   className?: string;
 }) {
   return (
-    <div id={id} className={`${TIME_RANGE_ROW_CLASS} ${className}`}>
-      {start}
-      <TimeRangeTo labelVariant={labelVariant} />
-      {end}
-      {after}
+    <div id={id} className={`@container min-w-0 ${className}`}>
+      <div className={`${TIME_RANGE_ROW_CLASS} ${after ? "@min-[35rem]:flex-wrap" : ""}`}>
+        {start}
+        <TimeRangeTo labelVariant={labelVariant} />
+        {end}
+        {after}
+      </div>
     </div>
   );
 }
 
-/** Row layout shared by every Start and End pair. */
-export const TIME_RANGE_ROW_CLASS =
-  "flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:gap-x-3 sm:gap-y-2 min-w-0";
+/**
+ * Row layout for a Start and End pair; must sit inside an @container.
+ * Start + "to" + End needs about 542px from sm up, so 35rem (560px) leaves margin.
+ */
+const TIME_RANGE_ROW_CLASS =
+  "flex flex-col gap-3 @min-[35rem]:flex-row @min-[35rem]:items-start @min-[35rem]:gap-x-3 @min-[35rem]:gap-y-2 min-w-0";
 
-/** The "to" between Start and End, shown from sm up and aligned with the selects. */
-export function TimeRangeTo({ labelVariant = "default" }: { labelVariant?: "default" | "micro" }) {
+/** The "to" between Start and End, shown only when the pair is on one line. */
+function TimeRangeTo({ labelVariant = "default" }: { labelVariant?: "default" | "micro" }) {
   return (
-    <div aria-hidden="true" className="hidden sm:block shrink-0">
+    <div aria-hidden="true" data-time-range-to="" className="hidden @min-[35rem]:block shrink-0">
       {/* Invisible spacer the height of a legend so "to" lines up with the selects. */}
       <span className={`invisible ${TIME_LABEL_CLASS[labelVariant]}`}>to</span>
       <span className="flex h-10 items-center text-sm text-[#5A8399]">to</span>

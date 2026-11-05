@@ -1,4 +1,5 @@
 import {
+  APPROXIMATE_PARSE_NOTE,
   EMPTY_APPROXIMATE_TIME_MEMORY,
   formatTimeEnUs,
   parseLooseTime,
@@ -72,7 +73,9 @@ describe("switchApproximateMode", () => {
     });
     expect(toExact.startTime).toBe("");
     expect(toExact.endTime).toBe("");
-    expect(toExact.note).toBe("Could not turn that into a time");
+    expect(toExact.note).toBe(APPROXIMATE_PARSE_NOTE);
+    expect(toExact.note).toMatch(/\.$/);
+    expect(toExact.note).not.toMatch(/[\u2013\u2014]/);
     memory = toExact.memory;
 
     const back = switchApproximateMode({
@@ -83,6 +86,50 @@ describe("switchApproximateMode", () => {
     });
     expect(back.startTime).toBe("after the meeting");
     expect(back.endTime).toBe("by lunch");
+  });
+
+  it("uses a newer text edit that parses instead of the remembered exact time", () => {
+    const toApprox = switchApproximateMode({
+      toApproximate: true,
+      startTime: "19:00",
+      endTime: "21:00:00",
+      memory: { ...EMPTY_APPROXIMATE_TIME_MEMORY },
+    });
+    expect(toApprox.startTime).toBe("7:00 PM");
+    const toExact = switchApproximateMode({
+      toApproximate: false,
+      startTime: "8pm",
+      endTime: toApprox.endTime,
+      memory: toApprox.memory,
+    });
+    expect(toExact.startTime).toBe("20:00");
+    // Untouched end keeps the saved value exactly, seconds included.
+    expect(toExact.endTime).toBe("21:00:00");
+    expect(toExact.note).toBe("");
+  });
+
+  it("keeps the remembered exact time and shows the note when the edit does not parse", () => {
+    const toApprox = switchApproximateMode({
+      toApproximate: true,
+      startTime: "19:00",
+      endTime: "",
+      memory: { ...EMPTY_APPROXIMATE_TIME_MEMORY },
+    });
+    const toExact = switchApproximateMode({
+      toApproximate: false,
+      startTime: "after dinner",
+      endTime: "",
+      memory: toApprox.memory,
+    });
+    expect(toExact.startTime).toBe("19:00");
+    expect(toExact.note).toBe(APPROXIMATE_PARSE_NOTE);
+    const back = switchApproximateMode({
+      toApproximate: true,
+      startTime: toExact.startTime,
+      endTime: toExact.endTime,
+      memory: toExact.memory,
+    });
+    expect(back.startTime).toBe("after dinner");
   });
 
   it("parses en-CA style text when there is no remembered exact", () => {
