@@ -84,7 +84,9 @@ describe("EventActionsSheet", () => {
     trigger.focus();
     fireEvent.click(trigger);
     const dialog = screen.getByRole("dialog");
-    // First focusable is the close button.
+    // The dialog itself takes focus; Tab goes to the first control.
+    expect(dialog).toHaveFocus();
+    fireEvent.keyDown(document.activeElement!, { key: "Tab" });
     expect(screen.getByRole("button", { name: "Close" })).toHaveFocus();
 
     // Shift+Tab from the first wraps to the last (Delete event).

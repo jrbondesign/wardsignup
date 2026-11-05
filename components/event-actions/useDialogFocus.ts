@@ -6,7 +6,7 @@ const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
 
 /**
- * Modal focus handling: focus the first target on open, keep Tab inside the
+ * Modal focus handling and scroll lock: focus the dialog (or initialFocusRef) on open, keep Tab inside the
  * container, close on Escape, and give focus back to the trigger on close.
  * `returnFocusTo` wins; otherwise whatever had focus when the dialog opened.
  */
@@ -28,7 +28,9 @@ export function useDialogFocus(
     const opener = document.activeElement as HTMLElement | null;
     const returnTarget = returnFocusTo?.current ?? null;
 
-    const first = initialFocusRef?.current ?? containerRef.current?.querySelector<HTMLElement>(FOCUSABLE);
+    // Default: focus the dialog itself (tabIndex -1), so a tap does not paint a
+    // focus ring on the first row; Tab then moves into the list.
+    const first = initialFocusRef?.current ?? containerRef.current;
     first?.focus();
 
     const onKey = (e: KeyboardEvent) => {
@@ -44,7 +46,7 @@ export function useDialogFocus(
       const firstEl = nodes[0];
       const lastEl = nodes[nodes.length - 1];
       const active = document.activeElement;
-      const inside = containerRef.current.contains(active);
+      const inside = containerRef.current.contains(active) && active !== containerRef.current;
       if (e.shiftKey && (active === firstEl || !inside)) {
         e.preventDefault();
         lastEl.focus();
@@ -54,9 +56,14 @@ export function useDialogFocus(
       }
     };
 
+    // Keep the page behind the dialog from scrolling while it is open.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
     document.addEventListener("keydown", onKey, true);
     return () => {
       document.removeEventListener("keydown", onKey, true);
+      document.body.style.overflow = prevOverflow;
       const target = returnTarget ?? opener;
       if (target && target.isConnected && target !== document.body) target.focus();
     };
