@@ -586,7 +586,7 @@ function SessionsList({
               })()
             : DAYS[s.day_of_week];
           const timeStr =
-            formatTime(s.time) + (s.end_time ? ` – ${formatTime(s.end_time)}` : "");
+            formatTime(s.time) + (s.end_time ? ` to ${formatTime(s.end_time)}` : "");
 
           return (
             <div key={s.id} className="flyer-session">

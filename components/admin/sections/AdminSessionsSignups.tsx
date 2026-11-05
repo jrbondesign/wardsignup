@@ -75,7 +75,7 @@ export default function AdminSessionsSignups({ ctx }: { ctx: AdminEventView }) {
                             {session.label || (
                               <>
                                 {formatTime(session.time)}
-                                {session.end_time && ` – ${formatTime(session.end_time)}`}
+                                {session.end_time && ` to ${formatTime(session.end_time)}`}
                               </>
                             )}
                             {session.location && (
@@ -85,7 +85,7 @@ export default function AdminSessionsSignups({ ctx }: { ctx: AdminEventView }) {
                           {session.label && (
                             <div className="text-xs text-[#5A8399] mt-0.5">
                               {formatTime(session.time)}
-                              {session.end_time && ` – ${formatTime(session.end_time)}`}
+                              {session.end_time && ` to ${formatTime(session.end_time)}`}
                             </div>
                           )}
                           {session.notes && (

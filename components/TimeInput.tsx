@@ -27,6 +27,8 @@ interface TimeInputProps {
   labelNote?: string;
   /** "micro" matches the small uppercase labels in the sessions list. */
   labelVariant?: "default" | "micro";
+  /** Inline error shown under the selects (e.g. End before Start); marks the selects invalid. */
+  error?: string;
 }
 
 export type Meridiem = "" | "AM" | "PM";
@@ -98,7 +100,7 @@ const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"))
  * its "Minute" placeholder (about 45px) would clip at 76px with the chevron padding.
  */
 const selectBase =
-  "appearance-none bg-no-repeat bg-[position:right_5px_center] sm:bg-[position:right_8px_center] @min-[35rem]:bg-[position:right_8px_center] min-w-0 h-11 sm:h-10 @min-[35rem]:h-10 py-0 pl-1.5 pr-[18px] sm:pl-2.5 @min-[35rem]:pl-2.5 sm:pr-[22px] @min-[35rem]:pr-[22px] text-sm text-[#0D2B35] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60 flex-1 max-w-24 sm:flex-none @min-[35rem]:flex-none sm:max-w-none @min-[35rem]:max-w-none";
+  "appearance-none bg-no-repeat bg-[position:right_5px_center] sm:bg-[position:right_8px_center] @min-[35rem]:bg-[position:right_8px_center] min-w-0 h-11 sm:h-10 @min-[35rem]:h-10 py-0 pl-1.5 pr-[18px] sm:pl-2.5 @min-[35rem]:pl-2.5 sm:pr-[22px] @min-[35rem]:pr-[22px] text-sm text-[#0D2B35] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] aria-invalid:border-red-400 disabled:opacity-60 flex-1 max-w-24 sm:flex-none @min-[35rem]:flex-none sm:max-w-none @min-[35rem]:max-w-none";
 
 const CHEVRON_STYLE = {
   backgroundImage:
@@ -130,6 +132,7 @@ export default function TimeInput({
   label,
   labelNote,
   labelVariant = "default",
+  error,
 }: TimeInputProps) {
   const autoId = useId();
   const baseId = id || autoId;
@@ -180,13 +183,15 @@ export default function TimeInput({
 
   const groupLabel = ariaLabel || label || "Time";
   const hintId = `${baseId}-hint`;
+  const errorId = `${baseId}-error`;
+  const describedBy = [showPartial ? hintId : "", error ? errorId : ""].filter(Boolean).join(" ") || undefined;
 
   const selects = (
       <div
         // With a label the fieldset is the group (named by its legend); without one this div is.
         role={label ? undefined : "group"}
         aria-label={label ? undefined : groupLabel}
-        aria-describedby={!label && showPartial ? hintId : undefined}
+        aria-describedby={!label ? describedBy : undefined}
         data-time-partial={showPartial ? "true" : undefined}
         className="flex gap-1 min-w-0 w-full sm:w-auto @min-[35rem]:w-auto items-stretch"
       >
@@ -196,6 +201,8 @@ export default function TimeInput({
           value={parts.hour12}
           disabled={disabled}
           required={required}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
           onChange={(e) => emit({ hour12: e.target.value })}
           style={CHEVRON_STYLE}
           className={`${selectBase} min-w-[3.625rem] sm:w-[4.75rem] @min-[35rem]:w-[4.75rem]`}
@@ -213,6 +220,8 @@ export default function TimeInput({
           value={parts.minute}
           disabled={disabled}
           required={required}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
           onChange={(e) => emit({ minute: e.target.value })}
           style={CHEVRON_STYLE}
           className={`${selectBase} min-w-[4.5rem] sm:w-[5rem] @min-[35rem]:w-[5rem]`}
@@ -231,6 +240,8 @@ export default function TimeInput({
           value={parts.meridiem}
           disabled={disabled}
           required={required}
+          aria-invalid={error ? true : undefined}
+          aria-describedby={error ? errorId : undefined}
           onChange={(e) => emit({ meridiem: e.target.value as Meridiem })}
           style={CHEVRON_STYLE}
           className={`${selectBase} min-w-[4.625rem] sm:w-[5.5rem] @min-[35rem]:w-[5.5rem]`}
@@ -251,18 +262,25 @@ export default function TimeInput({
         </p>
   );
 
+  const errorNote = error ? (
+    <p id={errorId} className="mt-1 text-[12px] text-red-700 sm:w-0 @min-[35rem]:w-0 sm:min-w-full @min-[35rem]:min-w-full">
+      {error}
+    </p>
+  ) : null;
+
   if (!label) {
     return (
       <div className="min-w-0 w-full sm:w-auto @min-[35rem]:w-auto">
         {selects}
         {hint}
+        {errorNote}
       </div>
     );
   }
 
   return (
     <fieldset
-      aria-describedby={showPartial ? hintId : undefined}
+      aria-describedby={describedBy}
       className="min-w-0 w-full sm:w-auto @min-[35rem]:w-auto m-0 p-0 border-0"
     >
       <legend className={`p-0 ${TIME_LABEL_CLASS[labelVariant]}`}>
@@ -271,6 +289,7 @@ export default function TimeInput({
       </legend>
       {selects}
       {hint}
+      {errorNote}
     </fieldset>
   );
 }

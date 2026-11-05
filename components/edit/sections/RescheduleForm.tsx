@@ -302,14 +302,14 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
                 const perDay = countTithingSlotsPerDay(rescheduleTime, rescheduleEndTime, tithingDuration);
                 const total = dayCount * perDay;
                 return total > 0
-                  ? `${total} slot${total !== 1 ? "s" : ""} will be created — ${tithingDuration}-min appointments, ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
+                  ? `${total} slot${total !== 1 ? "s" : ""} will be created: ${tithingDuration}-min appointments, ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
                   : "Configure the schedule above to auto-generate slots.";
               }
 
               if (rescheduleDays.length === 0) return "Choose days of week to generate slots.";
               const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, rescheduleDays);
               return dayCount > 0
-                ? `${dayCount} session${dayCount !== 1 ? "s" : ""} will be created — ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
+                ? `${dayCount} session${dayCount !== 1 ? "s" : ""} will be created: ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
                 : "Choose a date range and days of week to generate slots.";
             })()
           : "Choose a date range to see a preview."}
@@ -353,7 +353,7 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
                 const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, tithingDays);
                 const perDay = countTithingSlotsPerDay(rescheduleTime, rescheduleEndTime, tithingDuration);
                 const total = dayCount * perDay;
-                return `Apply — ${total} slot${total === 1 ? "" : "s"}`;
+                return `Apply: ${total} slot${total === 1 ? "" : "s"}`;
               })()
             : "Select a date range"}
         </button>

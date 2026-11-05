@@ -60,7 +60,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
                         return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                       })()
                     : DAYS[session.day_of_week]}
-                  {" · "}{formatTime(session.time)}{session.end_time ? ` – ${formatTime(session.end_time)}` : ""}
+                  {" · "}{formatTime(session.time)}{session.end_time ? ` to ${formatTime(session.end_time)}` : ""}
                 </div>
               );
             })}

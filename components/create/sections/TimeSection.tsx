@@ -5,8 +5,17 @@ import TimeInput, { TimeRangeRow, TimeTextLabel } from "@/components/TimeInput";
 import DateRangePicker from "@/components/DateRangePicker";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
 import SlotEditor, { type SlotRow } from "@/components/create/SlotEditor";
-import type { CreateFormState, LabeledTime } from "@/lib/create-form-state";
 import {
+  CREATE_EVENT_TIMES_ROW_ID,
+  CREATE_SPOTS_TIMES_ROW_ID,
+  createSpotsWindowRowId,
+  createTimeOrderIssue,
+  type CreateFormState,
+  type LabeledTime,
+} from "@/lib/create-form-state";
+import {
+  TIME_ORDER_ERROR,
+  isEndNotAfterStart,
   EMPTY_APPROXIMATE_TIME_MEMORY,
   type ApproximateTimeMemory,
   switchApproximateMode,
@@ -296,6 +305,7 @@ function SpotsTime({ state, set }: Props) {
                           </button>
                         </div>
                         <TimeRangeRow
+                          id={createSpotsWindowRowId(p.id)}
                           start={
                             <TimeInput
                               value={p.start}
@@ -314,6 +324,7 @@ function SpotsTime({ state, set }: Props) {
                               label="End time"
                               labelNote="(optional)"
                               ariaLabel={`End time for ${label}`}
+                              error={isEndNotAfterStart(p.start, p.end) ? TIME_ORDER_ERROR : undefined}
                               className={inputCls}
                             />
                           }
@@ -371,6 +382,7 @@ function SpotsTime({ state, set }: Props) {
 
       {!isSpecific && (
         <TimeRangeRow
+          id={CREATE_SPOTS_TIMES_ROW_ID}
           start={
             <TimeInput
               value={state.spotsStartTime}
@@ -387,6 +399,7 @@ function SpotsTime({ state, set }: Props) {
               onChange={(v) => set({ spotsEndTime: v })}
               label="End time"
               labelNote="(optional)"
+              error={isEndNotAfterStart(state.spotsStartTime, state.spotsEndTime) ? TIME_ORDER_ERROR : undefined}
               className={inputCls}
             />
           }
@@ -555,6 +568,7 @@ function TimeFields({ state, set }: Props) {
       {state.hasTime && (
         <>
           <TimeRangeRow
+            id={CREATE_EVENT_TIMES_ROW_ID}
             start={
               useApprox ? (
                 <div className="min-w-0 w-full sm:w-auto sm:flex-1">
@@ -600,6 +614,7 @@ function TimeFields({ state, set }: Props) {
                   onChange={(v) => set({ endTime: v })}
                   label="End time"
                   labelNote="(optional)"
+                  error={createTimeOrderIssue(state)?.rowId === CREATE_EVENT_TIMES_ROW_ID ? TIME_ORDER_ERROR : undefined}
                   className={inputCls}
                 />
               )

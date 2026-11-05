@@ -211,7 +211,7 @@ export default function SessionsBrowser({ ctx }: { ctx: EventPageView }) {
                               {session.label || (
                                 <>
                                   {formatTime(session.time)}
-                                  {session.end_time && ` – ${formatTime(session.end_time)}`}
+                                  {session.end_time && ` to ${formatTime(session.end_time)}`}
                                 </>
                               )}
                               {session.location && <span className="text-[#5A8399] font-normal"> · {session.location}</span>}
@@ -219,7 +219,7 @@ export default function SessionsBrowser({ ctx }: { ctx: EventPageView }) {
                             {session.label && (
                               <div className="text-xs text-[#5A8399] mt-0.5">
                                 {formatTime(session.time)}
-                                {session.end_time && ` – ${formatTime(session.end_time)}`}
+                                {session.end_time && ` to ${formatTime(session.end_time)}`}
                               </div>
                             )}
                             {session.notes && <div className="text-xs text-[#5A8399] mt-0.5">{session.notes}</div>}

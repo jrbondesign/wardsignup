@@ -61,7 +61,7 @@ export default function EventHeaderCard({ ctx }: { ctx: EventPageView }) {
           const hasMultiDates = multiDates.length > 1;
           const timeSuffix =
             ev.event_start_time || ev.event_end_time
-              ? ` · ${ev.event_start_time ? fmtTime(ev.event_start_time) : ""}${ev.event_end_time ? ` – ${fmtTime(ev.event_end_time)}` : ""}`
+              ? ` · ${ev.event_start_time ? fmtTime(ev.event_start_time) : ""}${ev.event_end_time ? ` to ${fmtTime(ev.event_end_time)}` : ""}`
               : "";
           const weekdaysOf = (dates: string[]) => {
             const set = new Set(
@@ -105,7 +105,7 @@ export default function EventHeaderCard({ ctx }: { ctx: EventPageView }) {
                     {(ev.event_start_time || ev.event_end_time) && (
                       <span className="text-[#5A8399]">
                         · {ev.event_start_time ? fmtTime(ev.event_start_time) : ""}
-                        {ev.event_end_time ? ` – ${fmtTime(ev.event_end_time)}` : ""}
+                        {ev.event_end_time ? ` to ${fmtTime(ev.event_end_time)}` : ""}
                       </span>
                     )}
                   </div>

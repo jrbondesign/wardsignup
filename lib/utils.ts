@@ -27,12 +27,12 @@ export function formatTimeEnUs(time: string): string {
   return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-/** Locale-aware range like "1:00 PM – 2:00 PM" or "13:00 – 14:00" per device. */
+/** Locale-aware range like "1:00 PM to 2:00 PM" or "13:00 to 14:00" per device. */
 export function formatTimeRange(start: string, end?: string | null): string {
   const a = formatTime(start);
   const endTrim = end?.trim() ?? "";
   if (!endTrim) return a;
-  return `${a} – ${formatTime(endTrim)}`;
+  return `${a} to ${formatTime(endTrim)}`;
 }
 
 /**
@@ -203,6 +203,20 @@ export function startTimePanelError(time: string, hasPartial: boolean): string |
 
 /** Items page time errors, shown next to the time fields instead of the page banner. */
 export const ITEMS_TIME_ORDER_ERROR = "End time must be after start time.";
+/** Same message on create, so create and edit read alike. */
+export const TIME_ORDER_ERROR = ITEMS_TIME_ORDER_ERROR;
+
+/**
+ * True when both exact times are set ("HH:MM" or "HH:MM:SS") and End is not after
+ * Start on the same day. Empty or non exact values are never flagged.
+ */
+export function isEndNotAfterStart(start: string, end: string): boolean {
+  const re = /^\d{2}:\d{2}(:\d{2})?$/;
+  const s = (start ?? "").trim();
+  const e = (end ?? "").trim();
+  if (!re.test(s) || !re.test(e)) return false;
+  return e.slice(0, 5) <= s.slice(0, 5);
+}
 export const ITEMS_TIME_PARTIAL_ERROR = "Finish choosing hour, minute, and AM or PM.";
 export function isItemsTimeError(message: string): boolean {
   return message === ITEMS_TIME_ORDER_ERROR || message === ITEMS_TIME_PARTIAL_ERROR;
