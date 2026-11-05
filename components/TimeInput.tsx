@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useLayoutEffect, useRef, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 interface TimeInputProps {
   value: string;
@@ -18,6 +18,15 @@ interface TimeInputProps {
    * (panel type=button handlers validate instead). Default true.
    */
   nativeValidity?: boolean;
+  /**
+   * Visible legend text, e.g. "Start time". When set, the three selects are wrapped
+   * in a fieldset with this legend so the pair is labelled on screen and for screen readers.
+   */
+  label?: string;
+  /** Lighter sublabel after the legend, e.g. "(required)" or "(optional)". */
+  labelNote?: string;
+  /** "micro" matches the small uppercase labels in the sessions list. */
+  labelVariant?: "default" | "micro";
 }
 
 export type Meridiem = "" | "AM" | "PM";
@@ -74,9 +83,29 @@ export function isPartialTime(parts: TimeParts): boolean {
 const HOURS = Array.from({ length: 12 }, (_, i) => String(i + 1));
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
 
-/** Match neighboring inputs: ~42px tall, 12px radius, 14px text. */
+/**
+ * 44px tall on phones, 40px from sm up, 12px radius, 14px text.
+ * Phones share the row (flex-1); from sm up each select has a fixed width so the
+ * group stays compact instead of stretching across the card. The native arrow is
+ * replaced by a small chevron so placeholders like "Minute" and "AM/PM" fit and
+ * the control looks the same in iOS Safari and Chrome.
+ */
 const selectBase =
-  "min-w-0 text-sm text-[#0D2B35] px-1.5 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60";
+  "appearance-none bg-no-repeat min-w-0 h-11 sm:h-10 py-0 pl-1.5 pr-[22px] text-sm text-[#0D2B35] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60 flex-1 sm:flex-none";
+
+const CHEVRON_STYLE = {
+  backgroundImage:
+    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%235A8399' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E\")",
+  backgroundPosition: "right 7px center",
+  backgroundSize: "10px 7px",
+} as const;
+
+/** Shared legend styles so every time pair reads the same. */
+export const TIME_LABEL_CLASS: Record<"default" | "micro", string> = {
+  default: "block text-[13px] leading-5 font-semibold text-[#2E5566] tracking-[0.2px] mb-1",
+  micro: "block text-[11px] leading-4 font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1",
+};
+export const TIME_LABEL_NOTE_CLASS = "font-normal normal-case tracking-normal text-[#5A8399]";
 
 const PARTIAL_MESSAGE = "Finish choosing hour, minute, and AM or PM.";
 
@@ -92,6 +121,9 @@ export default function TimeInput({
   ariaLabel,
   id,
   nativeValidity = true,
+  label,
+  labelNote,
+  labelVariant = "default",
 }: TimeInputProps) {
   const autoId = useId();
   const baseId = id || autoId;
@@ -140,17 +172,17 @@ export default function TimeInput({
     if (hhmm !== value) onChange(hhmm);
   };
 
-  const groupLabel = ariaLabel || "Time";
+  const groupLabel = ariaLabel || label || "Time";
   const hintId = `${baseId}-hint`;
 
-  return (
-    <div className="min-w-0 w-full">
+  const selects = (
       <div
-        role="group"
-        aria-label={groupLabel}
-        aria-describedby={showPartial ? hintId : undefined}
+        // With a label the fieldset is the group (named by its legend); without one this div is.
+        role={label ? undefined : "group"}
+        aria-label={label ? undefined : groupLabel}
+        aria-describedby={!label && showPartial ? hintId : undefined}
         data-time-partial={showPartial ? "true" : undefined}
-        className="flex gap-1.5 min-w-0 w-full items-stretch"
+        className="flex gap-1 min-w-0 w-full sm:w-auto items-stretch"
       >
         <select
           id={baseId}
@@ -159,7 +191,8 @@ export default function TimeInput({
           disabled={disabled}
           required={required}
           onChange={(e) => emit({ hour12: e.target.value })}
-          className={`${selectBase} flex-1 min-w-[2.75rem]`}
+          style={CHEVRON_STYLE}
+          className={`${selectBase} min-w-[3.75rem] sm:w-[4.75rem]`}
         >
           <option value="">Hour</option>
           {HOURS.map((h) => (
@@ -175,9 +208,10 @@ export default function TimeInput({
           disabled={disabled}
           required={required}
           onChange={(e) => emit({ minute: e.target.value })}
-          className={`${selectBase} flex-1 min-w-[2.75rem]`}
+          style={CHEVRON_STYLE}
+          className={`${selectBase} min-w-[4.625rem] sm:w-[5rem]`}
         >
-          <option value="">Min</option>
+          <option value="">Minute</option>
           {MINUTES.map((m) => (
             <option key={m} value={m}>
               {m}
@@ -192,20 +226,111 @@ export default function TimeInput({
           disabled={disabled}
           required={required}
           onChange={(e) => emit({ meridiem: e.target.value as Meridiem })}
-          className={`${selectBase} flex-1 min-w-[4rem]`}
+          style={CHEVRON_STYLE}
+          className={`${selectBase} min-w-[4.75rem] sm:w-[5.5rem]`}
         >
           <option value="">AM/PM</option>
           <option value="AM">AM</option>
           <option value="PM">PM</option>
         </select>
       </div>
-      {showPartial && (
-        <p id={hintId} className="mt-1 text-[12px] text-amber-800">
+  );
+
+  // sm:w-0 + min-w-full keeps the hint from widening the group and pushing End to a new line.
+  const hint = showPartial && (
+        <p id={hintId} className="mt-1 text-[12px] text-amber-800 sm:w-0 sm:min-w-full">
           {required
             ? "Pick hour, minute, and AM or PM to set this time."
             : "This time is incomplete. Pick hour, minute, and AM or PM, or clear the hour."}
         </p>
-      )}
+  );
+
+  if (!label) {
+    return (
+      <div className="min-w-0 w-full sm:w-auto">
+        {selects}
+        {hint}
+      </div>
+    );
+  }
+
+  return (
+    <fieldset
+      aria-describedby={showPartial ? hintId : undefined}
+      className="min-w-0 w-full sm:w-auto m-0 p-0 border-0"
+    >
+      <legend className={`p-0 ${TIME_LABEL_CLASS[labelVariant]}`}>
+        {label}
+        {labelNote ? <> <span className={TIME_LABEL_NOTE_CLASS}>{labelNote}</span></> : null}
+      </legend>
+      {selects}
+      {hint}
+    </fieldset>
+  );
+}
+
+/**
+ * Visible label for the plain text inputs used in approximate time mode, styled to
+ * match the TimeInput legend so the swap does not shift the layout.
+ */
+export function TimeTextLabel({
+  htmlFor,
+  label,
+  labelNote,
+}: {
+  htmlFor: string;
+  label: string;
+  labelNote?: string;
+}) {
+  return (
+    <label htmlFor={htmlFor} className={TIME_LABEL_CLASS.default}>
+      {label}
+      {labelNote ? <> <span className={TIME_LABEL_NOTE_CLASS}>{labelNote}</span></> : null}
+    </label>
+  );
+}
+
+/**
+ * Lays out a Start and End pair: stacked with 12px between on phones, one line
+ * with a "to" between them from sm up. Wraps End under Start if the card is narrow.
+ */
+export function TimeRangeRow({
+  start,
+  end,
+  after,
+  labelVariant = "default",
+  id,
+  className = "",
+}: {
+  start: ReactNode;
+  end: ReactNode;
+  /** Optional extra field on the same line, such as Spots. */
+  after?: ReactNode;
+  labelVariant?: "default" | "micro";
+  id?: string;
+  className?: string;
+}) {
+  return (
+    <div id={id} className={`${TIME_RANGE_ROW_CLASS} ${className}`}>
+      {start}
+      <TimeRangeTo labelVariant={labelVariant} />
+      {end}
+      {after}
+    </div>
+  );
+}
+
+/** Row layout shared by every Start and End pair. */
+export const TIME_RANGE_ROW_CLASS =
+  "flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:gap-x-3 sm:gap-y-2 min-w-0";
+
+/** The "to" between Start and End, shown from sm up and aligned with the selects. */
+export function TimeRangeTo({ labelVariant = "default" }: { labelVariant?: "default" | "micro" }) {
+  return (
+    <div aria-hidden="true" className="hidden sm:block shrink-0">
+      {/* Invisible spacer the height of a legend so "to" lines up with the selects. */}
+      <span className={`invisible ${TIME_LABEL_CLASS[labelVariant]}`}>to</span>
+      <span className="flex h-10 items-center text-sm text-[#5A8399]">to</span>
     </div>
   );
 }

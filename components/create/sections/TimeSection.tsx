@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import TimeInput from "@/components/TimeInput";
+import TimeInput, { TimeRangeRow, TimeTextLabel } from "@/components/TimeInput";
 import DateRangePicker from "@/components/DateRangePicker";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
 import SlotEditor, { type SlotRow } from "@/components/create/SlotEditor";
@@ -276,36 +276,48 @@ function SpotsTime({ state, set }: Props) {
                     {windows.map((p, idx) => (
                       <div
                         key={p.id}
-                        className="grid grid-cols-1 sm:grid-cols-[minmax(110px,auto)_1fr_1fr_auto] items-center gap-2 bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl px-3 py-2"
+                        className="bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl px-3 pt-2 pb-3"
                       >
-                        <span className="text-[13px] font-medium text-[#0D2B35]">
-                          {idx === 0 ? label : ""}
-                        </span>
-                        <TimeInput
-                          value={p.start}
-                          onChange={(v) => updatePickedDate(p.id, { start: v })}
-                          ariaLabel={`Start time for ${label}`}
-                          required
-                          className={inputCls}
-                        />
-                        <TimeInput
-                          value={p.end}
-                          onChange={(v) => updatePickedDate(p.id, { end: v })}
-                          ariaLabel={`End time for ${label}`}
-                          className={inputCls}
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            set({
-                              spotsPickedDates: state.spotsPickedDates.filter((x) => x.id !== p.id),
-                            })
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-[13px] font-semibold text-[#0D2B35]">
+                            {idx === 0 ? label : `${label}, window ${idx + 1}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              set({
+                                spotsPickedDates: state.spotsPickedDates.filter((x) => x.id !== p.id),
+                              })
+                            }
+                            aria-label={`Remove ${label} window ${idx + 1}`}
+                            className="min-h-11 sm:min-h-0 sm:py-1 px-2 -mr-2 text-[13px] font-medium text-[#0E96B0] hover:text-red-600"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <TimeRangeRow
+                          start={
+                            <TimeInput
+                              value={p.start}
+                              onChange={(v) => updatePickedDate(p.id, { start: v })}
+                              label="Start time"
+                              labelNote="(required)"
+                              ariaLabel={`Start time for ${label}`}
+                              required
+                              className={inputCls}
+                            />
                           }
-                          aria-label={`Remove ${label} window ${idx + 1}`}
-                          className="text-[#5A8399] hover:text-red-500 px-2"
-                        >
-                          ×
-                        </button>
+                          end={
+                            <TimeInput
+                              value={p.end}
+                              onChange={(v) => updatePickedDate(p.id, { end: v })}
+                              label="End time"
+                              labelNote="(optional)"
+                              ariaLabel={`End time for ${label}`}
+                              className={inputCls}
+                            />
+                          }
+                        />
                       </div>
                     ))}
                     <button
@@ -358,29 +370,27 @@ function SpotsTime({ state, set }: Props) {
       )}
 
       {!isSpecific && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Start Time</label>
+        <TimeRangeRow
+          start={
             <TimeInput
               value={state.spotsStartTime}
               onChange={(v) => set({ spotsStartTime: v })}
-              ariaLabel="Start time"
+              label="Start time"
+              labelNote="(required)"
               required
               className={inputCls}
             />
-          </div>
-          <div>
-            <label className={labelCls}>
-              End Time <span className={sublabelCls}>(optional)</span>
-            </label>
+          }
+          end={
             <TimeInput
               value={state.spotsEndTime}
               onChange={(v) => set({ spotsEndTime: v })}
-              ariaLabel="End time"
+              label="End time"
+              labelNote="(optional)"
               className={inputCls}
             />
-          </div>
-        </div>
+          }
+        />
       )}
 
       <div>
@@ -544,53 +554,57 @@ function TimeFields({ state, set }: Props) {
 
       {state.hasTime && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>
-                Start <span className={sublabelCls}>(required)</span>
-              </label>
-              {useApprox ? (
-                <input
-                  type="text"
-                  value={state.startTime}
-                  onChange={(e) => set({ startTime: e.target.value })}
-                  placeholder="e.g. around 9am"
-                  maxLength={100}
-                  className={inputCls}
-                />
+          <TimeRangeRow
+            start={
+              useApprox ? (
+                <div className="min-w-0 w-full sm:w-auto sm:flex-1">
+                  <TimeTextLabel htmlFor="event-start-text" label="Start time" labelNote="(required)" />
+                  <input
+                    id="event-start-text"
+                    type="text"
+                    value={state.startTime}
+                    onChange={(e) => set({ startTime: e.target.value })}
+                    placeholder="e.g. around 9am"
+                    maxLength={100}
+                    className={inputCls}
+                  />
+                </div>
               ) : (
                 <TimeInput
                   value={state.startTime}
                   onChange={(v) => set({ startTime: v })}
-                  ariaLabel="Start time"
+                  label="Start time"
+                  labelNote="(required)"
                   required
                   className={inputCls}
                 />
-              )}
-            </div>
-            <div>
-              <label className={labelCls}>
-                End <span className={sublabelCls}>(optional)</span>
-              </label>
-              {useApprox ? (
-                <input
-                  type="text"
-                  value={state.endTime}
-                  onChange={(e) => set({ endTime: e.target.value })}
-                  placeholder="e.g. by 5pm"
-                  maxLength={100}
-                  className={inputCls}
-                />
+              )
+            }
+            end={
+              useApprox ? (
+                <div className="min-w-0 w-full sm:w-auto sm:flex-1">
+                  <TimeTextLabel htmlFor="event-end-text" label="End time" labelNote="(optional)" />
+                  <input
+                    id="event-end-text"
+                    type="text"
+                    value={state.endTime}
+                    onChange={(e) => set({ endTime: e.target.value })}
+                    placeholder="e.g. by 5pm"
+                    maxLength={100}
+                    className={inputCls}
+                  />
+                </div>
               ) : (
                 <TimeInput
                   value={state.endTime}
                   onChange={(v) => set({ endTime: v })}
-                  ariaLabel="End time"
+                  label="End time"
+                  labelNote="(optional)"
                   className={inputCls}
                 />
-              )}
-            </div>
-          </div>
+              )
+            }
+          />
           <label className="inline-flex items-center gap-2 cursor-pointer select-none mt-2">
             <input
               type="checkbox"
@@ -660,7 +674,7 @@ function ExtraTimes({ state, set }: Props) {
             className={inputCls}
           />
           <div className="flex gap-2 items-center min-w-0">
-            <div className="flex-1 min-w-[11rem]">
+            <div className="flex-1 sm:flex-none min-w-0">
               <TimeInput
                 value={row.time}
                 onChange={(v) => updateRow(i, { time: v })}
@@ -672,7 +686,7 @@ function ExtraTimes({ state, set }: Props) {
               type="button"
               onClick={() => removeRow(i)}
               aria-label="Remove"
-              className="shrink-0 text-[#5A8399] hover:text-red-600 px-2 py-[10px] text-lg leading-none"
+              className="shrink-0 min-h-11 min-w-11 sm:min-h-10 sm:min-w-10 text-[#5A8399] hover:text-red-600 px-2 text-lg leading-none"
             >
               ×
             </button>

@@ -195,6 +195,27 @@ export function startTimePanelError(time: string, hasPartial: boolean): string |
   return null;
 }
 
+/** Items page time errors, shown next to the time fields instead of the page banner. */
+export const ITEMS_TIME_ORDER_ERROR = "End time must be after start time.";
+export const ITEMS_TIME_PARTIAL_ERROR = "Finish choosing hour, minute, and AM or PM.";
+export function isItemsTimeError(message: string): boolean {
+  return message === ITEMS_TIME_ORDER_ERROR || message === ITEMS_TIME_PARTIAL_ERROR;
+}
+
+/**
+ * Scroll a time row into view and focus its first unfinished select
+ * (or the select at fallbackIndex when every part is filled).
+ */
+export function focusTimeRow(rowId: string, fallbackIndex = 0): void {
+  if (typeof document === "undefined") return;
+  const row = document.getElementById(rowId);
+  if (!row) return;
+  row.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  const selects = Array.from(row.querySelectorAll("select"));
+  const target = selects.find((el) => el.value === "" && (el.parentElement?.getAttribute("data-time-partial") === "true")) ?? selects[fallbackIndex] ?? selects[0];
+  target?.focus({ preventScroll: true });
+}
+
 /** True when a DOM subtree has an incomplete TimeInput (native :invalid or data flag). */
 export function subtreeHasInvalidTimeSelect(root: ParentNode | null | undefined): boolean {
   if (!root || typeof (root as Element).querySelector !== "function") return false;

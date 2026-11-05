@@ -7,7 +7,7 @@ import { DAYS, dayShortLabel, keepSpotsSelectionOnMouseUp, selectAllSpotsOnFocus
 import { formatTimeRange } from "@/lib/utils";
 import MenuTrigger from "@/components/edit/MenuTrigger";
 import SectionHeader from "@/components/edit/SectionHeader";
-import TimeInput from "@/components/TimeInput";
+import TimeInput, { TIME_RANGE_ROW_CLASS, TimeRangeTo } from "@/components/TimeInput";
 import { type EditEventCtx } from "@/components/edit/hooks/useEditEvent";
 
 /** Day-grouped slot cards (or the empty state). */
@@ -276,35 +276,31 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                 />
               </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_5.5rem] gap-3">
-              <div>
-                <label className="block text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1">
-                  Start
-                </label>
+              <div className={TIME_RANGE_ROW_CLASS}>
                 <TimeInput
                   value={session.time}
                   onChange={(v) => updateSession(index, "time", v)}
-                  ariaLabel="Start time"
+                  label="Start time"
+                  labelNote="(required)"
+                  labelVariant="micro"
                   required
                   className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
                 />
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1">
-                  End
-                </label>
+                <TimeRangeTo labelVariant="micro" />
                 <TimeInput
                   value={session.end_time ?? ""}
                   onChange={(v) => updateSession(index, "end_time", v)}
-                  ariaLabel="End time"
+                  label="End time"
+                  labelNote="(optional)"
+                  labelVariant="micro"
                   className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
                 />
-              </div>
-              <div>
-                <label className="block text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1">
+              <div className="sm:w-[5.5rem]">
+                <label htmlFor={`session-spots-${index}`} className="block text-[11px] leading-4 font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1">
                   Spots
                 </label>
                 <input
+                  id={`session-spots-${index}`}
                   type="number"
                   min={1}
                   value={
@@ -327,7 +323,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                   onBlur={() => commitCapacityDraft(index)}
                   onFocus={selectAllSpotsOnFocus}
                   onMouseUp={keepSpotsSelectionOnMouseUp}
-                  className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
+                  className="w-full h-11 sm:h-10 text-sm text-[#0D2B35] px-3 py-0 border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
                 />
               </div>
               </div>
