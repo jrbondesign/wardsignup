@@ -23,6 +23,7 @@ import {
   discardedFieldsOnSwitch,
   cleanExtraTimesForSave,
   createTimeOrderIssue,
+  isMultiDayRsvp,
   type CreateFormState,
 } from "@/lib/create-form-state";
 import { focusTimeRow } from "@/lib/utils";
@@ -397,7 +398,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
         body: JSON.stringify({
           event_date: resolvedEventDate,
           event_dates: itemDates,
-          event_end_date: state.multiDay && state.endDate && state.endDate > state.date ? state.endDate : null,
+          event_end_date: isMultiDayRsvp(state) ? state.endDate : null,
           event_start_time: state.hasTime ? state.startTime || null : null,
           event_end_time: state.hasTime ? state.endTime || null : null,
           event_times: cleanExtraTimes,

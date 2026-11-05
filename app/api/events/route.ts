@@ -145,7 +145,7 @@ export async function POST(request: Request) {
       typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v);
     const eventDateValue = isIsoDate(event_date) ? event_date : null;
     const eventEndDateValue =
-      isIsoDate(event_end_date) && eventDateValue && event_end_date > eventDateValue
+      resolvedEventType === "rsvp" && isIsoDate(event_end_date) && eventDateValue && event_end_date > eventDateValue
         ? event_end_date
         : null;
 

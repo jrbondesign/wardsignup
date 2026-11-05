@@ -289,7 +289,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
             showCapacityPublicly={showCapacityPublicly}
             sessionHeadcount={sessionHeadcount}
             isRsvp={eventType === "rsvp"}
-            eventEndDate={event?.event_end_date ?? null}
+            eventEndDate={eventType === "rsvp" ? (event?.event_end_date ?? null) : null}
           />
         )}
 
