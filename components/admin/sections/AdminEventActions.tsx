@@ -5,7 +5,7 @@ import Link from "next/link";
 import { downloadEventQr } from "@/lib/download-qr";
 import { COVER_SIZE_HINT } from "@/lib/cover-position";
 import { type AdminEventView } from "@/components/admin/hooks/deriveAdminEventView";
-import { useRef } from "react";
+import { useEffect, useRef } from "react";
 import { earliestYmd } from "@/lib/date-shift";
 import EventActionsSheet, { eventSheetSubtitle, type EventSheetGroup } from "@/components/event-actions/EventActionsSheet";
 import {
@@ -47,6 +47,17 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
   } = ctx;
   const moreButtonRef = useRef<HTMLButtonElement>(null);
   const canAddCover = coverEnabled && !coverUrl && !coverPreview;
+  const desktopCoverRef = useRef<HTMLButtonElement>(null);
+
+  // The dashboard sheet's "Add cover photo" lands here with #add-cover. The file
+  // picker needs a tap, so open the More sheet (phone) or focus Add cover (desktop).
+  useEffect(() => {
+    if (!canAddCover || typeof window === "undefined" || window.location.hash !== "#add-cover") return;
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    const isPhone = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 639px)").matches;
+    if (isPhone) setMoreMenuOpen(true);
+    else desktopCoverRef.current?.focus();
+  }, [canAddCover, setMoreMenuOpen]);
 
   const copyLink = (message = "Link copied") => {
     navigator.clipboard.writeText(shareableLink);
@@ -158,6 +169,7 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
         </Link>
         {canAddCover && (
         <button
+          ref={desktopCoverRef}
           type="button"
           onClick={() => coverInputRef.current?.click()}
           disabled={coverUploading}

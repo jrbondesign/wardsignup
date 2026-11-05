@@ -28,6 +28,7 @@ import { EVENT_TEMPLATES, TEMPLATES_INITIAL_VISIBLE } from "@/lib/event-template
 import { downloadEventQr } from "@/lib/download-qr";
 import { diffDays, earliestYmd } from "@/lib/date-shift";
 import { isTipJarEnabled } from "@/lib/tip-jar";
+import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import EventActionsSheet, { eventSheetSubtitle } from "@/components/event-actions/EventActionsSheet";
 import DeleteEventConfirm from "@/components/event-actions/DeleteEventConfirm";
 import {
@@ -35,6 +36,7 @@ import {
   DotsVerticalIcon,
   EyeIcon,
   GearIcon,
+  ImageIcon,
   LinkIcon,
   PencilIcon,
   PrinterIcon,
@@ -143,6 +145,24 @@ export default function DashboardPage() {
   const [wardName, setWardName] = useState<string | null | undefined>(undefined);
 
   const maxEvents = getMaxCampaignsForOrg(orgId) ?? getMaxCampaignsPerUser();
+  // Cover gate for the More sheet, same rule as the event page: the org is on the
+  // cover allowlist and the event has no cover yet. The dashboard payload has no
+  // cover field, so ask the existing cover endpoint when the sheet opens.
+  const coverEnabledForOrg = isCoverImageEnabledForOrg(orgId);
+  const [coverCheck, setCoverCheck] = useState<{ id: string; hasCover: boolean } | null>(null);
+  useEffect(() => {
+    if (!actionsEventId || !coverEnabledForOrg) return;
+    let cancelled = false;
+    fetch(`/api/events/${actionsEventId}/cover`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { coverUrl?: string | null } | null) => {
+        if (!cancelled && d) setCoverCheck({ id: actionsEventId, hasCover: Boolean(d.coverUrl) });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [actionsEventId, coverEnabledForOrg]);
   const isUnlimited = isUnlimitedEventsUser(user?.email);
   const atLimit = !isUnlimited && events.length >= maxEvents;
 
@@ -600,6 +620,9 @@ export default function DashboardPage() {
                 actions: [
                   { key: "edit", label: "Edit event", helper: "Name, dates, times and slots", icon: <PencilIcon />, href: `/edit/${actionsEvent.id}` },
                   { key: "settings", label: "Event settings", helper: "Visibility, reminders and Google Calendar", icon: <GearIcon />, href: `/edit/${actionsEvent.id}#event-settings` },
+                  ...(coverEnabledForOrg && coverCheck?.id === actionsEvent.id && !coverCheck.hasCover
+                    ? [{ key: "cover", label: "Add cover photo", helper: "Shows at the top of the signup page", icon: <ImageIcon />, href: `/admin/${actionsEvent.id}#add-cover` }]
+                    : []),
                 ],
               },
               {

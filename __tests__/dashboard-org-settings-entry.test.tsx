@@ -400,4 +400,49 @@ describe("Dashboard card More sheet", () => {
     expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
     await flush();
   });
+  describe("Add cover photo", () => {
+    const prev = process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS;
+    afterEach(() => {
+      process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS = prev;
+    });
+    function mockWithCover(coverUrl: string | null) {
+      mockOrgList(1);
+      const base = global.fetch as jest.Mock;
+      global.fetch = jest.fn(async (url: string) => {
+        if (String(url).includes("/api/events/e9/cover")) return { ok: true, json: async () => ({ coverUrl, coverPosition: null }) };
+        return base(url);
+      }) as unknown as typeof fetch;
+    }
+
+    it("shows in Edit and links to the event page when covers are on and none is set", async () => {
+      process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS = "org1";
+      mockWithCover(null);
+      renderDashboard();
+      fireEvent.click(await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 }));
+      const edit = within(screen.getByRole("dialog")).getByRole("group", { name: "Edit" });
+      const link = await within(edit).findByRole("link", { name: /Add cover photo/ });
+      expect(link).toHaveAttribute("href", "/admin/e9#add-cover");
+      expect(global.fetch).toHaveBeenCalledWith("/api/events/e9/cover");
+    });
+
+    it("stays hidden when the event already has a cover", async () => {
+      process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS = "org1";
+      mockWithCover("https://x/cover.jpg");
+      renderDashboard();
+      fireEvent.click(await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 }));
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith("/api/events/e9/cover"));
+      await flush();
+      expect(screen.queryByText("Add cover photo")).not.toBeInTheDocument();
+    });
+
+    it("stays hidden and skips the check when the org is not on the cover allowlist", async () => {
+      process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS = "";
+      mockWithCover(null);
+      renderDashboard();
+      fireEvent.click(await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 }));
+      await flush();
+      expect(screen.queryByText("Add cover photo")).not.toBeInTheDocument();
+      expect(global.fetch).not.toHaveBeenCalledWith("/api/events/e9/cover");
+    });
+  });
 });

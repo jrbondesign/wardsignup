@@ -228,4 +228,43 @@ describe("AdminEventActions phone row", () => {
     expect(ctx.setMoreMenuOpen).toHaveBeenCalledWith(false);
     expect(ctx.setShowDeleteModal).toHaveBeenCalledWith(true);
   });
+  describe("#add-cover from the dashboard sheet", () => {
+    const setPhone = (phone: boolean) => {
+      window.matchMedia = jest.fn().mockReturnValue({ matches: phone }) as unknown as typeof window.matchMedia;
+    };
+    afterEach(() => window.history.replaceState(null, "", "/"));
+
+    it("opens the More sheet on a phone and clears the hash", () => {
+      setPhone(true);
+      window.history.replaceState(null, "", "/admin/e1#add-cover");
+      const { ctx } = makeCtx({ coverEnabled: true });
+      render(<AdminEventActions ctx={ctx} />);
+      expect(ctx.setMoreMenuOpen).toHaveBeenCalledWith(true);
+      expect(window.location.hash).toBe("");
+    });
+
+    it("focuses Add cover on desktop", () => {
+      setPhone(false);
+      window.history.replaceState(null, "", "/admin/e1#add-cover");
+      const { ctx } = makeCtx({ coverEnabled: true });
+      render(<AdminEventActions ctx={ctx} />);
+      expect(screen.getByRole("button", { name: "Add cover" })).toHaveFocus();
+      expect(ctx.setMoreMenuOpen).not.toHaveBeenCalled();
+    });
+
+    it("does nothing when the event already has a cover", () => {
+      setPhone(true);
+      window.history.replaceState(null, "", "/admin/e1#add-cover");
+      const { ctx } = makeCtx({ coverEnabled: true, coverUrl: "https://x/cover.jpg" });
+      render(<AdminEventActions ctx={ctx} />);
+      expect(ctx.setMoreMenuOpen).not.toHaveBeenCalled();
+    });
+  });
+
+  it("phone bottom sheet pads past the iPhone home indicator", () => {
+    render(
+      <EventActionsSheet title="T" subtitle="S" groups={[]} onDelete={jest.fn()} onClose={jest.fn()} triggerRef={{ current: null }} />
+    );
+    expect(screen.getByRole("dialog").className).toContain("pb-[max(1rem,env(safe-area-inset-bottom))]");
+  });
 });
