@@ -440,3 +440,52 @@ describe("useAdminEventState cleanup", () => {
   });
 });
 
+describe("Duplicate dialog while duplicating", () => {
+  function Dup({ push = jest.fn() }: { push?: jest.Mock }) {
+    const { openDuplicate, duplicateDialog } = useDuplicateEvent({ router: { push }, posthog: null });
+    return (
+      <>
+        <button type="button" onClick={() => openDuplicate({ id: "e1", name: "Ward Potluck", anchorDate: "2026-06-14" })}>open</button>
+        {duplicateDialog}
+      </>
+    );
+  }
+
+  it("moves focus to the panel while busy and keeps Tab and Escape inside", async () => {
+    let finish: (v: unknown) => void = () => {};
+    global.fetch = jest.fn(() => new Promise((res) => { finish = res; })) as unknown as typeof fetch;
+    const outside = document.createElement("button");
+    outside.textContent = "outside";
+    document.body.appendChild(outside);
+    render(<Dup />);
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+    const dialog = screen.getByRole("dialog", { name: "Duplicate Event" });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Duplicate" }));
+    });
+    expect(within(dialog).getByRole("button", { name: "Duplicating…" })).toBeDisabled();
+    expect(within(dialog).getByRole("textbox", { name: "New event name" })).toBeDisabled();
+    expect(dialog).toHaveAttribute("aria-busy", "true");
+    expect(dialog).toHaveAttribute("tabindex", "-1");
+    expect(dialog).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(dialog).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(dialog).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.getByRole("dialog", { name: "Duplicate Event" })).toBeInTheDocument();
+    await act(async () => {
+      finish({ ok: true, json: async () => ({ event: { id: "new1" } }) });
+    });
+    outside.remove();
+  });
+
+  it("caps the panel to the viewport and scrolls, so it fits phone landscape", () => {
+    render(<Dup />);
+    fireEvent.click(screen.getByRole("button", { name: "open" }));
+    const cls = screen.getByRole("dialog", { name: "Duplicate Event" }).className;
+    expect(cls).toContain("max-h-[calc(100dvh-2rem)]");
+    expect(cls).toMatch(/\boverflow-y-auto\b/);
+  });
+});
+

@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { useDialogFocus } from "@/components/event-actions/useDialogFocus";
 import { createClientComponentClient } from "@/lib/auth";
 import { diffDays } from "@/lib/date-shift";
@@ -35,6 +35,14 @@ function DuplicateModal({ eventName, anchorDate, duplicating, onConfirm, onCance
     if (!duplicating) onCancel();
   }, { initialFocusRef: nameRef });
 
+  // Every control disables while duplicating, which would drop focus to <body>; keep it on the dialog.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!duplicating || !panel) return;
+    const active = document.activeElement as HTMLInputElement | HTMLButtonElement | null;
+    if (!active || !panel.contains(active) || active.disabled) panel.focus();
+  }, [duplicating]);
+
   return (
     <div className="fixed inset-0 bg-[#0D2B35]/50 backdrop-blur-[2px] flex items-center justify-center p-4 z-[1150]">
       <div
@@ -42,8 +50,9 @@ function DuplicateModal({ eventName, anchorDate, duplicating, onConfirm, onCance
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        aria-busy={duplicating || undefined}
         tabIndex={-1}
-        className="bg-white rounded-2xl shadow-[0_20px_60px_rgba(8,100,126,0.18)] max-w-md w-full p-8 outline-none"
+        className="bg-white rounded-2xl shadow-[0_20px_60px_rgba(8,100,126,0.18)] max-w-md w-full max-h-[calc(100dvh-2rem)] overflow-y-auto overscroll-contain p-6 sm:p-8 outline-none"
       >
         <h2 id={titleId} className="font-serif text-2xl text-[#0D2B35] mb-2">Duplicate Event</h2>
         <p className="text-sm text-[#5A8399] leading-relaxed mb-5">
