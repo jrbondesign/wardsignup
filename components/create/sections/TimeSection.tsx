@@ -1,12 +1,16 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import TimeInput from "@/components/TimeInput";
 import DateRangePicker from "@/components/DateRangePicker";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
 import SlotEditor, { type SlotRow } from "@/components/create/SlotEditor";
 import type { CreateFormState, LabeledTime } from "@/lib/create-form-state";
-import { formatTime, parseLooseTime } from "@/lib/utils";
+import {
+  EMPTY_APPROXIMATE_TIME_MEMORY,
+  type ApproximateTimeMemory,
+  switchApproximateMode,
+} from "@/lib/utils";
 
 const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -524,6 +528,8 @@ function SpotsSlots({ state, set }: Props) {
 
 function TimeFields({ state, set }: Props) {
   const useApprox = state.approximateTime;
+  const memoryRef = useRef<ApproximateTimeMemory>({ ...EMPTY_APPROXIMATE_TIME_MEMORY });
+  const [approxNote, setApproxNote] = useState("");
   return (
     <div>
       <label className="inline-flex items-center gap-2 cursor-pointer select-none mb-2">
@@ -591,19 +597,19 @@ function TimeFields({ state, set }: Props) {
               checked={useApprox}
               onChange={(e) => {
                 const next = e.target.checked;
-                if (next) {
-                  set({
-                    approximateTime: true,
-                    startTime: state.startTime ? formatTime(state.startTime) : "",
-                    endTime: state.endTime ? formatTime(state.endTime) : "",
-                  });
-                } else {
-                  set({
-                    approximateTime: false,
-                    startTime: parseLooseTime(state.startTime) ?? "",
-                    endTime: parseLooseTime(state.endTime) ?? "",
-                  });
-                }
+                const result = switchApproximateMode({
+                  toApproximate: next,
+                  startTime: state.startTime,
+                  endTime: state.endTime,
+                  memory: memoryRef.current,
+                });
+                memoryRef.current = result.memory;
+                setApproxNote(result.note);
+                set({
+                  approximateTime: next,
+                  startTime: result.startTime,
+                  endTime: result.endTime,
+                });
               }}
               className="w-4 h-4 rounded border-[rgba(14,150,176,0.4)] text-[#0E96B0] focus:ring-[#0E96B0]"
             />
@@ -611,6 +617,9 @@ function TimeFields({ state, set }: Props) {
               Use plain text instead (e.g. &quot;around 9am&quot;, &quot;dinnertime&quot;)
             </span>
           </label>
+          {approxNote ? (
+            <p className="mt-2 text-[12px] text-amber-800">{approxNote}</p>
+          ) : null}
         </>
       )}
     </div>

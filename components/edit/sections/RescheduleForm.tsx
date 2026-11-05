@@ -8,6 +8,7 @@ import { type EditEventCtx } from "@/components/edit/hooks/useEditEvent";
 /** Replace-schedule panel. */
 export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
   const {
+    error,
     applyReschedule,
     customDuration,
     isTithingReschedule,
@@ -110,7 +111,8 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
             value={rescheduleTime}
             onChange={setRescheduleTime}
             ariaLabel="Start time"
-            className={
+            nativeValidity={false}
+              className={
               isTithingReschedule
                 ? "w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
                 : "w-full text-base text-[#0D2B35] px-[14px] py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
@@ -125,7 +127,8 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
             value={rescheduleEndTime}
             onChange={setRescheduleEndTime}
             ariaLabel="End time"
-            className={
+            nativeValidity={false}
+              className={
               isTithingReschedule
                 ? "w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
                 : "w-full text-base text-[#0D2B35] px-[14px] py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
@@ -323,6 +326,11 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
           : "Choose a date range to see a preview."}
       </div>
 
+      {error ? (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-sm" role="alert">
+          {error}
+        </div>
+      ) : null}
       <div className="flex gap-3">
         <button
           type="button"

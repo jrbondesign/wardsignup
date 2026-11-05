@@ -13,6 +13,11 @@ interface TimeInputProps {
   id?: string;
   /** Optional; TimeInput uses its own chrome sized to match neighboring inputs. */
   className?: string;
+  /**
+   * When false, skip setCustomValidity so a parent page form Save is not blocked
+   * (panel type=button handlers validate instead). Default true.
+   */
+  nativeValidity?: boolean;
 }
 
 export type Meridiem = "" | "AM" | "PM";
@@ -71,7 +76,7 @@ const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"))
 
 /** Match neighboring inputs: ~42px tall, 12px radius, 14px text. */
 const selectBase =
-  "min-w-0 text-sm text-[#0D2B35] px-2 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60";
+  "min-w-0 text-sm text-[#0D2B35] px-1.5 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60";
 
 const PARTIAL_MESSAGE = "Finish choosing hour, minute, and AM or PM.";
 
@@ -86,6 +91,7 @@ export default function TimeInput({
   required,
   ariaLabel,
   id,
+  nativeValidity = true,
 }: TimeInputProps) {
   const autoId = useId();
   const baseId = id || autoId;
@@ -111,8 +117,12 @@ export default function TimeInput({
   useLayoutEffect(() => {
     const el = meridiemRef.current;
     if (!el) return;
+    if (!nativeValidity) {
+      el.setCustomValidity("");
+      return;
+    }
     el.setCustomValidity(showPartial ? PARTIAL_MESSAGE : "");
-  }, [showPartial]);
+  }, [showPartial, nativeValidity]);
 
   const emit = (next: Partial<TimeParts>) => {
     let merged: TimeParts = {
@@ -139,6 +149,7 @@ export default function TimeInput({
         role="group"
         aria-label={groupLabel}
         aria-describedby={showPartial ? hintId : undefined}
+        data-time-partial={showPartial ? "true" : undefined}
         className="flex gap-1.5 min-w-0 w-full items-stretch"
       >
         <select
@@ -181,7 +192,7 @@ export default function TimeInput({
           disabled={disabled}
           required={required}
           onChange={(e) => emit({ meridiem: e.target.value as Meridiem })}
-          className={`${selectBase} flex-none w-[5.25rem]`}
+          className={`${selectBase} flex-1 min-w-[4rem]`}
         >
           <option value="">AM/PM</option>
           <option value="AM">AM</option>

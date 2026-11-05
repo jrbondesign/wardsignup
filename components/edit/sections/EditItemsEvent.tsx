@@ -1,6 +1,10 @@
 "use client";
-import { formatTime, parseLooseTime } from "@/lib/utils";
-
+import { useRef, useState } from "react";
+import {
+  EMPTY_APPROXIMATE_TIME_MEMORY,
+  type ApproximateTimeMemory,
+  switchApproximateMode,
+} from "@/lib/utils";
 import Navigation from "@/components/Navigation";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import Link from "next/link";
@@ -43,6 +47,9 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
     setItemsEventStartTime,
     setItemsList,
   } = ctx;
+
+  const approxMemoryRef = useRef<ApproximateTimeMemory>({ ...EMPTY_APPROXIMATE_TIME_MEMORY });
+  const [approxNote, setApproxNote] = useState("");
 
   const filledItems = itemsList.filter((it) => it.label.trim());
   return (
@@ -160,15 +167,16 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
                   <input type="checkbox" checked={itemsApproximateTime}
                     onChange={(e) => {
                       const next = e.target.checked;
-                      if (next) {
-                        // Exact → approximate: keep times as readable text so a second toggle can restore them.
-                        setItemsEventStartTime(itemsEventStartTime ? formatTime(itemsEventStartTime) : "");
-                        setItemsEventEndTime(itemsEventEndTime ? formatTime(itemsEventEndTime) : "");
-                      } else {
-                        // Approximate → exact: parse free text back to HH:MM when possible.
-                        setItemsEventStartTime(parseLooseTime(itemsEventStartTime) ?? "");
-                        setItemsEventEndTime(parseLooseTime(itemsEventEndTime) ?? "");
-                      }
+                      const result = switchApproximateMode({
+                        toApproximate: next,
+                        startTime: itemsEventStartTime,
+                        endTime: itemsEventEndTime,
+                        memory: approxMemoryRef.current,
+                      });
+                      approxMemoryRef.current = result.memory;
+                      setApproxNote(result.note);
+                      setItemsEventStartTime(result.startTime);
+                      setItemsEventEndTime(result.endTime);
                       setItemsApproximateTime(next);
                       setItemsError("");
                     }}
@@ -178,7 +186,10 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
                     Approximate time <span className="text-[#5A8399] font-normal">(use plain text like &quot;around 9 to 10am&quot;)</span>
                   </span>
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {approxNote ? (
+                  <p className="mb-2 text-[12px] text-amber-800">{approxNote}</p>
+                ) : null}
+                <div id="edit-items-times" className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="min-w-0">
                     <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">Start Time <span className="font-normal text-[#5A8399]">(optional)</span></label>
                     {itemsApproximateTime ? (

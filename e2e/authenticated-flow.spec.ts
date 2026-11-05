@@ -62,8 +62,8 @@ test.describe('Authenticated User Flow', () => {
     await expect(page.getByText('Session 1')).toBeVisible();
 
     // Update first session
-    // Weekday select only (exclude TimeInput hour/minute/AM-PM selects)
-    await page.locator('select').filter({ hasNot: page.locator('option[value="AM"]') }).first().selectOption('2'); // Tuesday
+    // Weekday select by label (not TimeInput hour/minute/AM-PM)
+    await page.getByLabel(/day of (the )?week/i).first().selectOption('2'); // Tuesday
     await page.getByLabel('Start time hour').first().selectOption('7');
     await page.getByLabel('Start time AM or PM').first().selectOption('PM');
     await page.locator('input[type="number"]').first().fill('2');
@@ -74,7 +74,7 @@ test.describe('Authenticated User Flow', () => {
     await expect(page.getByText('Session 2')).toBeVisible();
 
     // Configure second session
-    await page.locator('select').filter({ hasNot: page.locator('option[value="AM"]') }).nth(1).selectOption('4'); // Thursday
+    await page.getByLabel(/day of (the )?week/i).nth(1).selectOption('4'); // Thursday
     await page.getByLabel('Start time hour').nth(1).selectOption('3');
     await page.getByLabel('Start time AM or PM').nth(1).selectOption('PM');
     await page.locator('input[type="number"]').nth(1).fill('1');

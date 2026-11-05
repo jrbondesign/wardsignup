@@ -8,6 +8,7 @@ import { type EditEventState } from "./useEditEventState";
 import { type EditEventSettings } from "./useEditEventSettings";
 import { type ScheduleBuilders } from "./useScheduleBuilders";
 import { type SlotActions } from "./useSlotActions";
+import { subtreeHasInvalidTimeSelect } from "@/lib/utils";
 
 /** Saves the schedule (with destructive-delete guard) and items events. */
 export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & ScheduleBuilders & SlotActions) {
@@ -246,6 +247,14 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
     }
     if (!itemsApproximateTime && itemsEventStartTime && itemsEventEndTime && itemsEventStartTime >= itemsEventEndTime) {
       setItemsError("End time must be after start time.");
+      return;
+    }
+    if (
+      !itemsApproximateTime &&
+      typeof document !== "undefined" &&
+      subtreeHasInvalidTimeSelect(document.getElementById("edit-items-times"))
+    ) {
+      setItemsError("Finish choosing hour, minute, and AM or PM.");
       return;
     }
     setItemsSaving(true);

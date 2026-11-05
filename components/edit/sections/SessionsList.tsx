@@ -276,7 +276,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                 />
               </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_5.5rem] gap-3">
               <div>
                 <label className="block text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1">
                   Start

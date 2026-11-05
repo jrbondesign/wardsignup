@@ -1,6 +1,7 @@
 "use client";
 
 import { SessionData, resolveSpotsDraft, scrollToEditSection } from "@/components/edit/edit-page-shared";
+import { startTimePanelError } from "@/lib/utils";
 import { generateTithingDeclarationSessions } from "@/lib/tithing-reschedule";
 import { type EditEventState } from "./useEditEventState";
 import { type EditEventSettings } from "./useEditEventSettings";
@@ -93,19 +94,15 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
     if (typeof document === "undefined") return false;
     const el = document.getElementById(elementId);
     if (!el) return false;
-    return !!el.querySelector("select:invalid");
+    // Panels use nativeValidity={false}, so check the data flag instead of :invalid.
+    return !!el.querySelector('[data-time-partial="true"]');
   };
 
   const requireStartTime = (time: string, panelId: string, open: () => void) => {
-    if (!time.trim()) {
+    const message = startTimePanelError(time, timePanelHasPartial(panelId));
+    if (message) {
       open();
-      setError("Pick a start time for this slot.");
-      scrollToEditSection(panelId);
-      return false;
-    }
-    if (timePanelHasPartial(panelId)) {
-      open();
-      setError("Finish choosing hour, minute, and AM or PM.");
+      setError(message);
       scrollToEditSection(panelId);
       return false;
     }
