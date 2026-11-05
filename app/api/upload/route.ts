@@ -145,16 +145,22 @@ export async function POST(request: NextRequest) {
         );
       }
     } else {
-      // Update campaigns.cover_image_url. If this fails after storage upload,
-      // roll back only the newly uploaded object (when unreferenced). Leave any
-      // previous cover on the row alone — the campaign still points at it.
+      // Update campaigns.cover_image_url. Require exactly one affected row
+      // (.select().single()): a deleted/missing event yields zero rows with no
+      // PostgREST error on a bare update, which would otherwise look like success
+      // and orphan the upload. On any persist failure, roll back only the newly
+      // uploaded object when unreferenced — never a previous cover still on the row.
       let patchErr: { message?: string } | null = null;
+      let patchedId: string | null = null;
       try {
         const result = await admin
           .from("campaigns")
           .update({ cover_image_url: urlWithVersion, cover_position: null } as never)
-          .eq("id", eventId!);
+          .eq("id", eventId!)
+          .select("id")
+          .single();
         patchErr = result.error;
+        patchedId = (result.data as { id?: string } | null)?.id ?? null;
       } catch (persistErr) {
         console.error("campaigns cover_image_url update threw:", persistErr);
         await removeCoverIfUnreferenced(admin, uploadedCoverUrlToRollback);
@@ -164,8 +170,12 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
-      if (patchErr) {
-        console.error("campaigns cover_image_url update error:", patchErr);
+      if (patchErr || !patchedId) {
+        console.error(
+          "campaigns cover_image_url update error:",
+          patchErr ?? "no campaign row updated"
+        );
+        // Marker still set until cleanup runs; then clear so outer catch does not double-roll.
         await removeCoverIfUnreferenced(admin, uploadedCoverUrlToRollback);
         uploadedCoverUrlToRollback = null;
         return NextResponse.json(
@@ -173,7 +183,8 @@ export async function POST(request: NextRequest) {
           { status: 500 }
         );
       }
-      // Persist succeeded — do not roll back the new cover if later cleanup throws.
+      // Persist confirmed (one campaign row returned) — do not roll back the new
+      // cover if later old-object cleanup throws.
       uploadedCoverUrlToRollback = null;
       // Clean up the old object if it lived at a different path (other
       // format, other uploader, or a file shared from a duplicated event).

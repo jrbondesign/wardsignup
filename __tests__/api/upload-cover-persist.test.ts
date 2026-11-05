@@ -2,8 +2,8 @@
  * @jest-environment node
  *
  * Regression: cover storage upload + failed campaigns URL persist must not
- * leave an unreferenced orphan. Converted from the QA reproduction that
- * previously asserted the buggy "remove never called" behavior.
+ * leave an unreferenced orphan. Covers returned errors, throws, and the
+ * zero-row PostgREST update race (event deleted between ownership and persist).
  */
 import { NextRequest } from "next/server";
 import { POST } from "@/app/api/upload/route";
@@ -26,7 +26,7 @@ const OLD_URL = `${BASE}/storage/v1/object/public/event-media/${OLD_PATH}?v=1`;
 
 type SetupOpts = {
   org?: string;
-  failPatch?: "error" | "throw" | false;
+  failPatch?: "error" | "throw" | "zero-row" | "zero-row-silent" | false;
   previousCoverUrl?: string | null;
   /** How many campaigns still reference the NEW cover path during rollback. */
   newPathRefCount?: number;
@@ -60,11 +60,25 @@ function setup(opts: SetupOpts = {}) {
     return { count: 0, error: null };
   });
 
-  const updateEq = jest.fn(async () => {
+  const persistSingle = jest.fn(async () => {
     if (failPatch === "throw") {
       throw new Error("simulated DB throw");
     }
-    return { error: failPatch === "error" ? { message: "simulated DB outage" } : null };
+    if (failPatch === "error") {
+      return { data: null, error: { message: "simulated DB outage" } };
+    }
+    if (failPatch === "zero-row") {
+      // Bare update would look like success; .select().single() surfaces no row.
+      return {
+        data: null,
+        error: { code: "PGRST116", message: "JSON object requested, multiple (or no) rows returned" },
+      };
+    }
+    if (failPatch === "zero-row-silent") {
+      // No PostgREST error, but no campaign id returned either.
+      return { data: null, error: null };
+    }
+    return { data: { id: EVENT }, error: null };
   });
 
   const admin = {
@@ -79,7 +93,13 @@ function setup(opts: SetupOpts = {}) {
           })),
         };
       }),
-      update: jest.fn(() => ({ eq: updateEq })),
+      update: jest.fn(() => ({
+        eq: jest.fn(() => ({
+          select: jest.fn(() => ({
+            single: persistSingle,
+          })),
+        })),
+      })),
     })),
     storage: {
       from: jest.fn(() => ({
@@ -98,7 +118,7 @@ function setup(opts: SetupOpts = {}) {
   (userCanAdminCampaign as jest.Mock).mockResolvedValue(true);
   (createServiceRoleClient as jest.Mock).mockReturnValue(admin);
 
-  return { upload, remove, like, updateEq, admin };
+  return { upload, remove, like, persistSingle, admin };
 }
 
 function request() {
@@ -115,12 +135,13 @@ describe("POST /api/upload cover persist lifecycle", () => {
   afterAll(() => log.mockRestore());
 
   it("valid cover lands in the event folder and passes the URL guard", async () => {
-    const { upload } = setup();
+    const { upload, remove } = setup();
     const response = await POST(request());
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(isEventCoverUrl(body.url)).toBe(true);
     expect(upload.mock.calls[0][0]).toBe(NEW_PATH);
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it("denies a non-allowlisted org before uploading", async () => {
@@ -140,6 +161,24 @@ describe("POST /api/upload cover persist lifecycle", () => {
 
   it("removes the newly uploaded object when URL persist throws", async () => {
     const { upload, remove } = setup({ failPatch: "throw", previousCoverUrl: null });
+    const response = await POST(request());
+    expect(response.status).toBe(500);
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith([NEW_PATH]);
+  });
+
+  it("removes the newly uploaded object when the event disappears before URL persist (zero rows)", async () => {
+    // Ownership lookup succeeded; event is gone by the time cover_image_url is written.
+    const { upload, remove } = setup({ failPatch: "zero-row", previousCoverUrl: null });
+    const response = await POST(request());
+    expect(response.status).toBe(500);
+    expect(upload).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledTimes(1);
+    expect(remove).toHaveBeenCalledWith([NEW_PATH]);
+  });
+
+  it("treats a silent zero-row persist (no error, no id) as failure and cleans up", async () => {
+    const { upload, remove } = setup({ failPatch: "zero-row-silent", previousCoverUrl: null });
     const response = await POST(request());
     expect(response.status).toBe(500);
     expect(upload).toHaveBeenCalledTimes(1);
@@ -168,6 +207,18 @@ describe("POST /api/upload cover persist lifecycle", () => {
     const sameUrl = `${NEW_URL}?v=old`;
     const { remove } = setup({
       failPatch: "error",
+      previousCoverUrl: sameUrl,
+      newPathRefCount: 1,
+    });
+    const response = await POST(request());
+    expect(response.status).toBe(500);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("zero-row persist also keeps a still-referenced same-path object", async () => {
+    const sameUrl = `${NEW_URL}?v=old`;
+    const { remove } = setup({
+      failPatch: "zero-row",
       previousCoverUrl: sameUrl,
       newPathRefCount: 1,
     });
