@@ -640,19 +640,45 @@ function TimeFields({ state, set }: Props) {
   );
 }
 
+let extraTimeKeySeq = 0;
+const newExtraTimeKey = () => `extra-time-${++extraTimeKeySeq}`;
+
 function ExtraTimes({ state, set }: Props) {
   const expanded = state.expanded.extraTimes || state.extraTimes.length > 0;
+  const rows = state.extraTimes;
+  // Stable React keys kept only in component state (LabeledTime stays { label, time }),
+  // so removing a row never hands its unfinished picks to the next row.
+  const [keys, setKeys] = useState<string[]>(() => rows.map(newExtraTimeKey));
+  if (keys.length !== rows.length) {
+    const next = keys.slice(0, rows.length);
+    while (next.length < rows.length) next.push(newExtraTimeKey());
+    setKeys(next);
+  }
   const updateRow = (idx: number, patch: Partial<LabeledTime>) => {
-    const next = state.extraTimes.map((row, i) => (i === idx ? { ...row, ...patch } : row));
+    const next = rows.map((row, i) => (i === idx ? { ...row, ...patch } : row));
     set({ extraTimes: next });
   };
-  const removeRow = (idx: number) =>
-    set({ extraTimes: state.extraTimes.filter((_, i) => i !== idx) });
+  const removeRow = (idx: number) => {
+    setKeys((prev) => prev.filter((_, i) => i !== idx));
+    set({ extraTimes: rows.filter((_, i) => i !== idx) });
+  };
   const addRow = () =>
     set({
-      extraTimes: [...state.extraTimes, { label: "", time: "" }],
+      extraTimes: [...rows, { label: "", time: "" }],
       expanded: { ...state.expanded, extraTimes: true },
     });
+  // Accessible names stay unique: repeated labels get the row number.
+  const labelCounts = new Map<string, number>();
+  rows.forEach((r) => {
+    const k = r.label.trim().toLowerCase();
+    if (k) labelCounts.set(k, (labelCounts.get(k) ?? 0) + 1);
+  });
+  const rowName = (row: LabeledTime, i: number) => {
+    const label = row.label.trim();
+    if (!label) return `additional time ${i + 1}`;
+    return (labelCounts.get(label.toLowerCase()) ?? 0) > 1 ? `${label} time (row ${i + 1})` : `${label} time`;
+  };
+  const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
   if (!expanded) {
     return (
@@ -664,10 +690,10 @@ function ExtraTimes({ state, set }: Props) {
   return (
     <div className="space-y-2">
       <div className="text-[12px] font-medium text-[#2E5566]">Additional times</div>
-      {state.extraTimes.map((row, i) => (
+      {rows.map((row, i) => (
         // Label and Remove share the top line so the 44px Remove target never
         // sits on top of the time selects, even at 320px.
-        <div key={i} className="space-y-2" data-extra-time-row="">
+        <div key={keys[i] ?? `pending-${i}`} className="space-y-2" data-extra-time-row="">
           <div className="flex gap-2 items-center min-w-0">
             <input
               type="text"
@@ -680,7 +706,7 @@ function ExtraTimes({ state, set }: Props) {
             <button
               type="button"
               onClick={() => removeRow(i)}
-              aria-label={row.label.trim() ? `Remove ${row.label.trim()} time` : `Remove additional time ${i + 1}`}
+              aria-label={`Remove ${rowName(row, i)}`}
               className="shrink-0 inline-flex items-center justify-center h-11 w-11 rounded-xl text-[#5A8399] hover:text-red-600 hover:bg-red-50 text-lg leading-none"
             >
               ×
@@ -693,7 +719,7 @@ function ExtraTimes({ state, set }: Props) {
               onChange={(v) => updateRow(i, { time: v })}
               label="Time"
               labelVariant="micro"
-              ariaLabel={row.label.trim() ? `${row.label} time` : "Additional time"}
+              ariaLabel={cap(rowName(row, i))}
               className={inputCls}
             />
           </div>

@@ -93,9 +93,12 @@ const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"))
  * fits in 212px (the narrowest panel at 320); sm and up get roomier padding.
  * Every sm: size is repeated as @min-[35rem]: so a TimeRangeRow that goes side by
  * side below sm (cards 560px+ on 600 to 639px screens) gets the same compact sizing.
+ * On phones each select shares the row but stops at 96px so wide phones and small
+ * tablets do not stretch them across the card. Minute stays 80px from sm up because
+ * its "Minute" placeholder (about 45px) would clip at 76px with the chevron padding.
  */
 const selectBase =
-  "appearance-none bg-no-repeat bg-[position:right_5px_center] sm:bg-[position:right_8px_center] @min-[35rem]:bg-[position:right_8px_center] min-w-0 h-11 sm:h-10 @min-[35rem]:h-10 py-0 pl-1.5 pr-[18px] sm:pl-2.5 @min-[35rem]:pl-2.5 sm:pr-[22px] @min-[35rem]:pr-[22px] text-sm text-[#0D2B35] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60 flex-1 sm:flex-none @min-[35rem]:flex-none";
+  "appearance-none bg-no-repeat bg-[position:right_5px_center] sm:bg-[position:right_8px_center] @min-[35rem]:bg-[position:right_8px_center] min-w-0 h-11 sm:h-10 @min-[35rem]:h-10 py-0 pl-1.5 pr-[18px] sm:pl-2.5 @min-[35rem]:pl-2.5 sm:pr-[22px] @min-[35rem]:pr-[22px] text-sm text-[#0D2B35] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60 flex-1 max-w-24 sm:flex-none @min-[35rem]:flex-none sm:max-w-none @min-[35rem]:max-w-none";
 
 const CHEVRON_STYLE = {
   backgroundImage:
