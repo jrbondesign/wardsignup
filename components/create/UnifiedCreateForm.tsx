@@ -29,6 +29,7 @@ import { focusTimeRow } from "@/lib/utils";
 import { generateSpotsSessions } from "@/lib/spots-session-generator";
 import { applyPreset, getAlternateRsvpDescription } from "@/lib/event-presets";
 import { getEventTemplate, type TemplateKey } from "@/lib/event-template-data";
+import { templateCoverAssetForCreate, uploadTemplateCover } from "@/lib/apply-template-cover";
 import { aiResultToFormPatch } from "@/lib/ai-result-to-form";
 import type { AiEventResult } from "@/lib/ai-event-extraction";
 import type { EventType } from "@/lib/types";
@@ -410,6 +411,20 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
           leader_email: state.leaderEmail.trim() || null,
         }),
       });
+
+      // Seed the template's default cover for allowlisted orgs (Ward Christmas
+      // Party nativity today). Best-effort: create still succeeds if upload fails.
+      const coverAsset = templateCoverAssetForCreate(activeTemplate, organizationId);
+      if (coverAsset) {
+        const coverResult = await uploadTemplateCover({
+          eventId: event.id,
+          token,
+          assetPath: coverAsset,
+        });
+        if (!coverResult.ok) {
+          console.error("template default cover:", coverResult.error);
+        }
+      }
 
       if (state.eventType === "rsvp") {
         // rsvp creates exactly 1 session anchored to the start date (multi-day range

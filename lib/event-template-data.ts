@@ -68,8 +68,15 @@ export interface EventTemplate {
   /** Default items to pre-populate on the setup-items page (bring/do events only) */
   defaultItems?: { label: string; quantity: number; section?: string }[];
   /** Optional preview image shown when the template is picked (public/ path).
-   *  Display only: event covers are uploaded per event and gated per org. */
+   *  Display only on create/use-case pages; not an event cover by itself. */
   previewImage?: string;
+  /**
+   * When set, creating from this template uploads this public asset as the
+   * event's real cover (via /api/upload into the event storage folder) for
+   * orgs with cover images enabled. Other orgs skip it. Ward Christmas Party
+   * only for now.
+   */
+  defaultCoverAsset?: string;
   /** Alternative description used when a dual-mode template switches to RSVP mode */
   defaultDescriptionRsvp?: string;
   /** Brands this template is offered to. Omitted = available to every brand. */
@@ -174,6 +181,7 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     catTextColor: "text-emerald-600",
     allowGuestsDefault: false,
     previewImage: "/templates/ward-christmas-party.webp",
+    defaultCoverAsset: "/templates/ward-christmas-party.webp",
     defaultName: "Ward Christmas Party",
     defaultDescription:
       "Join us as a ward to celebrate the birth of our Savior. Please sign up to bring food or help with a job. Pick an item, choose how many you will bring, and add your name. No account is needed. The counts are a starting point, so leaders can change them to fit our ward. Thank you for helping make this a warm night together.",

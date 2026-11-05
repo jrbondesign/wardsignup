@@ -32,6 +32,7 @@ describe("Ward Christmas Party template", () => {
     expect(t.catId).toBe("bring");
     expect(t.brands).toEqual(["wardsignup"]);
     expect(t.previewImage).toBe("/templates/ward-christmas-party.webp");
+    expect(t.defaultCoverAsset).toBe("/templates/ward-christmas-party.webp");
   });
 
   it("has the Food and Jobs items with counts, and no Santa", () => {
