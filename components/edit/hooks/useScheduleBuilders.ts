@@ -88,8 +88,33 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
     }
   };
 
+
+  const timePanelHasPartial = (elementId: string) => {
+    if (typeof document === "undefined") return false;
+    const el = document.getElementById(elementId);
+    if (!el) return false;
+    return !!el.querySelector("select:invalid");
+  };
+
+  const requireStartTime = (time: string, panelId: string, open: () => void) => {
+    if (!time.trim()) {
+      open();
+      setError("Pick a start time for this slot.");
+      scrollToEditSection(panelId);
+      return false;
+    }
+    if (timePanelHasPartial(panelId)) {
+      open();
+      setError("Finish choosing hour, minute, and AM or PM.");
+      scrollToEditSection(panelId);
+      return false;
+    }
+    return true;
+  };
+
   const applyReschedule = () => {
     if (!rescheduleStart || !rescheduleEnd) return;
+    if (!requireStartTime(rescheduleTime, "edit-reschedule-time", () => setShowReschedule(true))) return;
     if (signupCount > 0) {
       setShowRescheduleConfirm(true);
       return;
@@ -99,6 +124,7 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
 
   const commitReschedule = () => {
     if (!rescheduleStart || !rescheduleEnd) return;
+    if (!requireStartTime(rescheduleTime, "edit-reschedule-time", () => setShowReschedule(true))) return;
     if (signupCount > 0) {
       // Reschedule confirm already warned; don't double-confirm on save.
       allowDestructiveDeletesOnceRef.current = true;
@@ -196,6 +222,7 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
       scrollToEditSection("edit-bulk-days");
       return;
     }
+    if (!requireStartTime(bulkTime, "edit-bulk-time", () => setShowBulk(true))) return;
 
     const bCap = resolveSpotsDraft(bulkCapacityDraft, bulkCapacity);
 
@@ -288,6 +315,7 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
       scrollToEditSection("edit-individual-date");
       return;
     }
+    if (!requireStartTime(newSessionTime, "edit-individual-time", () => setShowAddSession(true))) return;
     setError(null);
 
     let dow = newSessionDayOfWeek;

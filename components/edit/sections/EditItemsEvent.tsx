@@ -1,4 +1,5 @@
 "use client";
+import { formatTime, parseLooseTime } from "@/lib/utils";
 
 import Navigation from "@/components/Navigation";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
@@ -158,15 +159,23 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
                 <label className="inline-flex items-center gap-2 cursor-pointer mb-2 select-none">
                   <input type="checkbox" checked={itemsApproximateTime}
                     onChange={(e) => {
-                      setItemsApproximateTime(e.target.checked);
-                      setItemsEventStartTime("");
-                      setItemsEventEndTime("");
+                      const next = e.target.checked;
+                      if (next) {
+                        // Exact → approximate: keep times as readable text so a second toggle can restore them.
+                        setItemsEventStartTime(itemsEventStartTime ? formatTime(itemsEventStartTime) : "");
+                        setItemsEventEndTime(itemsEventEndTime ? formatTime(itemsEventEndTime) : "");
+                      } else {
+                        // Approximate → exact: parse free text back to HH:MM when possible.
+                        setItemsEventStartTime(parseLooseTime(itemsEventStartTime) ?? "");
+                        setItemsEventEndTime(parseLooseTime(itemsEventEndTime) ?? "");
+                      }
+                      setItemsApproximateTime(next);
                       setItemsError("");
                     }}
                     className="w-4 h-4 rounded border-[rgba(14,150,176,0.4)] text-[#0E96B0] focus:ring-[#0E96B0]"
                     disabled={itemsSaving} />
                   <span className="text-[12px] font-medium text-[#2E5566]">
-                    Approximate time <span className="text-[#5A8399] font-normal">(use plain text like &quot;around 9–10am&quot;)</span>
+                    Approximate time <span className="text-[#5A8399] font-normal">(use plain text like &quot;around 9 to 10am&quot;)</span>
                   </span>
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -209,7 +218,7 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
           {/* Items */}
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-4 md:p-8">
             <h2 className="font-serif text-[22px] text-[#0D2B35] mb-2">Items</h2>
-            <p className="text-[15px] text-[#5A8399] mb-7">List the things people can claim — a dish to bring, a job to do, anything goes. Each item is Unlimited by default; switch to a numeric cap to limit signups.</p>
+            <p className="text-[15px] text-[#5A8399] mb-7">List the things people can claim, like a dish to bring, a job to do, anything goes. Each item is Unlimited by default; switch to a numeric cap to limit signups.</p>
             <ItemsSection
               state={{
                 ...INITIAL_FORM_STATE,

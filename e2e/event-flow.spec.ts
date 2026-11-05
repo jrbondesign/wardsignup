@@ -44,7 +44,8 @@ test.describe.serial('Complete Event Flow', () => {
     await expect(page.getByText('Session 1')).toBeVisible();
 
     // Update first session
-    await page.locator('select').first().selectOption('2'); // Tuesday
+    // Weekday select only (exclude TimeInput hour/minute/AM-PM selects)
+    await page.locator('select').filter({ hasNot: page.locator('option[value="AM"]') }).first().selectOption('2'); // Tuesday
     await page.getByLabel('Start time hour').first().selectOption('7');
     await page.getByLabel('Start time AM or PM').first().selectOption('PM');
     await page.locator('input[type="number"]').first().fill('2');
@@ -55,8 +56,7 @@ test.describe.serial('Complete Event Flow', () => {
     await expect(page.getByText('Session 2')).toBeVisible();
 
     // Configure second session
-    const session2Selects = page.locator('select').nth(1);
-    await session2Selects.selectOption('4'); // Thursday
+    await page.locator('select').filter({ hasNot: page.locator('option[value="AM"]') }).nth(1).selectOption('4'); // Thursday
 
     await page.getByLabel('Start time hour').nth(1).selectOption('3');
     await page.getByLabel('Start time AM or PM').nth(1).selectOption('PM');

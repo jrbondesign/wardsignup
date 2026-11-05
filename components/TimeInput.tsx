@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useId, useLayoutEffect, useRef, useState } from "react";
 
 interface TimeInputProps {
   value: string;
@@ -11,7 +11,7 @@ interface TimeInputProps {
   required?: boolean;
   ariaLabel?: string;
   id?: string;
-  /** Optional className is ignored for layout; compact built-in styles are used. */
+  /** Optional; TimeInput uses its own chrome sized to match neighboring inputs. */
   className?: string;
 }
 
@@ -69,9 +69,11 @@ export function isPartialTime(parts: TimeParts): boolean {
 const HOURS = Array.from({ length: 12 }, (_, i) => String(i + 1));
 const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
 
-/** Compact select chrome shared by hour, minute, and AM/PM. */
+/** Match neighboring inputs: ~42px tall, 12px radius, 14px text. */
 const selectBase =
-  "min-w-0 text-sm leading-tight text-[#0D2B35] px-1.5 py-2 rounded-lg bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60";
+  "min-w-0 text-sm text-[#0D2B35] px-2 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] disabled:opacity-60";
+
+const PARTIAL_MESSAGE = "Finish choosing hour, minute, and AM or PM.";
 
 /**
  * Time picker with hour (1–12), minute, and AM/PM dropdown.
@@ -87,11 +89,11 @@ export default function TimeInput({
 }: TimeInputProps) {
   const autoId = useId();
   const baseId = id || autoId;
+  const meridiemRef = useRef<HTMLSelectElement>(null);
   const [parts, setParts] = useState<TimeParts>(() => hhmmToParts(value));
   const [syncedValue, setSyncedValue] = useState(value);
 
   // Sync from parent during render (avoids set-state-in-effect lint).
-  // Keep local partial edits when the parent holds "" because we emitted incomplete.
   const fromParts = partsToHhmm(parts.hour12, parts.minute, parts.meridiem);
   const incomplete =
     !!(parts.hour12 || parts.minute || parts.meridiem) && fromParts === "";
@@ -104,17 +106,23 @@ export default function TimeInput({
     }
   }
 
+  const showPartial = isPartialTime(parts);
+
+  useLayoutEffect(() => {
+    const el = meridiemRef.current;
+    if (!el) return;
+    el.setCustomValidity(showPartial ? PARTIAL_MESSAGE : "");
+  }, [showPartial]);
+
   const emit = (next: Partial<TimeParts>) => {
     let merged: TimeParts = {
       hour12: next.hour12 !== undefined ? next.hour12 : parts.hour12,
       minute: next.minute !== undefined ? next.minute : parts.minute,
       meridiem: next.meridiem !== undefined ? next.meridiem : parts.meridiem,
     };
-    // Clearing the hour clears the whole control.
     if (next.hour12 === "") {
       merged = { hour12: "", minute: "", meridiem: "" };
     } else if (next.hour12 && !merged.minute) {
-      // Picking an hour with no minute defaults minute to 00.
       merged = { ...merged, minute: "00" };
     }
     setParts(merged);
@@ -123,7 +131,6 @@ export default function TimeInput({
   };
 
   const groupLabel = ariaLabel || "Time";
-  const showPartial = isPartialTime(parts);
   const hintId = `${baseId}-hint`;
 
   return (
@@ -167,13 +174,14 @@ export default function TimeInput({
           ))}
         </select>
         <select
+          ref={meridiemRef}
           id={`${baseId}-meridiem`}
           aria-label={`${groupLabel} AM or PM`}
           value={parts.meridiem}
           disabled={disabled}
           required={required}
           onChange={(e) => emit({ meridiem: e.target.value as Meridiem })}
-          className={`${selectBase} flex-none w-[4.75rem]`}
+          className={`${selectBase} flex-none w-[5.25rem]`}
         >
           <option value="">AM/PM</option>
           <option value="AM">AM</option>

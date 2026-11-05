@@ -101,7 +101,7 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
         )}
       </div>
 
-      <div className={isTithingReschedule ? "grid grid-cols-1 sm:grid-cols-2 gap-3" : "grid grid-cols-1 sm:grid-cols-2 gap-4"}>
+      <div id="edit-reschedule-time" className={isTithingReschedule ? "grid grid-cols-1 sm:grid-cols-2 gap-3" : "grid grid-cols-1 sm:grid-cols-2 gap-4"}>
         <div>
           <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">
             {isTithingReschedule ? "Start Time" : "Start Time"}
@@ -110,7 +110,6 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
             value={rescheduleTime}
             onChange={setRescheduleTime}
             ariaLabel="Start time"
-            required
             className={
               isTithingReschedule
                 ? "w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"

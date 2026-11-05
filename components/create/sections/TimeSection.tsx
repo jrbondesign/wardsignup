@@ -6,6 +6,7 @@ import DateRangePicker from "@/components/DateRangePicker";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
 import SlotEditor, { type SlotRow } from "@/components/create/SlotEditor";
 import type { CreateFormState, LabeledTime } from "@/lib/create-form-state";
+import { formatTime, parseLooseTime } from "@/lib/utils";
 
 const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -588,13 +589,22 @@ function TimeFields({ state, set }: Props) {
             <input
               type="checkbox"
               checked={useApprox}
-              onChange={(e) =>
-                set({
-                  approximateTime: e.target.checked,
-                  startTime: "",
-                  endTime: "",
-                })
-              }
+              onChange={(e) => {
+                const next = e.target.checked;
+                if (next) {
+                  set({
+                    approximateTime: true,
+                    startTime: state.startTime ? formatTime(state.startTime) : "",
+                    endTime: state.endTime ? formatTime(state.endTime) : "",
+                  });
+                } else {
+                  set({
+                    approximateTime: false,
+                    startTime: parseLooseTime(state.startTime) ?? "",
+                    endTime: parseLooseTime(state.endTime) ?? "",
+                  });
+                }
+              }}
               className="w-4 h-4 rounded border-[rgba(14,150,176,0.4)] text-[#0E96B0] focus:ring-[#0E96B0]"
             />
             <span className="text-[12px] text-[#5A8399]">
@@ -632,7 +642,7 @@ function ExtraTimes({ state, set }: Props) {
     <div className="space-y-2">
       <div className="text-[12px] font-medium text-[#2E5566]">Additional times</div>
       {state.extraTimes.map((row, i) => (
-        <div key={i} className="grid grid-cols-1 sm:grid-cols-[1fr_minmax(11rem,14rem)_auto] gap-2 items-center">
+        <div key={i} className="space-y-2">
           <input
             type="text"
             value={row.label}
@@ -640,20 +650,24 @@ function ExtraTimes({ state, set }: Props) {
             placeholder="Label (e.g. Meet at church)"
             className={inputCls}
           />
-          <TimeInput
-            value={row.time}
-            onChange={(v) => updateRow(i, { time: v })}
-            ariaLabel={row.label.trim() ? `${row.label} time` : "Additional time"}
-            className={inputCls}
-          />
-          <button
-            type="button"
-            onClick={() => removeRow(i)}
-            aria-label="Remove"
-            className="text-[#5A8399] hover:text-red-600 px-2"
-          >
-            ×
-          </button>
+          <div className="flex gap-2 items-center min-w-0">
+            <div className="flex-1 min-w-[11rem]">
+              <TimeInput
+                value={row.time}
+                onChange={(v) => updateRow(i, { time: v })}
+                ariaLabel={row.label.trim() ? `${row.label} time` : "Additional time"}
+                className={inputCls}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => removeRow(i)}
+              aria-label="Remove"
+              className="shrink-0 text-[#5A8399] hover:text-red-600 px-2 py-[10px] text-lg leading-none"
+            >
+              ×
+            </button>
+          </div>
         </div>
       ))}
       <button type="button" onClick={addRow} className={linkBtnCls}>
