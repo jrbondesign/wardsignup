@@ -12,7 +12,7 @@ import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import { COVER_SIZE_HINT, coverObjectPosition } from "@/lib/cover-position";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
 import TimeInput, { TimeRangeRow, TimeTextLabel } from "@/components/TimeInput";
-import { ITEMS_TIME_PARTIAL_ERROR, isItemsTimeError } from "@/lib/utils";
+import { ITEMS_TIME_PARTIAL_ERROR, endTimeNote, isItemsTimeError } from "@/lib/utils";
 import ItemsSection from "@/components/create/sections/ItemsSection";
 import { INITIAL_FORM_STATE } from "@/lib/create-form-state";
 import { type EditEventCtx } from "@/components/edit/hooks/useEditEvent";
@@ -225,7 +225,7 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
                       <TimeInput value={itemsEventEndTime}
                         onChange={(v) => { setItemsEventEndTime(v); setItemsError(""); }}
                         label="End time"
-                        labelNote="(optional)"
+                        labelNote={endTimeNote(itemsEventStartTime, itemsEventEndTime)}
                         disabled={itemsSaving}
                         className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] placeholder:text-[#5A8399] placeholder:opacity-70" />
                     )

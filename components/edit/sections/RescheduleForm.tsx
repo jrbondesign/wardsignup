@@ -2,7 +2,7 @@
 
 import { DAYS_SHORT, DURATION_PRESETS, DateRangePicker, countDaysInRange, countTithingSlotsPerDay, keepSpotsSelectionOnMouseUp, resolveSpotsDraft, selectAllSpotsOnFocus } from "@/components/edit/edit-page-shared";
 import TimeInput, { TimeRangeRow } from "@/components/TimeInput";
-import { formatTimeRange } from "@/lib/utils";
+import { formatTimeRange, endTimeNote, isTithingWindowInvalid, TITHING_WINDOW_ORDER_ERROR } from "@/lib/utils";
 import { type EditEventCtx } from "@/components/edit/hooks/useEditEvent";
 
 /** Replace-schedule panel. */
@@ -119,7 +119,8 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
             value={rescheduleEndTime}
             onChange={setRescheduleEndTime}
             label="End time"
-            labelNote={isTithingReschedule ? "(required)" : "(optional)"}
+            labelNote={isTithingReschedule ? "(required)" : endTimeNote(rescheduleTime, rescheduleEndTime)}
+            error={isTithingReschedule && isTithingWindowInvalid(rescheduleTime, rescheduleEndTime) ? TITHING_WINDOW_ORDER_ERROR : undefined}
             nativeValidity={false}
             className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
           />

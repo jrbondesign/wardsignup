@@ -1,5 +1,6 @@
 "use client";
 
+import { sessionLastDate } from "@/lib/calendar-times";
 import { SessionWithSignups } from "@/components/event/event-page-shared";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
 import { type EventPageCtx } from "@/components/event/hooks/useEventPage";
@@ -314,8 +315,10 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
       if (!showSignupsPublicly && sessionHeadcount(s) >= s.capacity) return false;
       // Hide one-time slots whose date is in the past. Recurring slots
       // (session_date === null) keep repeating, so they're always shown.
+      // An overnight slot (End earlier than Start) runs into the next day, so
+      // it stays until that day is over.
       if (s.session_date) {
-        const [y, m, d] = s.session_date.split("-").map(Number);
+        const [y, m, d] = sessionLastDate(s.session_date, s.time, s.end_time).split("-").map(Number);
         const slotDate = new Date(y, m - 1, d);
         const today = new Date();
         today.setHours(0, 0, 0, 0);

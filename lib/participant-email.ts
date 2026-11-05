@@ -10,6 +10,7 @@ import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import type { Campaign } from "@/lib/types";
 import { withUtm } from "@/lib/utm";
+import { googleTemplateDates } from "@/lib/calendar-times";
 
 function runYourOwnCtaHtml(siteOrigin: string): string {
   const createPageUrl = withUtm(`${siteOrigin}/create`, {
@@ -51,17 +52,6 @@ function participantFooter(brand: PublicBrand): string {
   return buildParticipantEmailFooterHtml(brand);
 }
 
-/** "2026-04-18" + "17:00" → "20260418T170000" */
-function toCalDate(date: string, time: string): string {
-  return date.replace(/-/g, "") + "T" + time.replace(":", "") + "00";
-}
-
-/** "17:00" → "18:00" */
-function addOneHour(time: string): string {
-  const [h, m] = time.split(":").map(Number);
-  return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
 function buildGoogleCalendarUrl(
   session: SessionFields,
   campaignName: string,
@@ -70,25 +60,22 @@ function buildGoogleCalendarUrl(
   eventEndDate?: string | null,
 ): string | null {
   if (!session.session_date || !session.time) return null;
-  const start = toCalDate(session.session_date, session.time);
-  const endTime = session.end_time ?? addOneHour(session.time);
-  const end = toCalDate(session.session_date, endTime);
+  // End earlier than start ends the next day; multi-day same-day ranges repeat daily.
+  const g = googleTemplateDates({
+    date: session.session_date,
+    start: session.time,
+    end: session.end_time,
+    eventEndDate,
+  });
+  if (!g) return null;
   const params = new URLSearchParams({
     action: "TEMPLATE",
     text: campaignName,
-    dates: `${start}/${end}`,
+    dates: g.dates,
     details: `Sign up or manage your spot: ${eventUrl}`,
     ...(timezone ? { ctz: timezone } : {}),
   });
-  // Multi-day events: emit a daily recurrence rule so the same start/end time
-  // repeats across each day in the range.
-  if (
-    eventEndDate &&
-    /^\d{4}-\d{2}-\d{2}$/.test(eventEndDate) &&
-    eventEndDate > session.session_date
-  ) {
-    params.set("recur", `RRULE:FREQ=DAILY;UNTIL=${eventEndDate.replace(/-/g, "")}T235959Z`);
-  }
+  if (g.recur) params.set("recur", g.recur);
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 

@@ -1,5 +1,6 @@
 "use client";
 
+import { nextDaySuffix } from "@/lib/utils";
 import Image from "next/image";
 import { type EventPageView } from "@/components/event/hooks/deriveEventPageView";
 
@@ -47,6 +48,7 @@ export default function EventHeaderCard({ ctx }: { ctx: EventPageView }) {
             event_dates?: string[] | null;
             event_start_time?: string | null;
             event_end_time?: string | null;
+            event_end_date?: string | null;
             event_times?: { label: string; time: string }[];
             event_locations?: { label: string; address: string }[];
           };
@@ -59,9 +61,13 @@ export default function EventHeaderCard({ ctx }: { ctx: EventPageView }) {
           // Jun 26, Jul 2, Jul 9") instead of the single event_date row.
           const multiDates = (ev.event_dates ?? []).filter(Boolean);
           const hasMultiDates = multiDates.length > 1;
+          // End earlier than Start ends the next day, except on a multi-day RSVP
+          // where it ends on the last date.
+          const multiDayRsvp = !!(ev.event_end_date && ev.event_date && ev.event_end_date > ev.event_date);
+          const endSuffix = multiDayRsvp ? "" : nextDaySuffix(ev.event_start_time, ev.event_end_time);
           const timeSuffix =
             ev.event_start_time || ev.event_end_time
-              ? ` · ${ev.event_start_time ? fmtTime(ev.event_start_time) : ""}${ev.event_end_time ? ` to ${fmtTime(ev.event_end_time)}` : ""}`
+              ? ` · ${ev.event_start_time ? fmtTime(ev.event_start_time) : ""}${ev.event_end_time ? ` to ${fmtTime(ev.event_end_time)}${endSuffix}` : ""}`
               : "";
           const weekdaysOf = (dates: string[]) => {
             const set = new Set(
@@ -105,7 +111,7 @@ export default function EventHeaderCard({ ctx }: { ctx: EventPageView }) {
                     {(ev.event_start_time || ev.event_end_time) && (
                       <span className="text-[#5A8399]">
                         · {ev.event_start_time ? fmtTime(ev.event_start_time) : ""}
-                        {ev.event_end_time ? ` to ${fmtTime(ev.event_end_time)}` : ""}
+                        {ev.event_end_time ? ` to ${fmtTime(ev.event_end_time)}${endSuffix}` : ""}
                       </span>
                     )}
                   </div>

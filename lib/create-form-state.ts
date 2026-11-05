@@ -7,7 +7,7 @@
  */
 
 import type { EventType } from "@/lib/types";
-import { isEndNotAfterStart } from "@/lib/utils";
+import { isEndSameAsStart } from "@/lib/utils";
 
 export type LabeledTime = { label: string; time: string };
 export type LabeledLocation = { label: string; address: string };
@@ -345,28 +345,32 @@ export const CREATE_SPOTS_TIMES_ROW_ID = "create-spots-times";
 export const createSpotsWindowRowId = (id: string) => `create-spots-window-${id}`;
 
 /**
- * Finds the first Start and End pair on create where End is not after Start on the
- * same day. Plain text times and multi day RSVP ranges are not checked.
+ * Finds the first Start and End pair on create where End equals Start. End earlier
+ * than Start is allowed: it ends the next day (for example 10 PM to 1 AM).
+ * Plain text times and multi day RSVP ranges are not checked.
  * Returns the TimeRangeRow id so the form can focus its End hour.
  */
 export function createTimeOrderIssue(state: CreateFormState): { rowId: string } | null {
   if (state.eventType === "rsvp" || state.eventType === "items") {
     if (!state.hasTime || state.approximateTime) return null;
-    const multiDay =
-      state.eventType === "rsvp" && state.multiDay && !!state.endDate && state.endDate > state.date;
-    if (multiDay) return null;
-    return isEndNotAfterStart(state.startTime, state.endTime)
+    if (isMultiDayRsvp(state)) return null;
+    return isEndSameAsStart(state.startTime, state.endTime)
       ? { rowId: CREATE_EVENT_TIMES_ROW_ID }
       : null;
   }
   if (state.eventType === "spots") {
     if (state.spotsDateMode === "specific") {
-      const bad = state.spotsPickedDates.find((p) => isEndNotAfterStart(p.start, p.end));
+      const bad = state.spotsPickedDates.find((p) => isEndSameAsStart(p.start, p.end));
       return bad ? { rowId: createSpotsWindowRowId(bad.id) } : null;
     }
-    return isEndNotAfterStart(state.spotsStartTime, state.spotsEndTime)
+    return isEndSameAsStart(state.spotsStartTime, state.spotsEndTime)
       ? { rowId: CREATE_SPOTS_TIMES_ROW_ID }
       : null;
   }
   return null;
+}
+
+/** True when an RSVP spans several dates, so End is on the last date, not the next day. */
+export function isMultiDayRsvp(state: CreateFormState): boolean {
+  return state.eventType === "rsvp" && state.multiDay && !!state.endDate && state.endDate > state.date;
 }

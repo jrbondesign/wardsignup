@@ -4,7 +4,7 @@ import { groupSessionsForDisplay } from "@/lib/edit-session-classes";
 import { cardLocation, dayMenuLabel, formatDayHeading, reorderStep, sharedLocations } from "@/lib/edit-slot-actions";
 import ReorderPanel from "@/components/edit/ReorderPanel";
 import { DAYS, dayShortLabel, keepSpotsSelectionOnMouseUp, selectAllSpotsOnFocus } from "@/components/edit/edit-page-shared";
-import { formatTimeRange } from "@/lib/utils";
+import { formatTimeRange, endTimeNote } from "@/lib/utils";
 import MenuTrigger from "@/components/edit/MenuTrigger";
 import SectionHeader from "@/components/edit/SectionHeader";
 import TimeInput, { TimeRangeRow } from "@/components/TimeInput";
@@ -294,7 +294,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                   value={session.end_time ?? ""}
                   onChange={(v) => updateSession(index, "end_time", v)}
                   label="End time"
-                  labelNote="(optional)"
+                  labelNote={endTimeNote(session.time, session.end_time)}
                   labelVariant="micro"
                   className="w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
                 />

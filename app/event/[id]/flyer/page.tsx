@@ -6,7 +6,7 @@ import Link from "next/link";
 import QRCode from "qrcode";
 import { supabase, getPublicCampaignById, getPublicDirectorySlugForCampaign } from "@/lib/supabase";
 import type { Session, CampaignItemWithSignups } from "@/lib/types";
-import { formatTime } from "@/lib/utils";
+import { formatTime, nextDaySuffix } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
 import { usePublicCover } from "@/lib/use-public-cover";
@@ -586,7 +586,7 @@ function SessionsList({
               })()
             : DAYS[s.day_of_week];
           const timeStr =
-            formatTime(s.time) + (s.end_time ? ` to ${formatTime(s.end_time)}` : "");
+            formatTime(s.time) + (s.end_time ? ` to ${formatTime(s.end_time)}${nextDaySuffix(s.time, s.end_time)}` : "");
 
           return (
             <div key={s.id} className="flyer-session">

@@ -2,7 +2,7 @@
 
 import SignupCaptcha from "@/components/event/SignupCaptcha";
 import { DAYS } from "@/components/event/event-page-shared";
-import { formatTime } from "@/lib/utils";
+import { formatTime, nextDaySuffix } from "@/lib/utils";
 import EmailTypoHint from "@/components/EmailTypoHint";
 import { signerEmailHint } from "@/lib/reminder-copy";
 import EmailNudgePrompt from "@/components/EmailNudgePrompt";
@@ -84,7 +84,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
                   ? (() => { const [y,m,d] = singleSession.session_date!.split("-").map(Number); return new Date(y, m-1, d).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }); })()
                   : DAYS[singleSession.day_of_week]}
                 {" · "}{formatTime(singleSession.time)}
-                {singleSession.end_time && ` to ${formatTime(singleSession.end_time)}`}
+                {singleSession.end_time && ` to ${formatTime(singleSession.end_time)}${nextDaySuffix(singleSession.time, singleSession.end_time)}`}
                 {singleSession.location && ` · ${singleSession.location}`}
               </span>
               {showCapacityPublicly && singleSession.capacity < 999 && (

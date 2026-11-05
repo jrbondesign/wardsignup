@@ -1,4 +1,4 @@
-import { addOneHour } from './ics';
+import { calendarSpan } from './calendar-times';
 
 /** HH:mm or HH:mm:ss → HH:mm:ss for Google Calendar dateTime. */
 export function toWallTime(time: string): string {
@@ -16,10 +16,15 @@ export function googleDateTimesForSession(session: {
   end_time: string | null;
 }): { startDateTime: string; endDateTime: string } {
   const startTime = toWallTime(session.time);
-  const endTime = toWallTime(session.end_time || addOneHour(session.time));
+  // End earlier than start (or a default hour past 11 PM) lands on the next date.
+  const span = calendarSpan({ date: session.session_date, start: session.time, end: session.end_time || null });
+  if (!span) {
+    return { startDateTime: `${session.session_date}T${startTime}`, endDateTime: `${session.session_date}T${startTime}` };
+  }
+  const endTime = toWallTime(span.endTime);
   return {
     startDateTime: `${session.session_date}T${startTime}`,
-    endDateTime: `${session.session_date}T${endTime}`,
+    endDateTime: `${span.endDate}T${endTime}`,
   };
 }
 

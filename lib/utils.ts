@@ -1,3 +1,4 @@
+import { isEndSameAsStart, isOvernightRange } from "@/lib/calendar-times";
 /**
  * Format a "HH:mm" (or "HH:mm:ss") time string for display using the runtime
  * default locale. Hour cycle (12h vs 24h) follows the device/browser locale —
@@ -27,12 +28,29 @@ export function formatTimeEnUs(time: string): string {
   return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
-/** Locale-aware range like "1:00 PM to 2:00 PM" or "13:00 to 14:00" per device. */
+/** " (next day)" when End is earlier than Start, else "". */
+export function nextDaySuffix(start: string | null | undefined, end: string | null | undefined): string {
+  return isOvernightRange(start, end) ? " (next day)" : "";
+}
+
+/** End time label note: "(next day)" for an overnight range, else the usual note. */
+export function endTimeNote(
+  start: string | null | undefined,
+  end: string | null | undefined,
+  fallback = "(optional)",
+): string {
+  return isOvernightRange(start, end) ? "(next day)" : fallback;
+}
+
+/**
+ * Locale-aware range like "1:00 PM to 2:00 PM" or "13:00 to 14:00" per device.
+ * An End earlier than Start ends the next day: "10:00 PM to 1:00 AM (next day)".
+ */
 export function formatTimeRange(start: string, end?: string | null): string {
   const a = formatTime(start);
   const endTrim = end?.trim() ?? "";
   if (!endTrim) return a;
-  return `${a} to ${formatTime(endTrim)}`;
+  return `${a} to ${formatTime(endTrim)}${nextDaySuffix(start, endTrim)}`;
 }
 
 /**
@@ -201,21 +219,24 @@ export function startTimePanelError(time: string, hasPartial: boolean): string |
   return null;
 }
 
-/** Items page time errors, shown next to the time fields instead of the page banner. */
-export const ITEMS_TIME_ORDER_ERROR = "End time must be after start time.";
+/**
+ * Items page time errors, shown next to the time fields instead of the page banner.
+ * End earlier than Start is allowed (it ends the next day); only End equal to
+ * Start is rejected.
+ */
+export const ITEMS_TIME_ORDER_ERROR = "End time can't be the same as start time.";
 /** Same message on create, so create and edit read alike. */
 export const TIME_ORDER_ERROR = ITEMS_TIME_ORDER_ERROR;
-
+export { isEndSameAsStart, isOvernightRange } from "@/lib/calendar-times";
 /**
- * True when both exact times are set ("HH:MM" or "HH:MM:SS") and End is not after
- * Start on the same day. Empty or non exact values are never flagged.
+ * Tithing appointment windows are split into same-day slots, so they can't run
+ * past midnight. Shown under End time in the edit reschedule panel.
  */
-export function isEndNotAfterStart(start: string, end: string): boolean {
-  const re = /^\d{2}:\d{2}(:\d{2})?$/;
-  const s = (start ?? "").trim();
-  const e = (end ?? "").trim();
-  if (!re.test(s) || !re.test(e)) return false;
-  return e.slice(0, 5) <= s.slice(0, 5);
+export const TITHING_WINDOW_ORDER_ERROR =
+  "Appointment hours can't run past midnight. Pick an end time after the start time.";
+/** True when a tithing appointment window has both times and End is not after Start. */
+export function isTithingWindowInvalid(start: string, end: string): boolean {
+  return isOvernightRange(start, end) || isEndSameAsStart(start, end);
 }
 export const ITEMS_TIME_PARTIAL_ERROR = "Finish choosing hour, minute, and AM or PM.";
 export function isItemsTimeError(message: string): boolean {

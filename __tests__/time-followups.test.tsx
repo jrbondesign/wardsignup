@@ -13,7 +13,7 @@ import {
   createTimeOrderIssue,
   type CreateFormState,
 } from "@/lib/create-form-state";
-import { formatTimeRange, isEndNotAfterStart, TIME_ORDER_ERROR } from "@/lib/utils";
+import { formatTimeRange, isEndSameAsStart, TIME_ORDER_ERROR } from "@/lib/utils";
 
 const DASHES = /[–—]/;
 
@@ -44,57 +44,68 @@ describe("cleanExtraTimesForSave (unlabeled additional times)", () => {
   });
 });
 
-describe("isEndNotAfterStart", () => {
+describe("isEndSameAsStart", () => {
   it.each([
-    ["10:00", "09:00", true],
     ["10:00", "10:00", true],
+    ["10:00:00", "10:00", true],
+    ["10:00", "09:00", false], // overnight, allowed
     ["10:00", "10:05", false],
     ["10:00", "", false],
     ["", "09:00", false],
     ["10:00", "9am", false],
-    ["10:00:00", "09:30:00", true],
   ])("start %s end %s -> %s", (s, e, want) => {
-    expect(isEndNotAfterStart(s, e)).toBe(want);
+    expect(isEndSameAsStart(s, e)).toBe(want);
   });
 });
 
 describe("createTimeOrderIssue", () => {
-  it("flags rsvp/items when end is not after start", () => {
+  it("flags rsvp/items only when End equals Start", () => {
     for (const eventType of ["rsvp", "items"] as const) {
       expect(
-        createTimeOrderIssue(st({ eventType, hasTime: true, startTime: "18:00", endTime: "17:00" })),
+        createTimeOrderIssue(st({ eventType, hasTime: true, startTime: "18:00", endTime: "18:00" })),
       ).toEqual({ rowId: CREATE_EVENT_TIMES_ROW_ID });
+    }
+  });
+
+  it("allows an overnight range (End earlier than Start) for rsvp and items", () => {
+    for (const eventType of ["rsvp", "items"] as const) {
+      expect(
+        createTimeOrderIssue(st({ eventType, hasTime: true, startTime: "22:00", endTime: "01:00" })),
+      ).toBeNull();
     }
   });
 
   it("passes when end is after start, empty, or time is off / plain text", () => {
     expect(createTimeOrderIssue(st({ eventType: "rsvp", hasTime: true, startTime: "18:00", endTime: "19:00" }))).toBeNull();
     expect(createTimeOrderIssue(st({ eventType: "rsvp", hasTime: true, startTime: "18:00", endTime: "" }))).toBeNull();
-    expect(createTimeOrderIssue(st({ eventType: "rsvp", hasTime: false, startTime: "18:00", endTime: "17:00" }))).toBeNull();
+    expect(createTimeOrderIssue(st({ eventType: "rsvp", hasTime: false, startTime: "18:00", endTime: "18:00" }))).toBeNull();
     expect(
-      createTimeOrderIssue(st({ eventType: "rsvp", hasTime: true, approximateTime: true, startTime: "18:00", endTime: "17:00" })),
+      createTimeOrderIssue(st({ eventType: "rsvp", hasTime: true, approximateTime: true, startTime: "18:00", endTime: "18:00" })),
     ).toBeNull();
   });
 
-  it("skips multi-day rsvp where end can be earlier on a later day", () => {
+  it("skips multi-day rsvp (equal times can mean whole days)", () => {
     expect(
       createTimeOrderIssue(
-        st({ eventType: "rsvp", hasTime: true, multiDay: true, date: "2026-11-06", endDate: "2026-11-07", startTime: "18:00", endTime: "09:00" }),
+        st({ eventType: "rsvp", hasTime: true, multiDay: true, date: "2026-11-06", endDate: "2026-11-07", startTime: "09:00", endTime: "09:00" }),
       ),
     ).toBeNull();
   });
 
-  it("flags the spots range and the first bad specific window", () => {
+  it("flags an equal spots range and the first equal specific window, allows overnight ones", () => {
     expect(
-      createTimeOrderIssue(st({ eventType: "spots", spotsDateMode: "range", spotsStartTime: "12:00", spotsEndTime: "09:00" })),
+      createTimeOrderIssue(st({ eventType: "spots", spotsDateMode: "range", spotsStartTime: "12:00", spotsEndTime: "12:00" })),
     ).toEqual({ rowId: CREATE_SPOTS_TIMES_ROW_ID });
+    expect(
+      createTimeOrderIssue(st({ eventType: "spots", spotsDateMode: "range", spotsStartTime: "22:00", spotsEndTime: "02:00" })),
+    ).toBeNull();
     expect(
       createTimeOrderIssue(
         st({
           eventType: "spots",
           spotsDateMode: "specific",
           spotsPickedDates: [
-            { id: "a", date: "2026-11-06", start: "09:00", end: "12:00" },
+            { id: "a", date: "2026-11-06", start: "22:00", end: "01:00" },
             { id: "b", date: "2026-11-07", start: "12:00", end: "12:00" },
           ] as CreateFormState["spotsPickedDates"],
         }),
@@ -122,16 +133,28 @@ describe("TimeInput error prop", () => {
 });
 
 describe("create TimeSection inline order error", () => {
-  it("shows the message next to End time when End is before Start", () => {
+  it("shows the message next to End time when End equals Start", () => {
     render(
       <TimeSection
-        state={st({ eventType: "rsvp", hasTime: true, startTime: "18:00", endTime: "17:00" })}
+        state={st({ eventType: "rsvp", hasTime: true, startTime: "18:00", endTime: "18:00" })}
         set={() => {}}
       />,
     );
     expect(screen.getByText(TIME_ORDER_ERROR)).toBeInTheDocument();
     expect(screen.getByLabelText("End time hour")).toHaveAttribute("aria-invalid", "true");
     expect(document.getElementById(CREATE_EVENT_TIMES_ROW_ID)).not.toBeNull();
+  });
+
+  it("labels an overnight End as next day without an error", () => {
+    render(
+      <TimeSection
+        state={st({ eventType: "rsvp", hasTime: true, startTime: "22:00", endTime: "01:00" })}
+        set={() => {}}
+      />,
+    );
+    expect(screen.queryByText(TIME_ORDER_ERROR)).toBeNull();
+    expect(screen.getByLabelText("End time hour")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByText("(next day)")).toBeInTheDocument();
   });
 
   it("stays quiet when End is after Start", () => {

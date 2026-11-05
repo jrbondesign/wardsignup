@@ -1,7 +1,7 @@
 "use client";
 
 import { SessionData, resolveSpotsDraft, scrollToEditSection } from "@/components/edit/edit-page-shared";
-import { focusTimeRow, startTimePanelError } from "@/lib/utils";
+import { focusTimeRow, isTithingWindowInvalid, startTimePanelError } from "@/lib/utils";
 import { generateTithingDeclarationSessions } from "@/lib/tithing-reschedule";
 import { type EditEventState } from "./useEditEventState";
 import { type EditEventSettings } from "./useEditEventSettings";
@@ -114,6 +114,15 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
   const applyReschedule = () => {
     if (!rescheduleStart || !rescheduleEnd) return;
     if (!requireStartTime(rescheduleTime, "edit-reschedule-time", () => setShowReschedule(true))) return;
+    // Tithing appointments split one same-day window; an overnight or empty
+    // window would produce no slots and wipe the schedule, so stop here. The
+    // message is already shown under End time; move focus there.
+    if (isTithingReschedule && isTithingWindowInvalid(rescheduleTime, rescheduleEndTime)) {
+      setShowReschedule(true);
+      scrollToEditSection("edit-reschedule-time");
+      setTimeout(() => focusTimeRow("edit-reschedule-time", 3), 0);
+      return;
+    }
     if (signupCount > 0) {
       setShowRescheduleConfirm(true);
       return;
@@ -124,6 +133,13 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
   const commitReschedule = () => {
     if (!rescheduleStart || !rescheduleEnd) return;
     if (!requireStartTime(rescheduleTime, "edit-reschedule-time", () => setShowReschedule(true))) return;
+    // Same guard as applyReschedule (the confirm dialog calls this directly).
+    if (isTithingReschedule && isTithingWindowInvalid(rescheduleTime, rescheduleEndTime)) {
+      setShowReschedule(true);
+      scrollToEditSection("edit-reschedule-time");
+      setTimeout(() => focusTimeRow("edit-reschedule-time", 3), 0);
+      return;
+    }
     if (signupCount > 0) {
       // Reschedule confirm already warned; don't double-confirm on save.
       allowDestructiveDeletesOnceRef.current = true;

@@ -3,7 +3,7 @@
 import { formatSessionDate, formatSlotLabel, orderSessionsBySection } from "@/components/admin/admin-page-shared";
 import Link from "next/link";
 import { Fragment } from "react";
-import { formatTime } from "@/lib/utils";
+import { formatTime, nextDaySuffix } from "@/lib/utils";
 import SignupOptionsMenu from "@/components/SignupOptionsMenu";
 import { type AdminEventView } from "@/components/admin/hooks/deriveAdminEventView";
 
@@ -75,7 +75,7 @@ export default function AdminSessionsSignups({ ctx }: { ctx: AdminEventView }) {
                             {session.label || (
                               <>
                                 {formatTime(session.time)}
-                                {session.end_time && ` to ${formatTime(session.end_time)}`}
+                                {session.end_time && ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time)}`}
                               </>
                             )}
                             {session.location && (
@@ -85,7 +85,7 @@ export default function AdminSessionsSignups({ ctx }: { ctx: AdminEventView }) {
                           {session.label && (
                             <div className="text-xs text-[#5A8399] mt-0.5">
                               {formatTime(session.time)}
-                              {session.end_time && ` to ${formatTime(session.end_time)}`}
+                              {session.end_time && ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time)}`}
                             </div>
                           )}
                           {session.notes && (

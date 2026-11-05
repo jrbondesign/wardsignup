@@ -294,7 +294,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
         return;
       }
     }
-    // End must be after Start (same day). The message shows inline under End time,
+    // End can't equal Start (earlier means next day). The message shows inline under End time,
     // like edit; move focus to the End hour.
     const orderIssue = createTimeOrderIssue(state);
     if (orderIssue) {

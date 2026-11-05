@@ -10,12 +10,14 @@ import {
   CREATE_SPOTS_TIMES_ROW_ID,
   createSpotsWindowRowId,
   createTimeOrderIssue,
+  isMultiDayRsvp,
   type CreateFormState,
   type LabeledTime,
 } from "@/lib/create-form-state";
 import {
   TIME_ORDER_ERROR,
-  isEndNotAfterStart,
+  isEndSameAsStart,
+  isOvernightRange,
   EMPTY_APPROXIMATE_TIME_MEMORY,
   type ApproximateTimeMemory,
   switchApproximateMode,
@@ -322,9 +324,9 @@ function SpotsTime({ state, set }: Props) {
                               value={p.end}
                               onChange={(v) => updatePickedDate(p.id, { end: v })}
                               label="End time"
-                              labelNote="(optional)"
+                              labelNote={isOvernightRange(p.start, p.end) ? "(next day)" : "(optional)"}
                               ariaLabel={`End time for ${label}`}
-                              error={isEndNotAfterStart(p.start, p.end) ? TIME_ORDER_ERROR : undefined}
+                              error={isEndSameAsStart(p.start, p.end) ? TIME_ORDER_ERROR : undefined}
                               className={inputCls}
                             />
                           }
@@ -398,8 +400,8 @@ function SpotsTime({ state, set }: Props) {
               value={state.spotsEndTime}
               onChange={(v) => set({ spotsEndTime: v })}
               label="End time"
-              labelNote="(optional)"
-              error={isEndNotAfterStart(state.spotsStartTime, state.spotsEndTime) ? TIME_ORDER_ERROR : undefined}
+              labelNote={isOvernightRange(state.spotsStartTime, state.spotsEndTime) ? "(next day)" : "(optional)"}
+              error={isEndSameAsStart(state.spotsStartTime, state.spotsEndTime) ? TIME_ORDER_ERROR : undefined}
               className={inputCls}
             />
           }
@@ -613,7 +615,7 @@ function TimeFields({ state, set }: Props) {
                   value={state.endTime}
                   onChange={(v) => set({ endTime: v })}
                   label="End time"
-                  labelNote="(optional)"
+                  labelNote={!isMultiDayRsvp(state) && isOvernightRange(state.startTime, state.endTime) ? "(next day)" : "(optional)"}
                   error={createTimeOrderIssue(state)?.rowId === CREATE_EVENT_TIMES_ROW_ID ? TIME_ORDER_ERROR : undefined}
                   className={inputCls}
                 />
