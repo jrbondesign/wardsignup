@@ -425,14 +425,34 @@ describe("Dashboard card More sheet", () => {
       expect(global.fetch).toHaveBeenCalledWith("/api/events/e9/cover");
     });
 
+    it("holds the row's place, dimmed and not a link, while the check loads", async () => {
+      process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS = "org1";
+      mockOrgList(1);
+      const base = global.fetch as jest.Mock;
+      let resolveCover: (v: unknown) => void = () => {};
+      global.fetch = jest.fn((url: string) => {
+        if (String(url).includes("/api/events/e9/cover")) return new Promise((res) => { resolveCover = res; });
+        return base(url);
+      }) as unknown as typeof fetch;
+      renderDashboard();
+      fireEvent.click(await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 }));
+      const edit = within(screen.getByRole("dialog")).getByRole("group", { name: "Edit" });
+      const pending = within(edit).getByText("Add cover photo").closest("[aria-busy]")!;
+      expect(pending).toHaveAttribute("aria-disabled", "true");
+      expect(within(edit).queryByRole("link", { name: /Add cover photo/ })).not.toBeInTheDocument();
+      await act(async () => {
+        resolveCover({ ok: true, json: async () => ({ coverUrl: null }) });
+      });
+      expect(await within(edit).findByRole("link", { name: /Add cover photo/ })).toHaveAttribute("href", "/admin/e9#add-cover");
+    });
+
     it("stays hidden when the event already has a cover", async () => {
       process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS = "org1";
       mockWithCover("https://x/cover.jpg");
       renderDashboard();
       fireEvent.click(await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 }));
       await waitFor(() => expect(global.fetch).toHaveBeenCalledWith("/api/events/e9/cover"));
-      await flush();
-      expect(screen.queryByText("Add cover photo")).not.toBeInTheDocument();
+      await waitFor(() => expect(screen.queryByText("Add cover photo")).not.toBeInTheDocument());
     });
 
     it("stays hidden and skips the check when the org is not on the cover allowlist", async () => {

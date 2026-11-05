@@ -1,6 +1,6 @@
 "use client";
 
-import { useId, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useDialogFocus } from "@/components/event-actions/useDialogFocus";
 
@@ -21,11 +21,19 @@ export default function DeleteEventConfirm({ eventName, deleting = false, onConf
     if (!deleting) onCancel();
   }, { initialFocusRef: keepRef });
 
+  // Both buttons disable while deleting, which would drop focus to <body>; keep it on the dialog.
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!deleting || !panel) return;
+    const active = document.activeElement as HTMLButtonElement | null;
+    if (!active || !panel.contains(active) || active.disabled) panel.focus();
+  }, [deleting]);
+
   if (typeof document === "undefined") return null;
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[150] flex items-center justify-center bg-[#0D2B35]/50 p-4 backdrop-blur-[2px]"
+      className="fixed inset-0 z-[1150] flex items-center justify-center bg-[#0D2B35]/50 p-4 backdrop-blur-[2px]"
       onClick={(e) => {
         if (e.target === e.currentTarget && !deleting) onCancel();
       }}
@@ -34,9 +42,11 @@ export default function DeleteEventConfirm({ eventName, deleting = false, onConf
         ref={panelRef}
         role="alertdialog"
         aria-modal="true"
+        aria-busy={deleting || undefined}
+        tabIndex={-1}
         aria-labelledby={titleId}
         aria-describedby={bodyId}
-        className="w-full max-w-md rounded-2xl bg-white p-6 shadow-[0_20px_60px_rgba(8,100,126,0.18)] sm:p-8"
+        className="w-full max-w-md rounded-2xl bg-white p-6 outline-none shadow-[0_20px_60px_rgba(8,100,126,0.18)] sm:p-8"
       >
         <h2 id={titleId} className="mb-3 font-serif text-2xl text-[#0D2B35] break-words">
           Delete {eventName}?

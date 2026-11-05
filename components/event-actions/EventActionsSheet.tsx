@@ -14,6 +14,8 @@ export interface EventSheetAction {
   /** Link target. When set the row is a link; otherwise it calls onSelect. */
   href?: string;
   onSelect?: () => void;
+  /** Shown but not usable yet (e.g. while a check is loading), so rows do not shift. */
+  pending?: boolean;
 }
 
 export interface EventSheetGroup {
@@ -67,7 +69,7 @@ export default function EventActionsSheet({
 
   return createPortal(
     <>
-      <div className="fixed inset-0 z-[100] bg-[#0D2B35]/40 animate-fade-in" onClick={onClose} aria-hidden />
+      <div className="fixed inset-0 z-[1100] bg-[#0D2B35]/40 animate-fade-in" onClick={onClose} aria-hidden />
       <div
         ref={panelRef}
         role="dialog"
@@ -75,7 +77,7 @@ export default function EventActionsSheet({
         tabIndex={-1}
         aria-labelledby={titleId}
         aria-describedby={subtitle ? subtitleId : undefined}
-        className="fixed inset-x-0 bottom-0 z-[101] outline-none max-h-[90dvh] overflow-y-auto rounded-t-2xl bg-white pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-8px_28px_rgba(8,100,126,0.18)] animate-slide-up sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[26rem] sm:max-h-[85vh] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:pb-3 sm:shadow-[0_20px_60px_rgba(8,100,126,0.18)]"
+        className="fixed inset-x-0 bottom-0 z-[1101] outline-none max-h-[90dvh] overflow-y-auto rounded-t-2xl bg-white pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-8px_28px_rgba(8,100,126,0.18)] animate-slide-up sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-1/2 sm:w-[26rem] sm:max-h-[85vh] sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-2xl sm:pb-3 sm:shadow-[0_20px_60px_rgba(8,100,126,0.18)]"
       >
         <div className="mx-auto mt-2 h-1 w-10 rounded-full bg-[#0E96B0]/20 sm:hidden" aria-hidden />
         <div className="flex items-start gap-3 border-b border-[#0E96B0]/12 px-5 pb-3 pt-3">
@@ -112,7 +114,11 @@ export default function EventActionsSheet({
               <ul className="list-none p-0 m-0">
                 {group.actions.map((a) => (
                   <li key={a.key}>
-                    {a.href ? (
+                    {a.pending ? (
+                      <div className={`${ROW} cursor-default opacity-50 hover:bg-transparent`} aria-disabled="true" aria-busy="true">
+                        {rowBody(a)}
+                      </div>
+                    ) : a.href ? (
                       <Link href={a.href} className={ROW} onClick={onClose}>
                         {rowBody(a)}
                       </Link>

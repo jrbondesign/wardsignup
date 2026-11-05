@@ -7,8 +7,10 @@ import { COVER_SIZE_HINT } from "@/lib/cover-position";
 import { type AdminEventView } from "@/components/admin/hooks/deriveAdminEventView";
 import { useEffect, useRef } from "react";
 import { earliestYmd } from "@/lib/date-shift";
+import { useDuplicateEvent } from "@/components/event-actions/DuplicateEventModal";
 import EventActionsSheet, { eventSheetSubtitle, type EventSheetGroup } from "@/components/event-actions/EventActionsSheet";
 import {
+  CopyIcon,
   DotsVerticalIcon,
   EyeIcon,
   GearIcon,
@@ -36,6 +38,7 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
     items,
     moreMenuOpen,
     posthog,
+    router,
     setMoreMenuOpen,
     setShowDeleteModal,
     setShowToast,
@@ -46,17 +49,24 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
     totalSignups,
   } = ctx;
   const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const { openDuplicate, duplicateDialog } = useDuplicateEvent({ router, posthog });
   const canAddCover = coverEnabled && !coverUrl && !coverPreview;
   const desktopCoverRef = useRef<HTMLButtonElement>(null);
+  // Where focus goes when the sheet closes: the phone More button, or the desktop
+  // Add cover button when the sheet was opened by #add-cover on a wide screen.
+  const sheetReturnRef = useRef<HTMLElement | null>(null);
 
-  // The dashboard sheet's "Add cover photo" lands here with #add-cover. The file
-  // picker needs a tap, so open the More sheet (phone) or focus Add cover (desktop).
+  // The dashboard sheet's "Add cover photo" lands here with #add-cover. Browsers only
+  // open a file picker from a tap, so open the More sheet (a bottom sheet on phones,
+  // a centered dialog on wider screens) with Add cover photo in it. The hash is
+  // always cleared, even when there is nothing to add.
   useEffect(() => {
-    if (!canAddCover || typeof window === "undefined" || window.location.hash !== "#add-cover") return;
+    if (typeof window === "undefined" || window.location.hash !== "#add-cover") return;
     window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    if (!canAddCover) return;
     const isPhone = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 639px)").matches;
-    if (isPhone) setMoreMenuOpen(true);
-    else desktopCoverRef.current?.focus();
+    sheetReturnRef.current = isPhone ? moreButtonRef.current : desktopCoverRef.current;
+    setMoreMenuOpen(true);
   }, [canAddCover, setMoreMenuOpen]);
 
   const copyLink = (message = "Link copied") => {
@@ -76,12 +86,13 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
 
   const isItems = eventType === "items";
   const claimedItems = items.filter((it) => (it.item_signups ?? []).length > 0).length;
+  const anchorDate = earliestYmd([
+    event.event_date,
+    ...(Array.isArray(event.event_dates) ? event.event_dates : []),
+    ...sessions.map((s) => s.session_date),
+  ]);
   const subtitle = eventSheetSubtitle({
-    ymd: earliestYmd([
-      event.event_date,
-      ...(Array.isArray(event.event_dates) ? event.event_dates : []),
-      ...sessions.map((s) => s.session_date),
-    ]),
+    ymd: anchorDate,
     isItems,
     filled: isItems ? claimedItems : totalSignups,
     total: isItems ? items.length : totalCapacity,
@@ -117,6 +128,18 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
         },
         { key: "qr", label: "Download QR code", helper: "For a slide, bulletin or handout", icon: <QrIcon />, onSelect: () => void downloadQr() },
         { key: "flyer", label: "Print flyer", helper: "A printable page with the QR code", icon: <PrinterIcon />, href: `/event/${eventId}/flyer` },
+      ],
+    },
+    {
+      heading: "Manage",
+      actions: [
+        {
+          key: "duplicate",
+          label: "Duplicate event",
+          helper: "Copy it to new dates",
+          icon: <CopyIcon />,
+          onSelect: () => openDuplicate({ id: eventId, name: event.name, anchorDate }),
+        },
       ],
     },
   ];
@@ -232,22 +255,25 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
         <button
           type="button"
           onClick={() => copyLink()}
-          className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[#08647E] px-4 text-sm font-semibold text-white transition-colors hover:bg-[#054F64] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0E96B0]"
+          className="inline-flex h-11 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[#08647E] px-3 min-[375px]:px-4 text-sm font-semibold text-white transition-colors hover:bg-[#054F64] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0E96B0]"
         >
-          <LinkIcon className="size-4" />
+          <LinkIcon className="hidden size-4 min-[375px]:block" />
           Copy link
         </button>
         <Link
           href={`/edit/${eventId}`}
-          className="inline-flex h-11 items-center gap-1.5 whitespace-nowrap rounded-xl border-[1.5px] border-[#0E96B0]/40 bg-white px-4 text-sm font-semibold text-[#08647E] no-underline transition-colors hover:border-[#0E96B0] hover:bg-[#E6F7FB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0E96B0]"
+          className="inline-flex h-11 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-xl border-[1.5px] border-[#0E96B0]/40 bg-white px-3 min-[375px]:px-4 text-sm font-semibold text-[#08647E] no-underline transition-colors hover:border-[#0E96B0] hover:bg-[#E6F7FB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0E96B0]"
         >
-          <PencilIcon className="size-4" />
+          <PencilIcon className="hidden size-4 min-[375px]:block" />
           Edit
         </Link>
         <button
           ref={moreButtonRef}
           type="button"
-          onClick={() => setMoreMenuOpen((o) => !o)}
+          onClick={() => {
+            sheetReturnRef.current = moreButtonRef.current;
+            setMoreMenuOpen((o) => !o);
+          }}
           aria-label={`More actions for ${event.name}`}
           aria-haspopup="dialog"
           aria-expanded={moreMenuOpen}
@@ -263,9 +289,10 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
           groups={sheetGroups}
           onDelete={() => setShowDeleteModal(true)}
           onClose={() => setMoreMenuOpen(false)}
-          triggerRef={moreButtonRef}
+          triggerRef={sheetReturnRef}
         />
       )}
+      {duplicateDialog}
       {event.description && (
         <p className="text-sm text-[#5A8399] mt-2 leading-relaxed whitespace-pre-wrap">
           {event.description}

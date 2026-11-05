@@ -26,11 +26,12 @@ import { CLAUDE_MCP_ENABLED } from "@/lib/claude-mcp";
 import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } from "@/lib/limits";
 import { EVENT_TEMPLATES, TEMPLATES_INITIAL_VISIBLE } from "@/lib/event-template-data";
 import { downloadEventQr } from "@/lib/download-qr";
-import { diffDays, earliestYmd } from "@/lib/date-shift";
+import { earliestYmd } from "@/lib/date-shift";
 import { isTipJarEnabled } from "@/lib/tip-jar";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import EventActionsSheet, { eventSheetSubtitle } from "@/components/event-actions/EventActionsSheet";
 import DeleteEventConfirm from "@/components/event-actions/DeleteEventConfirm";
+import { useDuplicateEvent } from "@/components/event-actions/DuplicateEventModal";
 import {
   CopyIcon,
   DotsVerticalIcon,
@@ -43,96 +44,18 @@ import {
   QrIcon,
 } from "@/components/event-actions/icons";
 
-interface DuplicateModalProps {
-  eventName: string;
-  anchorDate: string | null;
-  duplicating: boolean;
-  onConfirm: (name: string, newStartDate: string) => void;
-  onCancel: () => void;
-}
-
-function DuplicateModal({ eventName, anchorDate, duplicating, onConfirm, onCancel }: DuplicateModalProps) {
-  const [name, setName] = useState(`Copy of ${eventName}`);
-  const [newStart, setNewStart] = useState("");
-
-  const shiftDays =
-    anchorDate && /^\d{4}-\d{2}-\d{2}$/.test(newStart)
-      ? (diffDays(anchorDate, newStart) ?? 0)
-      : 0;
-  const showShiftHint = anchorDate && newStart && shiftDays !== 0;
-
-  return (
-    <div className="fixed inset-0 bg-[#0D2B35]/50 backdrop-blur-[2px] flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-[0_20px_60px_rgba(8,100,126,0.18)] max-w-md w-full p-8">
-        <h2 className="font-serif text-2xl text-[#0D2B35] mb-2">Duplicate Event</h2>
-        <p className="text-sm text-[#5A8399] leading-relaxed mb-5">
-          Creates a copy of <strong className="text-[#0D2B35] font-semibold">{eventName}</strong> with all its
-          spots and items — but no signups. You can fine-tune everything afterward.
-        </p>
-
-        <label className="block text-xs font-semibold text-[#2E5566] mb-1.5">New event name</label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={duplicating}
-          className="w-full text-sm px-3 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/25 focus:border-[#0E96B0] focus:outline-none mb-5 disabled:opacity-60"
-        />
-
-        {anchorDate && (
-          <>
-            <label className="block text-xs font-semibold text-[#2E5566] mb-1.5">
-              New start date <span className="font-normal text-[#5A8399]">(optional)</span>
-            </label>
-            <input
-              type="date"
-              value={newStart}
-              onChange={(e) => setNewStart(e.target.value)}
-              disabled={duplicating}
-              className="w-full text-sm px-3 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/25 focus:border-[#0E96B0] focus:outline-none disabled:opacity-60"
-            />
-            <p className="text-[11px] text-[#5A8399] mt-1.5 leading-snug">
-              {showShiftHint
-                ? `All dates shift by ${shiftDays > 0 ? "+" : ""}${shiftDays} day${Math.abs(shiftDays) === 1 ? "" : "s"} (original starts ${anchorDate}).`
-                : `Leave blank to keep the same dates. The original starts ${anchorDate}.`}
-            </p>
-          </>
-        )}
-
-        <div className="flex gap-3 mt-7">
-          <button
-            onClick={onCancel}
-            disabled={duplicating}
-            className="flex-1 text-sm font-semibold px-4 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#2E5566] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all disabled:opacity-60"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onConfirm(name.trim(), newStart)}
-            disabled={duplicating || !name.trim()}
-            className="flex-1 text-sm font-semibold px-4 py-2.5 rounded-xl bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:hover:translate-y-0"
-          >
-            {duplicating ? "Duplicating…" : "Duplicate"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function DashboardPage() {
   const brand = useBrand();
   const isWardBrand = brand.id === "wardsignup";
   const router = useRouter();
   const posthog = usePostHog();
+  const { openDuplicate, duplicateDialog } = useDuplicateEvent({ router, posthog });
   const [user, setUser] = useState<any>(null);
   const [events, setEvents] = useState<DashboardEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [duplicateModal, setDuplicateModal] = useState<{ id: string; name: string; anchorDate: string | null } | null>(null);
-  const [duplicating, setDuplicating] = useState(false);
   const [actionsEventId, setActionsEventId] = useState<string | null>(null);
   const actionsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [copyToast, setCopyToast] = useState(false);
@@ -147,22 +70,26 @@ export default function DashboardPage() {
   const maxEvents = getMaxCampaignsForOrg(orgId) ?? getMaxCampaignsPerUser();
   // Cover gate for the More sheet, same rule as the event page: the org is on the
   // cover allowlist and the event has no cover yet. The dashboard payload has no
-  // cover field, so ask the existing cover endpoint when the sheet opens.
+  // cover field, so ask the existing cover endpoint when the sheet opens (once per
+  // event; the answer is kept for reopens). While it loads, the row is shown dimmed
+  // so nothing shifts under a tap.
   const coverEnabledForOrg = isCoverImageEnabledForOrg(orgId);
-  const [coverCheck, setCoverCheck] = useState<{ id: string; hasCover: boolean } | null>(null);
+  const [hasCoverById, setHasCoverById] = useState<Record<string, boolean | "error">>({});
   useEffect(() => {
-    if (!actionsEventId || !coverEnabledForOrg) return;
+    if (!actionsEventId || !coverEnabledForOrg || actionsEventId in hasCoverById) return;
     let cancelled = false;
     fetch(`/api/events/${actionsEventId}/cover`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d: { coverUrl?: string | null } | null) => {
-        if (!cancelled && d) setCoverCheck({ id: actionsEventId, hasCover: Boolean(d.coverUrl) });
+        if (!cancelled) setHasCoverById((m) => ({ ...m, [actionsEventId]: d ? Boolean(d.coverUrl) : "error" }));
       })
-      .catch(() => {});
+      .catch(() => {
+        if (!cancelled) setHasCoverById((m) => ({ ...m, [actionsEventId]: "error" }));
+      });
     return () => {
       cancelled = true;
     };
-  }, [actionsEventId, coverEnabledForOrg]);
+  }, [actionsEventId, coverEnabledForOrg, hasCoverById]);
   const isUnlimited = isUnlimitedEventsUser(user?.email);
   const atLimit = !isUnlimited && events.length >= maxEvents;
 
@@ -193,41 +120,6 @@ export default function DashboardPage() {
       alert(error.message || "Failed to delete event");
     } finally {
       setDeleting(false);
-    }
-  };
-
-  const handleDuplicate = async (name: string, newStartDate: string) => {
-    if (!duplicateModal) return;
-
-    setDuplicating(true);
-    try {
-      const supabase = createClientComponentClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      const response = await fetch(`/api/events/${duplicateModal.id}/duplicate`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${session?.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name, new_start_date: newStartDate || undefined }),
-      });
-
-      const bodyJson = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(bodyJson?.error || "Failed to duplicate event");
-      }
-
-      posthog?.capture("event_duplicated", {
-        source_event_id: duplicateModal.id,
-        event_id: bodyJson?.event?.id,
-      });
-      setDuplicateModal(null);
-      // Land on the edit page so the organizer can review and fine-tune dates.
-      router.push(`/edit/${bodyJson.event.id}`);
-    } catch (error: any) {
-      alert(error.message || "Failed to duplicate event");
-      setDuplicating(false);
     }
   };
 
@@ -620,8 +512,15 @@ export default function DashboardPage() {
                 actions: [
                   { key: "edit", label: "Edit event", helper: "Name, dates, times and slots", icon: <PencilIcon />, href: `/edit/${actionsEvent.id}` },
                   { key: "settings", label: "Event settings", helper: "Visibility, reminders and Google Calendar", icon: <GearIcon />, href: `/edit/${actionsEvent.id}#event-settings` },
-                  ...(coverEnabledForOrg && coverCheck?.id === actionsEvent.id && !coverCheck.hasCover
-                    ? [{ key: "cover", label: "Add cover photo", helper: "Shows at the top of the signup page", icon: <ImageIcon />, href: `/admin/${actionsEvent.id}#add-cover` }]
+                  ...(coverEnabledForOrg && hasCoverById[actionsEvent.id] !== true && hasCoverById[actionsEvent.id] !== "error"
+                    ? [{
+                        key: "cover",
+                        label: "Add cover photo",
+                        helper: "Shows at the top of the signup page",
+                        icon: <ImageIcon />,
+                        href: `/admin/${actionsEvent.id}#add-cover`,
+                        pending: !(actionsEvent.id in hasCoverById),
+                      }]
                     : []),
                 ],
               },
@@ -663,7 +562,7 @@ export default function DashboardPage() {
                     helper: "Copy it to new dates",
                     icon: <CopyIcon />,
                     onSelect: () =>
-                      setDuplicateModal({ id: actionsEvent.id, name: actionsEvent.name, anchorDate: anchorDateFor(actionsEvent) }),
+                      openDuplicate({ id: actionsEvent.id, name: actionsEvent.name, anchorDate: anchorDateFor(actionsEvent) }),
                   },
                 ],
               },
@@ -681,15 +580,7 @@ export default function DashboardPage() {
         />
       )}
 
-      {duplicateModal && (
-        <DuplicateModal
-          eventName={duplicateModal.name}
-          anchorDate={duplicateModal.anchorDate}
-          duplicating={duplicating}
-          onConfirm={handleDuplicate}
-          onCancel={() => setDuplicateModal(null)}
-        />
-      )}
+      {duplicateDialog}
 
       {orgNeedsNaming && (
         <OrgNameModal

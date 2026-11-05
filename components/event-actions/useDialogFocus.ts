@@ -42,7 +42,12 @@ export function useDialogFocus(
       }
       if (e.key !== "Tab" || !containerRef.current) return;
       const nodes = Array.from(containerRef.current.querySelectorAll<HTMLElement>(FOCUSABLE));
-      if (nodes.length === 0) return;
+      if (nodes.length === 0) {
+        // Nothing usable inside (e.g. buttons disabled while busy): keep focus on the dialog.
+        e.preventDefault();
+        containerRef.current.focus();
+        return;
+      }
       const firstEl = nodes[0];
       const lastEl = nodes[nodes.length - 1];
       const active = document.activeElement;
