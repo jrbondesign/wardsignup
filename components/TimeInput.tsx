@@ -173,7 +173,7 @@ export default function TimeInput({
           disabled={disabled}
           required={required}
           onChange={(e) => emit({ meridiem: e.target.value as Meridiem })}
-          className={`${selectBase} flex-none w-[4.25rem]`}
+          className={`${selectBase} flex-none w-[4.75rem]`}
         >
           <option value="">AM/PM</option>
           <option value="AM">AM</option>
