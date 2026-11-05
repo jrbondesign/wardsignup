@@ -58,7 +58,6 @@ export function useAdminEventState(params: Promise<{ id: string }>) {
     isItemSignup: boolean;
   } | null>(null);
   const menuButtonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
-  const moreMenuRef = useRef<HTMLDivElement>(null);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [coverUrl, setCoverUrl] = useState<string | null>(null);
   const [coverPosition, setCoverPosition] = useState<string | null>(null);
@@ -85,24 +84,6 @@ export function useAdminEventState(params: Promise<{ id: string }>) {
       window.history.replaceState({}, "", path);
     }
   }, []);
-
-  useEffect(() => {
-    if (!moreMenuOpen) return;
-    const onDoc = (e: MouseEvent) => {
-      if (moreMenuRef.current && !moreMenuRef.current.contains(e.target as Node)) {
-        setMoreMenuOpen(false);
-      }
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setMoreMenuOpen(false);
-    };
-    document.addEventListener("mousedown", onDoc);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDoc);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [moreMenuOpen]);
 
   return {
     eventId,
@@ -178,7 +159,6 @@ export function useAdminEventState(params: Promise<{ id: string }>) {
     confirmDialog,
     setConfirmDialog,
     menuButtonRefs,
-    moreMenuRef,
     logoUrl,
     setLogoUrl,
     coverUrl,
