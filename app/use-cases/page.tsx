@@ -10,7 +10,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
   const title = "Ward Signup use cases — sheets for secretaries and leaders";
-  const description = "How Latter-day Saint wards use Ward Signup: tithing declaration, secretary signup sheets, and more. Free during beta.";
+  const description = "How Latter-day Saint wards use Ward Signup: tithing declaration, Christmas party food and jobs, secretary signup sheets, and more. Free during beta.";
   const url = `${brand.siteUrl}/use-cases`;
   
   return {
