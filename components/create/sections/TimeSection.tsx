@@ -1,11 +1,16 @@
 "use client";
 
-import { useState } from "react";
-import TimeInput from "@/components/TimeInput";
+import { useRef, useState } from "react";
+import TimeInput, { TimeRangeRow, TimeTextLabel } from "@/components/TimeInput";
 import DateRangePicker from "@/components/DateRangePicker";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
 import SlotEditor, { type SlotRow } from "@/components/create/SlotEditor";
 import type { CreateFormState, LabeledTime } from "@/lib/create-form-state";
+import {
+  EMPTY_APPROXIMATE_TIME_MEMORY,
+  type ApproximateTimeMemory,
+  switchApproximateMode,
+} from "@/lib/utils";
 
 const DAYS_SHORT = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
@@ -271,35 +276,48 @@ function SpotsTime({ state, set }: Props) {
                     {windows.map((p, idx) => (
                       <div
                         key={p.id}
-                        className="grid grid-cols-[minmax(110px,auto)_1fr_1fr_auto] items-center gap-2 bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl px-3 py-2"
+                        className="bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl px-3 pt-2 pb-3"
                       >
-                        <span className="text-[13px] font-medium text-[#0D2B35]">
-                          {idx === 0 ? label : ""}
-                        </span>
-                        <TimeInput
-                          value={p.start}
-                          onChange={(v) => updatePickedDate(p.id, { start: v })}
-                          placeholder="Start"
-                          className={inputCls}
-                        />
-                        <TimeInput
-                          value={p.end}
-                          onChange={(v) => updatePickedDate(p.id, { end: v })}
-                          placeholder="End (optional)"
-                          className={inputCls}
-                        />
-                        <button
-                          type="button"
-                          onClick={() =>
-                            set({
-                              spotsPickedDates: state.spotsPickedDates.filter((x) => x.id !== p.id),
-                            })
+                        <div className="flex items-center justify-between gap-2 mb-1">
+                          <span className="text-[13px] font-semibold text-[#0D2B35]">
+                            {idx === 0 ? label : `${label}, window ${idx + 1}`}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              set({
+                                spotsPickedDates: state.spotsPickedDates.filter((x) => x.id !== p.id),
+                              })
+                            }
+                            aria-label={`Remove ${label} window ${idx + 1}`}
+                            className="min-h-11 sm:min-h-0 sm:py-1 px-2 -mr-2 text-[13px] font-medium text-[#0E96B0] hover:text-red-600"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                        <TimeRangeRow
+                          start={
+                            <TimeInput
+                              value={p.start}
+                              onChange={(v) => updatePickedDate(p.id, { start: v })}
+                              label="Start time"
+                              labelNote="(required)"
+                              ariaLabel={`Start time for ${label}`}
+                              required
+                              className={inputCls}
+                            />
                           }
-                          aria-label={`Remove ${label} window ${idx + 1}`}
-                          className="text-[#5A8399] hover:text-red-500 px-2"
-                        >
-                          ×
-                        </button>
+                          end={
+                            <TimeInput
+                              value={p.end}
+                              onChange={(v) => updatePickedDate(p.id, { end: v })}
+                              label="End time"
+                              labelNote="(optional)"
+                              ariaLabel={`End time for ${label}`}
+                              className={inputCls}
+                            />
+                          }
+                        />
                       </div>
                     ))}
                     <button
@@ -352,27 +370,27 @@ function SpotsTime({ state, set }: Props) {
       )}
 
       {!isSpecific && (
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelCls}>Start Time</label>
+        <TimeRangeRow
+          start={
             <TimeInput
               value={state.spotsStartTime}
               onChange={(v) => set({ spotsStartTime: v })}
+              label="Start time"
+              labelNote="(required)"
+              required
               className={inputCls}
             />
-          </div>
-          <div>
-            <label className={labelCls}>
-              End Time <span className={sublabelCls}>(optional)</span>
-            </label>
+          }
+          end={
             <TimeInput
               value={state.spotsEndTime}
               onChange={(v) => set({ spotsEndTime: v })}
-              placeholder="e.g. 5pm"
+              label="End time"
+              labelNote="(optional)"
               className={inputCls}
             />
-          </div>
-        </div>
+          }
+        />
       )}
 
       <div>
@@ -520,6 +538,8 @@ function SpotsSlots({ state, set }: Props) {
 
 function TimeFields({ state, set }: Props) {
   const useApprox = state.approximateTime;
+  const memoryRef = useRef<ApproximateTimeMemory>({ ...EMPTY_APPROXIMATE_TIME_MEMORY });
+  const [approxNote, setApproxNote] = useState("");
   return (
     <div>
       <label className="inline-flex items-center gap-2 cursor-pointer select-none mb-2">
@@ -534,81 +554,131 @@ function TimeFields({ state, set }: Props) {
 
       {state.hasTime && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className={labelCls}>
-                Start <span className={sublabelCls}>(required)</span>
-              </label>
-              {useApprox ? (
-                <input
-                  type="text"
-                  value={state.startTime}
-                  onChange={(e) => set({ startTime: e.target.value })}
-                  placeholder="e.g. around 9am"
-                  maxLength={100}
-                  className={inputCls}
-                />
+          <TimeRangeRow
+            start={
+              useApprox ? (
+                <div className="min-w-0 w-full sm:w-auto sm:flex-1">
+                  <TimeTextLabel htmlFor="event-start-text" label="Start time" labelNote="(required)" />
+                  <input
+                    id="event-start-text"
+                    type="text"
+                    value={state.startTime}
+                    onChange={(e) => set({ startTime: e.target.value })}
+                    placeholder="e.g. around 9am"
+                    maxLength={100}
+                    className={inputCls}
+                  />
+                </div>
               ) : (
                 <TimeInput
                   value={state.startTime}
                   onChange={(v) => set({ startTime: v })}
+                  label="Start time"
+                  labelNote="(required)"
+                  required
                   className={inputCls}
                 />
-              )}
-            </div>
-            <div>
-              <label className={labelCls}>
-                End <span className={sublabelCls}>(optional)</span>
-              </label>
-              {useApprox ? (
-                <input
-                  type="text"
-                  value={state.endTime}
-                  onChange={(e) => set({ endTime: e.target.value })}
-                  placeholder="e.g. by 5pm"
-                  maxLength={100}
-                  className={inputCls}
-                />
+              )
+            }
+            end={
+              useApprox ? (
+                <div className="min-w-0 w-full sm:w-auto sm:flex-1">
+                  <TimeTextLabel htmlFor="event-end-text" label="End time" labelNote="(optional)" />
+                  <input
+                    id="event-end-text"
+                    type="text"
+                    value={state.endTime}
+                    onChange={(e) => set({ endTime: e.target.value })}
+                    placeholder="e.g. by 5pm"
+                    maxLength={100}
+                    className={inputCls}
+                  />
+                </div>
               ) : (
                 <TimeInput
                   value={state.endTime}
                   onChange={(v) => set({ endTime: v })}
-                  placeholder="e.g. 5pm"
+                  label="End time"
+                  labelNote="(optional)"
                   className={inputCls}
                 />
-              )}
-            </div>
-          </div>
+              )
+            }
+          />
           <label className="inline-flex items-center gap-2 cursor-pointer select-none mt-2">
             <input
               type="checkbox"
               checked={useApprox}
-              onChange={(e) => set({ approximateTime: e.target.checked })}
+              onChange={(e) => {
+                const next = e.target.checked;
+                const result = switchApproximateMode({
+                  toApproximate: next,
+                  startTime: state.startTime,
+                  endTime: state.endTime,
+                  memory: memoryRef.current,
+                });
+                memoryRef.current = result.memory;
+                setApproxNote(result.note);
+                set({
+                  approximateTime: next,
+                  startTime: result.startTime,
+                  endTime: result.endTime,
+                });
+              }}
               className="w-4 h-4 rounded border-[rgba(14,150,176,0.4)] text-[#0E96B0] focus:ring-[#0E96B0]"
             />
             <span className="text-[12px] text-[#5A8399]">
               Use plain text instead (e.g. &quot;around 9am&quot;, &quot;dinnertime&quot;)
             </span>
           </label>
+          {approxNote ? (
+            <p className="mt-2 text-[12px] text-amber-800">{approxNote}</p>
+          ) : null}
         </>
       )}
     </div>
   );
 }
 
+let extraTimeKeySeq = 0;
+const newExtraTimeKey = () => `extra-time-${++extraTimeKeySeq}`;
+
 function ExtraTimes({ state, set }: Props) {
   const expanded = state.expanded.extraTimes || state.extraTimes.length > 0;
+  const rows = state.extraTimes;
+  // Stable React keys kept only in component state (LabeledTime stays { label, time }),
+  // so removing a row never hands its unfinished picks to the next row.
+  const [keys, setKeys] = useState<string[]>(() => rows.map(newExtraTimeKey));
+  if (keys.length !== rows.length) {
+    const next = keys.slice(0, rows.length);
+    while (next.length < rows.length) next.push(newExtraTimeKey());
+    setKeys(next);
+  }
   const updateRow = (idx: number, patch: Partial<LabeledTime>) => {
-    const next = state.extraTimes.map((row, i) => (i === idx ? { ...row, ...patch } : row));
+    const next = rows.map((row, i) => (i === idx ? { ...row, ...patch } : row));
     set({ extraTimes: next });
   };
-  const removeRow = (idx: number) =>
-    set({ extraTimes: state.extraTimes.filter((_, i) => i !== idx) });
+  const removeRow = (idx: number) => {
+    setKeys((prev) => prev.filter((_, i) => i !== idx));
+    set({ extraTimes: rows.filter((_, i) => i !== idx) });
+  };
   const addRow = () =>
     set({
-      extraTimes: [...state.extraTimes, { label: "", time: "" }],
+      extraTimes: [...rows, { label: "", time: "" }],
       expanded: { ...state.expanded, extraTimes: true },
     });
+  // Accessible names stay unique: repeated labels get the row number.
+  const labelCounts = new Map<string, number>();
+  rows.forEach((r) => {
+    const k = r.label.trim().toLowerCase();
+    if (k) labelCounts.set(k, (labelCounts.get(k) ?? 0) + 1);
+  });
+  const rowName = (row: LabeledTime, i: number) => {
+    const label = row.label.trim();
+    if (!label) return `additional time ${i + 1}`;
+    return (labelCounts.get(label.toLowerCase()) ?? 0) > 1 ? `${label} time (row ${i + 1})` : `${label} time`;
+  };
+  const cap = (t: string) => t.charAt(0).toUpperCase() + t.slice(1);
 
   if (!expanded) {
     return (
@@ -620,29 +690,39 @@ function ExtraTimes({ state, set }: Props) {
   return (
     <div className="space-y-2">
       <div className="text-[12px] font-medium text-[#2E5566]">Additional times</div>
-      {state.extraTimes.map((row, i) => (
-        <div key={i} className="grid grid-cols-[1fr_120px_auto] gap-2 items-center">
-          <input
-            type="text"
-            value={row.label}
-            onChange={(e) => updateRow(i, { label: e.target.value })}
-            placeholder="Label (e.g. Meet at church)"
-            className={inputCls}
-          />
-          <TimeInput
-            value={row.time}
-            onChange={(v) => updateRow(i, { time: v })}
-            placeholder="Time"
-            className={inputCls}
-          />
-          <button
-            type="button"
-            onClick={() => removeRow(i)}
-            aria-label="Remove"
-            className="text-[#5A8399] hover:text-red-600 px-2"
-          >
-            ×
-          </button>
+      {rows.map((row, i) => (
+        // Label and Remove share the top line so the 44px Remove target never
+        // sits on top of the time selects, even at 320px.
+        <div key={keys[i] ?? `pending-${i}`} className="space-y-2" data-extra-time-row="">
+          <div className="flex gap-2 items-center min-w-0">
+            <input
+              type="text"
+              value={row.label}
+              onChange={(e) => updateRow(i, { label: e.target.value })}
+              placeholder="Label (e.g. Meet at church)"
+              aria-label={`Label for additional time ${i + 1}`}
+              className={`${inputCls} flex-1 min-w-0`}
+            />
+            <button
+              type="button"
+              onClick={() => removeRow(i)}
+              aria-label={`Remove ${rowName(row, i)}`}
+              className="shrink-0 inline-flex items-center justify-center h-11 w-11 rounded-xl text-[#5A8399] hover:text-red-600 hover:bg-red-50 text-lg leading-none"
+            >
+              ×
+            </button>
+          </div>
+          {/* @container so the selects use compact sizing whenever the card is 560px+, like Start and End. */}
+          <div className="@container min-w-0">
+            <TimeInput
+              value={row.time}
+              onChange={(v) => updateRow(i, { time: v })}
+              label="Time"
+              labelVariant="micro"
+              ariaLabel={cap(rowName(row, i))}
+              className={inputCls}
+            />
+          </div>
         </div>
       ))}
       <button type="button" onClick={addRow} className={linkBtnCls}>

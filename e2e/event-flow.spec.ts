@@ -44,8 +44,10 @@ test.describe.serial('Complete Event Flow', () => {
     await expect(page.getByText('Session 1')).toBeVisible();
 
     // Update first session
-    await page.locator('select').first().selectOption('2'); // Tuesday
-    await page.locator('input[type="time"]').first().fill('19:00');
+    // Weekday select by label (not TimeInput hour/minute/AM-PM)
+    await page.getByLabel(/day of (the )?week/i).first().selectOption('2'); // Tuesday
+    await page.getByLabel('Start time hour').first().selectOption('7');
+    await page.getByLabel('Start time AM or PM').first().selectOption('PM');
     await page.locator('input[type="number"]').first().fill('2');
     await page.getByPlaceholder('e.g., Detention Center').fill('Test Location');
 
@@ -54,11 +56,10 @@ test.describe.serial('Complete Event Flow', () => {
     await expect(page.getByText('Session 2')).toBeVisible();
 
     // Configure second session
-    const session2Selects = page.locator('select').nth(1);
-    await session2Selects.selectOption('4'); // Thursday
+    await page.getByLabel(/day of (the )?week/i).nth(1).selectOption('4'); // Thursday
 
-    const session2Times = page.locator('input[type="time"]').nth(1);
-    await session2Times.fill('15:00');
+    await page.getByLabel('Start time hour').nth(1).selectOption('3');
+    await page.getByLabel('Start time AM or PM').nth(1).selectOption('PM');
 
     const session2Capacity = page.locator('input[type="number"]').nth(1);
     await session2Capacity.fill('1');
