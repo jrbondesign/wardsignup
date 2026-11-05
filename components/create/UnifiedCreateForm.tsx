@@ -416,13 +416,17 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
       // Party nativity today). Best-effort: create still succeeds if upload fails.
       const coverAsset = templateCoverAssetForCreate(activeTemplate, organizationId);
       if (coverAsset) {
-        const coverResult = await uploadTemplateCover({
-          eventId: event.id,
-          token,
-          assetPath: coverAsset,
-        });
-        if (!coverResult.ok) {
-          console.error("template default cover:", coverResult.error);
+        try {
+          const coverResult = await uploadTemplateCover({
+            eventId: event.id,
+            token,
+            assetPath: coverAsset,
+          });
+          if (!coverResult.ok) {
+            console.error("template default cover:", coverResult.error);
+          }
+        } catch (coverErr) {
+          console.error("template default cover:", coverErr);
         }
       }
 
