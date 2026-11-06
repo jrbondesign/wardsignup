@@ -18,7 +18,7 @@ const WARDSIGNUP: BrandDefinition = {
   twitterDescription: "Simple scheduling for your ward",
   siteUrl: "https://wardsignup.com",
   supportEmail: "support@wardsignup.com",
-  tipJarUrl: "https://github.com/sponsors/jrbondesign",
+  tipJarUrl: "https://venmo.com/u/jrbond",
   logoSrc: "/lds-signup-logo.png",
   logoAlt: "Ward Signup",
   heroWatermarkSrc: "/ward-signup-logo-v2.png",

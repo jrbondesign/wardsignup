@@ -28,6 +28,7 @@ import { EVENT_TEMPLATES, TEMPLATES_INITIAL_VISIBLE } from "@/lib/event-template
 import { downloadEventQr } from "@/lib/download-qr";
 import { earliestYmd } from "@/lib/date-shift";
 import { isTipJarEnabled } from "@/lib/tip-jar";
+import PostSignInTipBanner from "@/components/PostSignInTipBanner";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import EventActionsSheet, { eventSheetSubtitle } from "@/components/event-actions/EventActionsSheet";
 import DeleteEventConfirm from "@/components/event-actions/DeleteEventConfirm";
@@ -238,6 +239,7 @@ export default function DashboardPage() {
       <Navigation />
       <main className="min-h-screen bg-[#F4FAFB] px-6 py-10 md:px-10">
         <div className="max-w-6xl mx-auto">
+          <PostSignInTipBanner />
 
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
