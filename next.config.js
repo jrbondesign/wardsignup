@@ -107,6 +107,11 @@ const nextConfig = {
         destination: "/support-the-project",
         permanent: true,
       },
+      {
+        source: "/tip",
+        destination: "https://venmo.com/u/jrbond",
+        permanent: true,
+      },
       // Permanent 301 redirects: ministrysignup.com + orgsignup.com → wardsignup.com
       {
         source: "/:path*",
