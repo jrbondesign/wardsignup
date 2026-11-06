@@ -83,7 +83,7 @@ export default async function SupportTheProjectPage() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  GitHub Sponsors
+                  Venmo
                 </a>
                 . Every amount helps; using Ward Signup without
                 donating is completely fine.
@@ -94,7 +94,7 @@ export default async function SupportTheProjectPage() {
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 text-[15px] font-medium px-6 py-3 rounded-full bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white no-underline shadow-[0_4px_14px_rgba(14,150,176,0.35)] transition-all duration-200 hover:-translate-y-[1px] hover:shadow-[0_6px_20px_rgba(14,150,176,0.45)]"
               >
-                Contribute via GitHub Sponsors →
+                Contribute via Venmo →
               </a>
             </section>
           )}
