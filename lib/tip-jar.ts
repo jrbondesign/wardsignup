@@ -10,6 +10,9 @@ export const SUPPORT_PROMPT_DISMISSED_KEY = "wardsignup_support_prompt_dismissed
 /** localStorage key: homepage support banner dismissed. */
 export const SUPPORT_BANNER_DISMISSED_KEY = "wardsignup_support_banner_dismissed";
 
+/** localStorage key: post-sign-in Venmo tip banner dismissed. */
+export const POST_SIGNIN_TIP_DISMISSED_KEY = "wardsignup_post_signin_tip_dismissed";
+
 /**
  * Tip jar is on unless explicitly disabled via env (`0` / `false` / `off`)
  * or the brand omits `tipJarUrl` after env override resolves empty.
