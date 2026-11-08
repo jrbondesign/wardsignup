@@ -351,6 +351,227 @@ it("marks HTTP only after the token is stored and before the provider call", asy
   expect(events.indexOf("email_operation_mark_http")).toBeLessThan(events.indexOf("send"));
 });
 
+it("does not mint when overlapping requests already passed the cooldown check", async () => {
+  const { state, supabase } = harness();
+  state.member = {
+    invite_last_sent_at: null,
+    accept_token: null,
+    accept_token_hash: "old-hash",
+  };
+  let phase: "repair" | "settled" | "sending" = "repair";
+  let tail = Promise.resolve();
+  const serialize = <T,>(fn: () => T | Promise<T>) => {
+    const run = tail.then(fn, fn);
+    tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  };
+  let staleCheck = true;
+  let reads = 0;
+  let releaseReads: () => void = () => undefined;
+  let bothRead = new Promise<void>((resolve) => {
+    releaseReads = resolve;
+  });
+  const rawFrom = supabase.from.bind(supabase);
+  supabase.from = (table: string) => {
+    const chain = rawFrom(table);
+    if (table !== "organization_members") return chain;
+    chain.maybeSingle = async () => {
+      if (!staleCheck) return { data: state.member, error: null };
+      reads += 1;
+      if (reads >= 2) releaseReads();
+      else await bothRead;
+      return {
+        data: {
+          invite_last_sent_at: null,
+          accept_token: state.member?.accept_token ?? null,
+          accept_token_hash: state.member?.accept_token_hash ?? null,
+        },
+        error: null,
+      };
+    };
+    return chain;
+  };
+  (getAuthFromRequest as jest.Mock).mockResolvedValue({
+    ok: true,
+    supabase,
+    user: { id: OWNER, email: "owner@example.com" },
+  });
+  rpc.mockImplementation(async (name: string, args?: { p_token?: string | null; p_state?: string }) => {
+    if (name === "email_operation_acquire") {
+      return serialize(() => {
+        const last = state.member?.invite_last_sent_at;
+        const cooling = Boolean(last && Date.now() - new Date(last).getTime() < 60 * 60 * 1000);
+        if (cooling || phase === "repair") {
+          if (phase === "repair") {
+            state.member!.invite_last_sent_at = new Date().toISOString();
+            phase = "settled";
+          }
+          return { data: "settled", error: null };
+        }
+        if (phase === "sending") return { data: "busy", error: null };
+        phase = "sending";
+        return { data: "go", error: null };
+      });
+    }
+    if (name === "email_operation_finish" && (args?.p_state === "accepted" || args?.p_state === "settled")) {
+      state.member!.invite_last_sent_at = new Date().toISOString();
+      phase = "settled";
+    }
+    return leaseRpc(name, args);
+  });
+
+  const [first, second] = await Promise.all([POST(req(), params), POST(req(), params)]);
+  expect([first.status, second.status]).toEqual([200, 200]);
+  expect(await first.json()).toEqual({ ok: true, delivery: "sent" });
+  expect(await second.json()).toEqual({ ok: true, delivery: "sent" });
+  expect(sendGuardedEmail).not.toHaveBeenCalled();
+  expect(rpc.mock.calls.filter((call) => call[0] === "email_operation_remember")).toHaveLength(0);
+  expect(state.upserts).toHaveLength(0);
+  expect(state.member?.accept_token_hash).toBe("old-hash");
+
+  staleCheck = false;
+  const cooling = await POST(req(), params);
+  expect(cooling.status).toBe(429);
+  expect(sendGuardedEmail).not.toHaveBeenCalled();
+
+  state.member!.invite_last_sent_at = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  phase = "settled";
+  staleCheck = true;
+  reads = 0;
+  bothRead = new Promise<void>((resolve) => {
+    releaseReads = resolve;
+  });
+  let acquired = 0;
+  let releaseSend: () => void = () => undefined;
+  const secondAcquired = new Promise<void>((resolve) => {
+    releaseSend = resolve;
+  });
+  (sendGuardedEmail as jest.Mock).mockImplementation(async () => {
+    await secondAcquired;
+    return { ok: true };
+  });
+  const previousAcquire = rpc.getMockImplementation();
+  rpc.mockImplementation(async (name: string, args?: { p_token?: string | null; p_state?: string }) => {
+    if (name === "email_operation_acquire") {
+      return serialize(() => {
+        acquired += 1;
+        if (acquired >= 2) releaseSend();
+        const last = state.member?.invite_last_sent_at;
+        const coolingNow = Boolean(last && Date.now() - new Date(last).getTime() < 60 * 60 * 1000);
+        if (coolingNow) return { data: "settled", error: null };
+        if (phase === "sending") return { data: "busy", error: null };
+        phase = "sending";
+        return { data: "go", error: null };
+      });
+    }
+    if (name === "email_operation_finish" && (args?.p_state === "accepted" || args?.p_state === "settled")) {
+      state.member!.invite_last_sent_at = new Date().toISOString();
+      phase = "settled";
+    }
+    return (previousAcquire ?? leaseRpc)(name, args);
+  });
+
+  const [reissue, overlap] = await Promise.all([POST(req(), params), POST(req(), params)]);
+  const statuses = [reissue.status, overlap.status].sort();
+  expect(statuses).toEqual([201, 409]);
+  expect(sendGuardedEmail).toHaveBeenCalledTimes(1);
+  expect(state.upserts).toHaveLength(1);
+  expect(state.upserts[0]?.accept_token_hash).not.toBe("old-hash");
+  expect(rpc.mock.calls.filter((call) => call[0] === "email_operation_remember")).toHaveLength(1);
+
+  staleCheck = false;
+  const later = await POST(req(), params);
+  expect(later.status).toBe(429);
+  expect(sendGuardedEmail).toHaveBeenCalledTimes(1);
+});
+
+it("does not mint a second link when a normal acceptance overlaps the cooldown check", async () => {
+  const { state, supabase } = harness();
+  state.member = {
+    invite_last_sent_at: null,
+    accept_token: null,
+    accept_token_hash: null,
+  };
+  let phase: "idle" | "sending" | "settled" = "idle";
+  let tail = Promise.resolve();
+  const serialize = <T,>(fn: () => T | Promise<T>) => {
+    const run = tail.then(fn, fn);
+    tail = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    return run;
+  };
+  let finishResolve: () => void = () => undefined;
+  const finished = new Promise<void>((resolve) => {
+    finishResolve = resolve;
+  });
+  let reads = 0;
+  let releaseReads: () => void = () => undefined;
+  const bothRead = new Promise<void>((resolve) => {
+    releaseReads = resolve;
+  });
+  const rawFrom = supabase.from.bind(supabase);
+  supabase.from = (table: string) => {
+    const chain = rawFrom(table);
+    if (table !== "organization_members") return chain;
+    chain.maybeSingle = async () => {
+      reads += 1;
+      if (reads >= 2) releaseReads();
+      else await bothRead;
+      return {
+        data: {
+          invite_last_sent_at: null,
+          accept_token: null,
+          accept_token_hash: state.member?.accept_token_hash ?? null,
+        },
+        error: null,
+      };
+    };
+    return chain;
+  };
+  (getAuthFromRequest as jest.Mock).mockResolvedValue({
+    ok: true,
+    supabase,
+    user: { id: OWNER, email: "owner@example.com" },
+  });
+  let acquires = 0;
+  rpc.mockImplementation(async (name: string, args?: { p_token?: string | null; p_state?: string }) => {
+    if (name === "email_operation_acquire") {
+      return serialize(async () => {
+        acquires += 1;
+        if (acquires > 1) await finished;
+        const last = state.member?.invite_last_sent_at;
+        const cooling = Boolean(last && Date.now() - new Date(last).getTime() < 60 * 60 * 1000);
+        if (cooling) return { data: "settled", error: null };
+        if (phase === "sending") return { data: "busy", error: null };
+        phase = "sending";
+        return { data: "go", error: null };
+      });
+    }
+    if (name === "email_operation_finish" && (args?.p_state === "accepted" || args?.p_state === "settled")) {
+      state.member!.invite_last_sent_at = new Date().toISOString();
+      phase = "settled";
+      finishResolve();
+    }
+    return leaseRpc(name, args);
+  });
+  (sendGuardedEmail as jest.Mock).mockResolvedValue({ ok: true });
+
+  const [sent, overlap] = await Promise.all([POST(req(), params), POST(req(), params)]);
+  const byStatus = [sent, overlap].sort((a, b) => a.status - b.status);
+  expect(byStatus[0].status).toBe(200);
+  expect(await byStatus[0].json()).toEqual({ ok: true, delivery: "sent" });
+  expect(byStatus[1].status).toBe(201);
+  expect(sendGuardedEmail).toHaveBeenCalledTimes(1);
+  expect(state.upserts).toHaveLength(1);
+  expect(rpc.mock.calls.filter((call) => call[0] === "email_operation_remember")).toHaveLength(1);
+  expect(state.member?.invite_last_sent_at).toBeTruthy();
+});
+
 it("does not write when the lease function is missing", async () => {
   const { state, supabase } = harness();
   (getAuthFromRequest as jest.Mock).mockResolvedValue({

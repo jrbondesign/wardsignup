@@ -975,6 +975,62 @@ alter table public.email_operation_lease
 alter table public.email_operation_lease enable row level security;
 revoke all on public.email_operation_lease from public, anon, authenticated;
 
+-- The org-invite hour lives on the member row. Both the drain and a normal
+-- finish stamp it in the same transaction as the acceptance. Acquire reads it
+-- under the lease lock, so a request that already passed the route precheck
+-- cannot mint a second link.
+create or replace function public.email_operation_stamp_invite(p_scope text)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  org_id text;
+  recipient text;
+begin
+  if to_regclass('public.organization_members') is null then
+    return;
+  end if;
+  org_id := substring(p_scope from '^org-member:([0-9a-fA-F-]{36}):');
+  recipient := lower(substring(p_scope from '^org-member:[0-9a-fA-F-]{36}:(.+)$'));
+  if org_id is null or recipient is null then
+    return;
+  end if;
+  execute
+    'update public.organization_members set invite_last_sent_at = now() where organization_id = $1::uuid and lower(invited_email) = $2'
+    using org_id, recipient;
+end;
+$$;
+
+create or replace function public.email_operation_invite_cooling(p_scope text)
+returns boolean
+language plpgsql
+stable
+security definer
+set search_path = public
+as $$
+declare
+  org_id text;
+  recipient text;
+  stamped timestamptz;
+begin
+  if to_regclass('public.organization_members') is null then
+    return false;
+  end if;
+  org_id := substring(p_scope from '^org-member:([0-9a-fA-F-]{36}):');
+  recipient := lower(substring(p_scope from '^org-member:[0-9a-fA-F-]{36}:(.+)$'));
+  if org_id is null or recipient is null then
+    return false;
+  end if;
+  execute
+    'select invite_last_sent_at from public.organization_members where organization_id = $1::uuid and lower(invited_email) = $2'
+    into stamped
+    using org_id, recipient;
+  return stamped is not null and stamped > now() - interval '1 hour';
+end;
+$$;
+
 create or replace function public.email_operation_acquire(
   p_scope text,
   p_holder text,
@@ -1000,6 +1056,11 @@ begin
   end if;
   perform pg_advisory_xact_lock(hashtext('email-op'), hashtext(p_scope));
   select * into rec from public.email_operation_lease where scope = p_scope for update;
+  -- The member stamp is the cooldown, including when this scope has no lease yet.
+  -- A stored token is not a new invite; its holder still reuses it below.
+  if public.email_operation_invite_cooling(p_scope) and (not found or rec.token is null) then
+    return 'settled';
+  end if;
   if not found then
     insert into public.email_operation_lease (
       scope, holder, state, token, had_token, block_reissue, phase, updated_at
@@ -1068,6 +1129,11 @@ begin
   if rec.token is null and (rec.had_token or rec.phase in ('token', 'http', 'queued')) then
     return 'blocked';
   end if;
+  -- Accepted mail stamps the member inside the settle. A stored token is left
+  -- for its holder to reuse. A null token inside the hour is not a new invite.
+  if rec.token is null and public.email_operation_invite_cooling(p_scope) then
+    return 'settled';
+  end if;
   -- phase acquired with a null token has not contacted the provider.
   -- A stale holder may take it and store one token. Settled and terminal
   -- rows become acquired again so an intentional later invite can mint.
@@ -1100,11 +1166,13 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  updated text;
 begin
-  -- settled/accepted: delivered, token cleared, a later reissue is allowed.
-  -- failed/retryable: not accepted, token kept for the same link.
+  -- settled/accepted: delivered, token cleared, cooldown stamped with that update.
+  -- A later reissue waits out the hour. failed/retryable: not accepted, token kept.
   -- ambiguous: may have been accepted. Token cleared and reissue blocked together.
-  -- terminal: rejected, token cleared, a new link is allowed.
+  -- terminal: rejected, token cleared, a new link is allowed when no acceptance is cooling.
   if p_state is null or p_state not in ('settled', 'accepted', 'failed', 'retryable', 'ambiguous', 'terminal') then
     return false;
   end if;
@@ -1125,8 +1193,12 @@ begin
         updated_at = now()
   where scope = p_scope
     and holder = p_holder
-    and state = 'sending';
-  return found;
+    and state = 'sending'
+  returning scope into updated;
+  if updated is not null and p_state in ('settled', 'accepted') then
+    perform public.email_operation_stamp_invite(p_scope);
+  end if;
+  return updated is not null;
 end;
 $$;
 
@@ -1244,8 +1316,6 @@ declare
   rec public.email_operation_lease%rowtype;
   attempt public.email_delivery_attempts%rowtype;
   key text;
-  org_id text;
-  recipient text;
   attempt_found boolean := false;
 begin
   if p_idempotency_key is null or length(trim(p_idempotency_key)) = 0 then
@@ -1344,15 +1414,7 @@ begin
           queue_key = key,
           updated_at = now()
     where scope = rec.scope;
-    if to_regclass('public.organization_members') is not null then
-      org_id := substring(rec.scope from '^org-member:([0-9a-fA-F-]{36}):');
-      recipient := lower(substring(rec.scope from '^org-member:[0-9a-fA-F-]{36}:(.+)$'));
-      if org_id is not null and recipient is not null then
-        execute
-          'update public.organization_members set invite_last_sent_at = now() where organization_id = $1::uuid and lower(invited_email) = $2'
-          using org_id, recipient;
-      end if;
-    end if;
+    perform public.email_operation_stamp_invite(rec.scope);
     return 'accepted';
   end if;
   if p_outcome = 'ambiguous' then
@@ -1572,6 +1634,8 @@ revoke all on function public.release_owned_slot(text, text, timestamptz, text) 
 revoke all on function public.try_consume_action_rate_count(text, text, timestamptz, integer) from public, anon, authenticated;
 revoke all on function public.claim_event_invite(uuid, text, uuid, text, text, text) from public, anon, authenticated;
 revoke all on function public.finish_event_invite(uuid, text, text) from public, anon, authenticated;
+revoke all on function public.email_operation_stamp_invite(text) from public, anon, authenticated;
+revoke all on function public.email_operation_invite_cooling(text) from public, anon, authenticated;
 revoke all on function public.email_operation_acquire(text, text, integer) from public, anon, authenticated;
 revoke all on function public.email_operation_finish(text, text, text) from public, anon, authenticated;
 revoke all on function public.email_operation_remember(text, text, text) from public, anon, authenticated;
@@ -1606,6 +1670,8 @@ grant execute on function public.release_owned_slot(text, text, timestamptz, tex
 grant execute on function public.try_consume_action_rate_count(text, text, timestamptz, integer) to service_role;
 grant execute on function public.claim_event_invite(uuid, text, uuid, text, text, text) to service_role;
 grant execute on function public.finish_event_invite(uuid, text, text) to service_role;
+grant execute on function public.email_operation_stamp_invite(text) to service_role;
+grant execute on function public.email_operation_invite_cooling(text) to service_role;
 grant execute on function public.email_operation_acquire(text, text, integer) to service_role;
 grant execute on function public.email_operation_finish(text, text, text) to service_role;
 grant execute on function public.email_operation_remember(text, text, text) to service_role;

@@ -1407,13 +1407,13 @@ begin
   taken := public.email_operation_acquire(
     'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-d', 180
   );
-  if taken <> 'go' then
-    raise exception 'accepted queue did not open one reissue: %', taken;
+  if taken <> 'settled' then
+    raise exception 'accepted queue minted during the cooldown: %', taken;
   end if;
-  if not public.email_operation_remember(
-    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-d', 'token-reissue'
+  if public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-d', 'brand-new-token'
   ) then
-    raise exception 'accepted queue did not store the reissue token';
+    raise exception 'accepted queue stored a replacement during the cooldown';
   end if;
 end $$;
 reset role;
@@ -1422,6 +1422,7 @@ do $$
 declare
   stamped timestamptz;
   saved text;
+  lease_phase text;
 begin
   select invite_last_sent_at into stamped
   from public.organization_members
@@ -1429,6 +1430,44 @@ begin
   if stamped is null or stamped < now() - interval '5 minutes' then
     raise exception 'accepted queue did not start the cooldown';
   end if;
+  select phase, token into lease_phase, saved from public.email_operation_lease
+  where scope = 'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com';
+  if lease_phase <> 'settled' or saved is not null then
+    raise exception 'accepted queue reopened during the cooldown: % %', lease_phase, saved;
+  end if;
+end $$;
+
+update public.organization_members
+  set invite_last_sent_at = now() - interval '2 hours'
+where invited_email = 'bishop@example.com';
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-e', 180
+  );
+  if taken <> 'go' then
+    raise exception 'expired acceptance did not open one reissue: %', taken;
+  end if;
+  if not public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-e', 'token-reissue'
+  ) then
+    raise exception 'expired acceptance did not store one reissue token';
+  end if;
+  if public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-d', 'brand-new-token'
+  ) then
+    raise exception 'a second holder replaced the reissue token';
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  saved text;
+begin
   select token into saved from public.email_operation_lease
   where scope = 'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com';
   if saved <> 'token-reissue' then
@@ -1583,7 +1622,9 @@ begin
 end $$;
 reset role;
 
--- Accepted after ambiguous upgrades that one key and opens the reissue.
+-- Accepted after ambiguous upgrades that one key. The hour still blocks a mint.
+insert into public.organization_members (organization_id, invited_email)
+values ('11111111-1111-4111-8111-111111111111', 'maybe@example.com');
 set role cutover_tester;
 do $$
 declare
@@ -1597,8 +1638,34 @@ begin
   taken := public.email_operation_acquire(
     'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', 'holder-d', 180
   );
+  if taken <> 'settled' then
+    raise exception 'upgraded acceptance minted during the cooldown: %', taken;
+  end if;
+  if public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', 'holder-d', 'brand-new-token'
+  ) then
+    raise exception 'upgraded acceptance stored a replacement';
+  end if;
+end $$;
+reset role;
+update public.organization_members
+  set invite_last_sent_at = now() - interval '2 hours'
+where invited_email = 'maybe@example.com';
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', 'holder-e', 180
+  );
   if taken <> 'go' then
-    raise exception 'upgraded acceptance stayed blocked: %', taken;
+    raise exception 'expired upgraded acceptance did not open one reissue: %', taken;
+  end if;
+  if not public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', 'holder-e', 'token-maybe-reissue'
+  ) then
+    raise exception 'expired upgraded acceptance did not store one token';
   end if;
 end $$;
 reset role;
@@ -1817,7 +1884,10 @@ SQL
 "${PSQL[@]}" -d "${DB}" <<'SQL'
 insert into public.organization_members (organization_id, invited_email) values
   ('11111111-1111-4111-8111-111111111111', 'capok@example.com'),
-  ('11111111-1111-4111-8111-111111111111', 'caphttp@example.com');
+  ('11111111-1111-4111-8111-111111111111', 'caphttp@example.com'),
+  ('11111111-1111-4111-8111-111111111111', 'capbare@example.com'),
+  ('11111111-1111-4111-8111-111111111111', 'caprace@example.com'),
+  ('11111111-1111-4111-8111-111111111111', 'finishcool@example.com');
 
 insert into public.email_delivery_attempts (
   idempotency_key, brand_id, kind, to_address, recipient_count, tag, phase,
@@ -1867,6 +1937,11 @@ insert into public.email_delivery_attempts (
     'org_member_invite/capskipok', 'wardsignup', 'org_member_invite', 'capskipok@example.com', 1,
     'kcapskok1', 'primary_accepted', null, true, 'msg-skipped', 'accepted',
     'org-member:11111111-1111-4111-8111-111111111111:capskipok@example.com', now()
+  ),
+  (
+    'org_member_invite/caprace', 'wardsignup', 'org_member_invite', 'caprace@example.com', 1,
+    'kcaprace1', 'primary_accepted', null, true, 'msg-race', 'accepted',
+    'org-member:11111111-1111-4111-8111-111111111111:caprace@example.com', now()
   );
 
 insert into public.email_queue (
@@ -1880,7 +1955,8 @@ insert into public.email_queue (
   ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capopen@example.com', 'Invite', '<p>open</p>', now(), 'sending', 2, 'org_member_invite/capopen'),
   ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capterm@example.com', 'Invite', '<p>term</p>', now(), 'failed', 3, 'org_member_invite/capterm'),
   ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capbare@example.com', 'Invite', '<p>bare</p>', now(), 'failed', 3, 'org_member_invite/capbare'),
-  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capskipok@example.com', 'Invite', '<p>skipok</p>', now(), 'skipped', 1, 'org_member_invite/capskipok');
+  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capskipok@example.com', 'Invite', '<p>skipok</p>', now(), 'skipped', 1, 'org_member_invite/capskipok'),
+  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'caprace@example.com', 'Invite', '<p>race</p>', now(), 'failed', 3, 'org_member_invite/caprace');
 SQL
 
 "${PSQL[@]}" -d "${DB}" <<'SQL'
@@ -1891,7 +1967,7 @@ declare
   scope text;
   taken text;
 begin
-  foreach email in array array['capok@example.com', 'caphttp@example.com', 'capmsg@example.com', 'cappre@example.com', 'capskip@example.com', 'capopen@example.com', 'capterm@example.com', 'capbare@example.com', 'capskipok@example.com']
+  foreach email in array array['capok@example.com', 'caphttp@example.com', 'capmsg@example.com', 'cappre@example.com', 'capskip@example.com', 'capopen@example.com', 'capterm@example.com', 'capbare@example.com', 'capskipok@example.com', 'caprace@example.com']
   loop
     scope := 'org-member:11111111-1111-4111-8111-111111111111:' || email;
     taken := public.email_operation_acquire(scope, 'holder-a', 180);
@@ -1927,11 +2003,32 @@ begin
     raise exception 'late rejection downgraded an acceptance: %', late;
   end if;
   taken := public.email_operation_acquire(scope, 'holder-c', 180);
-  if taken <> 'go' then
-    raise exception 'proven acceptance did not open one later reissue: %', taken;
+  if taken <> 'settled' then
+    raise exception 'repaired acceptance minted during the cooldown: %', taken;
   end if;
-  if not public.email_operation_remember(scope, 'holder-c', 'token-reissue') then
-    raise exception 'later reissue did not store one token';
+  if public.email_operation_remember(scope, 'holder-c', 'brand-new-token') then
+    raise exception 'repaired acceptance stored a replacement';
+  end if;
+end $$;
+reset role;
+update public.organization_members
+  set invite_last_sent_at = now() - interval '2 hours'
+where invited_email = 'capok@example.com';
+set role cutover_tester;
+do $$
+declare
+  scope text := 'org-member:11111111-1111-4111-8111-111111111111:capok@example.com';
+  taken text;
+begin
+  taken := public.email_operation_acquire(scope, 'holder-d', 180);
+  if taken <> 'go' then
+    raise exception 'expired repaired acceptance did not open one reissue: %', taken;
+  end if;
+  if not public.email_operation_remember(scope, 'holder-d', 'token-reissue') then
+    raise exception 'expired repaired acceptance did not store one token';
+  end if;
+  if public.email_operation_remember(scope, 'holder-c', 'brand-new-token') then
+    raise exception 'a second holder replaced the repaired reissue';
   end if;
 end $$;
 reset role;
@@ -2077,11 +2174,211 @@ begin
   taken := public.email_operation_acquire(
     'org-member:11111111-1111-4111-8111-111111111111:capbare@example.com', 'holder-d', 180
   );
-  if taken <> 'go' then
-    raise exception 'upgraded acceptance did not open one later reissue: %', taken;
+  if taken <> 'settled' then
+    raise exception 'late acceptance minted during the cooldown: %', taken;
+  end if;
+  if public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:capbare@example.com', 'holder-d', 'brand-new-token'
+  ) then
+    raise exception 'late acceptance stored a replacement';
   end if;
 end $$;
 reset role;
+update public.organization_members
+  set invite_last_sent_at = now() - interval '2 hours'
+where invited_email = 'capbare@example.com';
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:capbare@example.com', 'holder-e', 180
+  );
+  if taken <> 'go' then
+    raise exception 'expired late acceptance did not open one reissue: %', taken;
+  end if;
+  if not public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:capbare@example.com', 'holder-e', 'token-after-late'
+  ) then
+    raise exception 'expired late acceptance did not store one token';
+  end if;
+end $$;
+reset role;
+
+-- A normal finish stamps the same hour. The next acquire does not mint.
+set role cutover_tester;
+do $$
+declare
+  scope text := 'org-member:11111111-1111-4111-8111-111111111111:finishcool@example.com';
+  taken text;
+begin
+  taken := public.email_operation_acquire(scope, 'holder-a', 180);
+  if taken <> 'go' then
+    raise exception 'finish cooldown lease did not start: %', taken;
+  end if;
+  if not public.email_operation_remember(scope, 'holder-a', 'token-finish') then
+    raise exception 'finish cooldown lease did not store its token';
+  end if;
+  if not public.email_operation_finish(scope, 'holder-a', 'accepted') then
+    raise exception 'finish cooldown lease did not accept';
+  end if;
+  taken := public.email_operation_acquire(scope, 'holder-b', 180);
+  if taken <> 'settled' then
+    raise exception 'normal acceptance minted during the cooldown: %', taken;
+  end if;
+  if public.email_operation_remember(scope, 'holder-b', 'brand-new-token') then
+    raise exception 'normal acceptance stored a replacement';
+  end if;
+end $$;
+reset role;
+SQL
+
+# A stored token stays with its holder while an acceptance is cooling.
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+insert into public.organization_members (organization_id, invited_email)
+values ('11111111-1111-4111-8111-111111111111', 'keeptoken@example.com');
+set role cutover_tester;
+do $$
+declare
+  scope text := 'org-member:11111111-1111-4111-8111-111111111111:keeptoken@example.com';
+  taken text;
+begin
+  taken := public.email_operation_acquire(scope, 'holder-a', 180);
+  if taken <> 'go' then
+    raise exception 'kept token lease did not start: %', taken;
+  end if;
+  if not public.email_operation_remember(scope, 'holder-a', 'token-keep') then
+    raise exception 'kept token was not stored';
+  end if;
+end $$;
+reset role;
+update public.organization_members
+  set invite_last_sent_at = now()
+where invited_email = 'keeptoken@example.com';
+update public.email_operation_lease
+  set updated_at = now() - interval '181 seconds'
+where scope = 'org-member:11111111-1111-4111-8111-111111111111:keeptoken@example.com';
+set role cutover_tester;
+do $$
+declare
+  scope text := 'org-member:11111111-1111-4111-8111-111111111111:keeptoken@example.com';
+  taken text;
+  saved text;
+begin
+  taken := public.email_operation_acquire(scope, 'holder-b', 180);
+  if taken <> 'go' then
+    raise exception 'stored token was not reused during the cooldown: %', taken;
+  end if;
+  saved := public.email_operation_recall(scope);
+  if saved <> 'token-keep' then
+    raise exception 'cooldown takeover replaced the stored token: %', saved;
+  end if;
+  if public.email_operation_remember(scope, 'holder-b', 'brand-new-token') then
+    raise exception 'cooldown takeover stored a second token';
+  end if;
+  if public.email_operation_remember(scope, 'holder-a', 'brand-new-token') then
+    raise exception 'old holder replaced the stored token during the cooldown';
+  end if;
+end $$;
+reset role;
+SQL
+
+# Five overlapping repairs of one accepted failed-queue lease. None mint.
+status=0
+pids=()
+for i in 1 2 3 4 5; do
+  "${PSQL[@]}" -d "${DB}" -c "set role cutover_tester; insert into public.cutover_proof_result (label, result) select 'cool-repair', public.email_operation_acquire('org-member:11111111-1111-4111-8111-111111111111:caprace@example.com', 'repair-$i', 180);" >/dev/null &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "$pid" || status=1
+done
+if [[ "$status" -ne 0 ]]; then
+  echo "cooldown repair race failed"
+  exit 1
+fi
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+do $$
+declare
+  settled int;
+  gos int;
+  saved text;
+  lease_phase text;
+  i int;
+  lease_scope text := 'org-member:11111111-1111-4111-8111-111111111111:caprace@example.com';
+begin
+  select count(*) into settled from public.cutover_proof_result
+  where label = 'cool-repair' and result = 'settled';
+  select count(*) into gos from public.cutover_proof_result
+  where label = 'cool-repair' and result = 'go';
+  if settled <> 5 or gos <> 0 then
+    raise exception 'repair race settled % go %', settled, gos;
+  end if;
+  select phase, token into lease_phase, saved from public.email_operation_lease where scope = lease_scope;
+  if lease_phase <> 'settled' or saved is not null then
+    raise exception 'repair race minted: % %', lease_phase, saved;
+  end if;
+  for i in 1..5 loop
+    if public.email_operation_remember(lease_scope, 'repair-' || i, 'brand-new-' || i) then
+      raise exception 'repair race stored a token';
+    end if;
+  end loop;
+end $$;
+SQL
+
+# After the hour, five acquires store exactly one token.
+"${PSQL[@]}" -d "${DB}" -c "update public.organization_members set invite_last_sent_at = now() - interval '2 hours' where invited_email = 'caprace@example.com';" >/dev/null
+status=0
+pids=()
+for i in 1 2 3 4 5; do
+  "${PSQL[@]}" -d "${DB}" -c "set role cutover_tester; insert into public.cutover_proof_result (label, result) select 'cool-reissue', public.email_operation_acquire('org-member:11111111-1111-4111-8111-111111111111:caprace@example.com', 'reissue-$i', 180);" >/dev/null &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "$pid" || status=1
+done
+if [[ "$status" -ne 0 ]]; then
+  echo "cooldown reissue race failed"
+  exit 1
+fi
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+do $$
+declare
+  gos int;
+  busies int;
+  winner text;
+  saved text;
+  i int;
+  lease_scope text := 'org-member:11111111-1111-4111-8111-111111111111:caprace@example.com';
+begin
+  select count(*) into gos from public.cutover_proof_result
+  where label = 'cool-reissue' and result = 'go';
+  select count(*) into busies from public.cutover_proof_result
+  where label = 'cool-reissue' and result = 'busy';
+  if gos <> 1 or busies <> 4 then
+    raise exception 'reissue race go % busy %', gos, busies;
+  end if;
+  select holder into winner from public.email_operation_lease where scope = lease_scope;
+  if winner is null or winner not like 'reissue-%' then
+    raise exception 'reissue race winner %', winner;
+  end if;
+  if not public.email_operation_remember(lease_scope, winner, 'token-after-hour') then
+    raise exception 'reissue race winner did not store one token';
+  end if;
+  for i in 1..5 loop
+    if 'reissue-' || i is distinct from winner
+       and public.email_operation_remember(lease_scope, 'reissue-' || i, 'other-' || i) then
+      raise exception 'reissue race loser stored a token';
+    end if;
+  end loop;
+  saved := public.email_operation_recall(lease_scope);
+  if saved <> 'token-after-hour' then
+    raise exception 'reissue race token %', saved;
+  end if;
+end $$;
 SQL
 
 # An older draft of this file created the phase check without queued. Re-applying
