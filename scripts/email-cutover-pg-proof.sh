@@ -1657,11 +1657,60 @@ begin
     raise exception 'concurrent accepts changed the lease: % % %', rows, lease_phase, blocked;
   end if;
 end $$;
-SQL
 
-"${PSQL[@]}" -d "${DB}" <<'SQL'
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:race2@example.com', 'holder-a', 180
+  );
+  if taken <> 'go' then
+    raise exception 'parallel race lease did not start: %', taken;
+  end if;
+  if not public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:race2@example.com', 'holder-a', 'token-race2'
+  ) then
+    raise exception 'parallel race lease did not store its token';
+  end if;
+  if not public.email_operation_mark_queued(
+    'org-member:11111111-1111-4111-8111-111111111111:race2@example.com', 'holder-a', 'org_member_invite/race2'
+  ) then
+    raise exception 'parallel race lease was not queued';
+  end if;
+end $$;
+reset role;
 create table public.cutover_enqueue_result (slot int, status text);
 grant insert on public.cutover_enqueue_result to cutover_tester;
+SQL
+
+for i in 1 2 3 4 5; do
+  "${PSQL[@]}" -d "${DB}" <<SQL &
+set role cutover_tester;
+insert into public.cutover_enqueue_result (slot, status)
+select ${i}, public.email_operation_apply_queue_result('org_member_invite/race2', 'accepted');
+SQL
+done
+wait
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+do $$
+declare
+  rows int;
+  lease_phase text;
+  blocked boolean;
+  accepted int;
+begin
+  select count(*), max(phase), bool_or(block_reissue) into rows, lease_phase, blocked
+  from public.email_operation_lease
+  where scope = 'org-member:11111111-1111-4111-8111-111111111111:race2@example.com';
+  select count(*) into accepted from public.cutover_enqueue_result
+  where slot between 1 and 5 and status = 'accepted';
+  if rows <> 1 or lease_phase <> 'settled' or blocked or accepted <> 5 then
+    raise exception 'parallel accepts did not settle once: rows % phase % blocked % accepted %', rows, lease_phase, blocked, accepted;
+  end if;
+end $$;
 SQL
 
 for i in 1 2 3 4 5; do
