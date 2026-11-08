@@ -107,7 +107,7 @@ export default function EditEventPage() {
         message={toastMessage}
         show={showToast}
         onClose={() => setShowToast(false)}
-        duration={toastMessage.includes("Report sent") ? 8000 : 3000}
+        duration={/Report (sent|queued|may already)/.test(toastMessage) ? 8000 : 3000}
       />
       <Navigation />
       <main className="min-h-screen bg-[#F4FAFB] p-4 pb-28 md:p-8 md:pb-28">
