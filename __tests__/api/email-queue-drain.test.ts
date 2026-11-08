@@ -11,6 +11,8 @@ type Row = {
   attempts: number;
   last_error?: string | null;
   idempotency_key?: string;
+  claimed_at?: string;
+  sent_at?: string | null;
   brand_id?: string;
   category?: "notification" | "transactional";
   from_address?: string;
@@ -21,20 +23,39 @@ type Row = {
 let rows: Row[] = [];
 let rpcThrows = false;
 const applied: Array<{ key: string; outcome: string }> = [];
+const attempts = new Map<string, {
+  phase: string;
+  rejection_class?: string | null;
+  http_started: boolean;
+  provider_message_id: string | null;
+  delivery_status: string | null;
+}>();
 const listCalls: Array<{ in?: string[]; notIn?: string; lte?: string }> = [];
 
 // Minimal email_queue fake: select chains record the kind filter, update chains claim rows.
 function makeAdmin() {
   return {
-    from: () => ({
+    from: (table: string) => ({
       select: () => {
-        const q: { in?: string[]; notIn?: string; lte?: string } = {};
+        const q: { status?: string; idempotencyKey?: string; in?: string[]; notIn?: string; lte?: string; claimedBefore?: string } = {};
         const chain = {
-          eq: () => chain,
+          eq: (c: string, v: string) => {
+            if (c === "status") q.status = v;
+            if (c === "idempotency_key") q.idempotencyKey = v;
+            return chain;
+          },
           in: (_c: string, v: string[]) => ((q.in = v), chain),
           not: (_c: string, _op: string, v: string) => ((q.notIn = v), chain),
+          lt: (c: string, v: string) => {
+            if (c === "claimed_at") q.claimedBefore = v;
+            return chain;
+          },
           lte: (_c: string, v: string) => ((q.lte = v), chain),
           order: () => chain,
+          maybeSingle: () => {
+            const row = q.idempotencyKey ? attempts.get(q.idempotencyKey) ?? null : null;
+            return Promise.resolve({ data: row, error: null });
+          },
           limit: () => {
             listCalls.push(q);
             const kinds = q.in ?? null;
@@ -43,6 +64,18 @@ function makeAdmin() {
               (r) => r.status === "pending" && (!q.lte || Date.parse(r.send_after) <= Date.parse(q.lte)) && (kinds ? kinds.includes(r.kind) : !excluded!.includes(r.kind)),
             );
             return Promise.resolve({ data: data.map((r) => ({ ...r })), error: null });
+          },
+          then: (resolve: (value: unknown) => void) => {
+            if (table === "email_delivery_attempts") {
+              resolve({ data: null, error: null });
+              return;
+            }
+            const data = rows.filter((r) => {
+              if (q.status && r.status !== q.status) return false;
+              if (q.claimedBefore && (!r.claimed_at || Date.parse(r.claimed_at) >= Date.parse(q.claimedBefore))) return false;
+              return true;
+            });
+            resolve({ data: data.map((r) => ({ ...r })), error: null });
           },
         };
         return chain;
@@ -97,6 +130,7 @@ beforeEach(() => {
   process.env = { ...saved, CRON_SECRET: "s" };
   listCalls.length = 0;
   applied.length = 0;
+  attempts.clear();
   rpcThrows = false;
   sendGuardedEmail.mockReset();
 });
@@ -240,6 +274,92 @@ describe("near real time retries after a Brevo failure", () => {
     sendGuardedEmail.mockResolvedValue({ ok: true });
     await run();
     expect(rows[0].status).toBe("sent");
+  });
+
+  it("does not fail a capped stale claim that was accepted or had started HTTP", async () => {
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    const old = new Date(Date.now() - 16 * 60 * 1000).toISOString();
+    const queued = (id: string, key: string, attempts: number): Row => ({
+      ...row(id, "org_member_invite", "2099-01-01T00:00:00.000Z"),
+      status: "sending",
+      attempts,
+      claimed_at: old,
+      idempotency_key: key,
+      brand_id: "wardsignup",
+      category: "notification",
+      from_address: "Jonathan <jonathan@wardsignup.com>",
+      to_address: "bishop@example.com",
+      subject: "Invite",
+      html: "<p>invite</p>",
+    });
+    rows = [
+      queued("under", "org_member_invite/under", 2),
+      queued("accepted", "org_member_invite/accepted", 3),
+      queued("http", "org_member_invite/http", 3),
+      queued("prehttp", "org_member_invite/prehttp", 3),
+      queued("terminal", "org_member_invite/terminal", 3),
+      queued("bare", "org_member_invite/bare", 3),
+      queued("msgid", "org_member_invite/msgid", 3),
+    ];
+    attempts.set("org_member_invite/accepted", {
+      phase: "primary_accepted",
+      http_started: true,
+      provider_message_id: "msg-accepted",
+      delivery_status: "accepted",
+    });
+    attempts.set("org_member_invite/http", {
+      phase: "primary_inflight",
+      http_started: true,
+      provider_message_id: null,
+      delivery_status: null,
+    });
+    attempts.set("org_member_invite/prehttp", {
+      phase: "primary_rejected",
+      rejection_class: null,
+      http_started: false,
+      provider_message_id: null,
+      delivery_status: null,
+    });
+    attempts.set("org_member_invite/terminal", {
+      phase: "primary_rejected",
+      rejection_class: "permanent",
+      http_started: true,
+      provider_message_id: null,
+      delivery_status: null,
+    });
+    attempts.set("org_member_invite/bare", {
+      phase: "primary_rejected",
+      rejection_class: null,
+      http_started: true,
+      provider_message_id: null,
+      delivery_status: null,
+    });
+    attempts.set("org_member_invite/msgid", {
+      phase: "primary_rejected",
+      rejection_class: "permanent",
+      http_started: true,
+      provider_message_id: "msg-maybe",
+      delivery_status: null,
+    });
+    sendGuardedEmail.mockResolvedValue({ ok: true });
+    await run();
+    expect(rows.find((r) => r.id === "under")).toMatchObject({ status: "pending", last_error: "claim expired" });
+    expect(rows.find((r) => r.id === "accepted")).toMatchObject({ status: "sent" });
+    expect(rows.find((r) => r.id === "http")).toMatchObject({ status: "ambiguous" });
+    expect(rows.find((r) => r.id === "prehttp")).toMatchObject({ status: "failed", last_error: "claim expired" });
+    expect(rows.find((r) => r.id === "terminal")).toMatchObject({ status: "failed", last_error: "claim expired" });
+    expect(rows.find((r) => r.id === "bare")).toMatchObject({ status: "ambiguous", last_error: "claim expired after HTTP" });
+    expect(rows.find((r) => r.id === "msgid")).toMatchObject({ status: "ambiguous", last_error: "claim expired after HTTP" });
+    expect(applied).toEqual([
+      { key: "org_member_invite/under", outcome: "pending" },
+      { key: "org_member_invite/accepted", outcome: "accepted" },
+      { key: "org_member_invite/http", outcome: "ambiguous" },
+      { key: "org_member_invite/prehttp", outcome: "rejected" },
+      { key: "org_member_invite/terminal", outcome: "rejected" },
+      { key: "org_member_invite/bare", outcome: "ambiguous" },
+      { key: "org_member_invite/msgid", outcome: "ambiguous" },
+    ]);
+    expect(sendGuardedEmail).not.toHaveBeenCalled();
   });
 
   it("an overlapping run can't send a row another run already claimed", async () => {

@@ -965,16 +965,12 @@ alter table public.email_operation_lease add column if not exists block_reissue 
 alter table public.email_operation_lease add column if not exists phase text not null default 'acquired';
 alter table public.email_operation_lease add column if not exists queue_key text;
 
-do $$
-begin
-  if not exists (
-    select 1 from pg_constraint where conname = 'email_operation_lease_phase_check'
-  ) then
-    alter table public.email_operation_lease
-      add constraint email_operation_lease_phase_check
-      check (phase in ('acquired', 'token', 'http', 'queued', 'settled', 'ambiguous', 'failed'));
-  end if;
-end $$;
+-- Replace the check even when an older draft of this file already created it
+-- without phase queued. A hosted database does not have this table yet.
+alter table public.email_operation_lease drop constraint if exists email_operation_lease_phase_check;
+alter table public.email_operation_lease
+  add constraint email_operation_lease_phase_check
+  check (phase in ('acquired', 'token', 'http', 'queued', 'settled', 'ambiguous', 'failed'));
 
 alter table public.email_operation_lease enable row level security;
 revoke all on public.email_operation_lease from public, anon, authenticated;
@@ -992,6 +988,7 @@ declare
   rec public.email_operation_lease%rowtype;
   stale_seconds integer;
   queue_status text;
+  queue_outcome text;
 begin
   if p_scope is null or length(trim(p_scope)) = 0
      or p_holder is null or length(trim(p_holder)) = 0 then
@@ -1017,8 +1014,10 @@ begin
   end if;
   -- A parked copy is not acceptance uncertainty. Do not mint over it.
   -- If the drain already finished and the process died before apply, resolve
-  -- that finished row here. This request still does not mint: accepted returns
-  -- settled, and a failed row falls through only after the token is cleared.
+  -- that finished row here. This request still does not mint. A failed or
+  -- skipped queue row is not a rejection by itself: an accepted attempt
+  -- settles, and HTTP or a message id stays blocked. Only a pre-HTTP failure
+  -- falls through, after the token is cleared, so one new link can be stored.
   if rec.phase = 'queued' then
     if rec.queue_key is not null then
       select status into queue_status
@@ -1032,8 +1031,16 @@ begin
         perform public.email_operation_apply_queue_result(rec.queue_key, 'ambiguous');
         return 'blocked';
       elsif queue_status in ('failed', 'skipped') then
-        perform public.email_operation_apply_queue_result(rec.queue_key, 'rejected');
-        select * into rec from public.email_operation_lease where scope = p_scope;
+        queue_outcome := public.email_operation_apply_queue_result(rec.queue_key, 'rejected');
+        if queue_outcome = 'accepted' then
+          return 'settled';
+        elsif queue_outcome = 'ambiguous' then
+          return 'blocked';
+        elsif queue_outcome = 'rejected' then
+          select * into rec from public.email_operation_lease where scope = p_scope;
+        else
+          return 'blocked';
+        end if;
       else
         return 'queued';
       end if;
@@ -1239,6 +1246,7 @@ declare
   key text;
   org_id text;
   recipient text;
+  attempt_found boolean := false;
 begin
   if p_idempotency_key is null or length(trim(p_idempotency_key)) = 0 then
     return 'ignored';
@@ -1249,6 +1257,7 @@ begin
   key := trim(p_idempotency_key);
   perform pg_advisory_xact_lock(hashtext('email-op-key'), hashtext(key));
   select * into attempt from public.email_delivery_attempts where idempotency_key = key;
+  attempt_found := found;
   select * into rec from public.email_operation_lease where queue_key = key for update;
   if not found and attempt.operation_scope is not null then
     select * into rec from public.email_operation_lease
@@ -1270,7 +1279,16 @@ begin
     return 'ignored';
   end if;
   if rec.phase = 'ambiguous' and p_outcome is distinct from 'accepted' then
-    return 'ignored';
+    -- A later rejection does not clear uncertainty, unless the attempt is now
+    -- a proven acceptance. That upgrades the block instead of minting.
+    if p_outcome = 'rejected' and attempt_found and (
+      attempt.phase in ('primary_accepted', 'fallback_accepted')
+      or attempt.delivery_status in ('accepted', 'delivered')
+    ) then
+      p_outcome := 'accepted';
+    else
+      return 'ignored';
+    end if;
   end if;
   if rec.phase = 'failed' and not (p_outcome = 'accepted' and rec.token is null) then
     return 'ignored';
@@ -1288,6 +1306,33 @@ begin
     where scope = rec.scope
       and phase in ('token', 'http');
     return 'pending';
+  end if;
+  -- A caller saying rejected is the queue status, not the provider result.
+  -- An accepted attempt settles. A message id, an ambiguous phase, or an
+  -- inflight row that started HTTP stays blocked. A classified rejection
+  -- (quota, auth, rate limit, or permanent) with no message id is a decline
+  -- even when HTTP started, so the token can be cleared. An unclassified
+  -- rejection that started HTTP is not that decline.
+  if p_outcome = 'rejected' and attempt_found then
+    if attempt.phase in ('primary_accepted', 'fallback_accepted')
+       or attempt.delivery_status in ('accepted', 'delivered') then
+      p_outcome := 'accepted';
+    elsif attempt.provider_message_id is not null
+       or attempt.phase in ('primary_ambiguous', 'fallback_ambiguous')
+       or (
+         attempt.phase in ('primary_inflight', 'fallback_inflight')
+         and attempt.http_started
+       )
+       or (
+         attempt.phase in ('primary_rejected', 'fallback_rejected')
+         and attempt.http_started
+         and (
+           attempt.rejection_class is null
+           or attempt.rejection_class = 'unknown'
+         )
+       ) then
+      p_outcome := 'ambiguous';
+    end if;
   end if;
   if p_outcome = 'accepted' then
     update public.email_operation_lease

@@ -1811,4 +1811,308 @@ begin
 end $$;
 SQL
 
+# A failed or skipped queue row follows the delivery attempt. It does not mint
+# over an acceptance, a message id, or an unfinished HTTP start. A classified
+# decline and a pre-HTTP failure still open one link.
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+insert into public.organization_members (organization_id, invited_email) values
+  ('11111111-1111-4111-8111-111111111111', 'capok@example.com'),
+  ('11111111-1111-4111-8111-111111111111', 'caphttp@example.com');
+
+insert into public.email_delivery_attempts (
+  idempotency_key, brand_id, kind, to_address, recipient_count, tag, phase,
+  rejection_class, http_started, provider_message_id, delivery_status, operation_scope, updated_at
+) values
+  (
+    'org_member_invite/capok', 'wardsignup', 'org_member_invite', 'capok@example.com', 1,
+    'kcapok001', 'primary_accepted', null, true, 'msg-accepted', 'accepted',
+    'org-member:11111111-1111-4111-8111-111111111111:capok@example.com', now()
+  ),
+  (
+    'org_member_invite/caphttp', 'wardsignup', 'org_member_invite', 'caphttp@example.com', 1,
+    'kcaphttp1', 'primary_inflight', null, true, null, null,
+    'org-member:11111111-1111-4111-8111-111111111111:caphttp@example.com', now()
+  ),
+  (
+    'org_member_invite/capmsg', 'wardsignup', 'org_member_invite', 'capmsg@example.com', 1,
+    'kcapmsg01', 'primary_rejected', null, true, 'msg-maybe', null,
+    'org-member:11111111-1111-4111-8111-111111111111:capmsg@example.com', now()
+  ),
+  (
+    'org_member_invite/cappre', 'wardsignup', 'org_member_invite', 'cappre@example.com', 1,
+    'kcappre01', 'primary_rejected', null, false, null, null,
+    'org-member:11111111-1111-4111-8111-111111111111:cappre@example.com', now()
+  ),
+  (
+    'org_member_invite/capskip', 'wardsignup', 'org_member_invite', 'capskip@example.com', 1,
+    'kcapskip1', 'primary_ambiguous', null, false, null, null,
+    'org-member:11111111-1111-4111-8111-111111111111:capskip@example.com', now()
+  ),
+  (
+    'org_member_invite/capopen', 'wardsignup', 'org_member_invite', 'capopen@example.com', 1,
+    'kcapopen1', 'primary_inflight', null, false, null, null,
+    'org-member:11111111-1111-4111-8111-111111111111:capopen@example.com', now()
+  ),
+  (
+    'org_member_invite/capterm', 'wardsignup', 'org_member_invite', 'capterm@example.com', 1,
+    'kcapterm1', 'primary_rejected', 'permanent', true, null, null,
+    'org-member:11111111-1111-4111-8111-111111111111:capterm@example.com', now()
+  ),
+  (
+    'org_member_invite/capbare', 'wardsignup', 'org_member_invite', 'capbare@example.com', 1,
+    'kcapbare1', 'primary_rejected', null, true, null, null,
+    'org-member:11111111-1111-4111-8111-111111111111:capbare@example.com', now()
+  ),
+  (
+    'org_member_invite/capskipok', 'wardsignup', 'org_member_invite', 'capskipok@example.com', 1,
+    'kcapskok1', 'primary_accepted', null, true, 'msg-skipped', 'accepted',
+    'org-member:11111111-1111-4111-8111-111111111111:capskipok@example.com', now()
+  );
+
+insert into public.email_queue (
+  brand_id, category, kind, from_address, to_address, subject, html, send_after, status, attempts, idempotency_key
+) values
+  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capok@example.com', 'Invite', '<p>ok</p>', now(), 'failed', 3, 'org_member_invite/capok'),
+  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'caphttp@example.com', 'Invite', '<p>http</p>', now(), 'failed', 3, 'org_member_invite/caphttp'),
+  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capmsg@example.com', 'Invite', '<p>msg</p>', now(), 'failed', 3, 'org_member_invite/capmsg'),
+  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'cappre@example.com', 'Invite', '<p>pre</p>', now(), 'failed', 3, 'org_member_invite/cappre'),
+  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capskip@example.com', 'Invite', '<p>skip</p>', now(), 'skipped', 3, 'org_member_invite/capskip'),
+  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capopen@example.com', 'Invite', '<p>open</p>', now(), 'sending', 2, 'org_member_invite/capopen'),
+  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capterm@example.com', 'Invite', '<p>term</p>', now(), 'failed', 3, 'org_member_invite/capterm'),
+  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capbare@example.com', 'Invite', '<p>bare</p>', now(), 'failed', 3, 'org_member_invite/capbare'),
+  ('wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>', 'capskipok@example.com', 'Invite', '<p>skipok</p>', now(), 'skipped', 1, 'org_member_invite/capskipok');
+SQL
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+set role cutover_tester;
+do $$
+declare
+  email text;
+  scope text;
+  taken text;
+begin
+  foreach email in array array['capok@example.com', 'caphttp@example.com', 'capmsg@example.com', 'cappre@example.com', 'capskip@example.com', 'capopen@example.com', 'capterm@example.com', 'capbare@example.com', 'capskipok@example.com']
+  loop
+    scope := 'org-member:11111111-1111-4111-8111-111111111111:' || email;
+    taken := public.email_operation_acquire(scope, 'holder-a', 180);
+    if taken <> 'go' then
+      raise exception '% lease did not start: %', email, taken;
+    end if;
+    if not public.email_operation_remember(scope, 'holder-a', 'token-' || email) then
+      raise exception '% lease did not store its token', email;
+    end if;
+    if not public.email_operation_mark_queued(scope, 'holder-a', 'org_member_invite/' || split_part(email, '@', 1)) then
+      raise exception '% lease was not queued', email;
+    end if;
+  end loop;
+end $$;
+reset role;
+
+set role cutover_tester;
+do $$
+declare
+  scope text := 'org-member:11111111-1111-4111-8111-111111111111:capok@example.com';
+  taken text;
+  late text;
+begin
+  taken := public.email_operation_acquire(scope, 'holder-b', 180);
+  if taken <> 'settled' then
+    raise exception 'failed queue with an accepted attempt minted: %', taken;
+  end if;
+  if public.email_operation_remember(scope, 'holder-b', 'brand-new-token') then
+    raise exception 'same acquire stored a new token over an acceptance';
+  end if;
+  late := public.email_operation_apply_queue_result('org_member_invite/capok', 'rejected');
+  if late <> 'ignored' and late <> 'accepted' then
+    raise exception 'late rejection downgraded an acceptance: %', late;
+  end if;
+  taken := public.email_operation_acquire(scope, 'holder-c', 180);
+  if taken <> 'go' then
+    raise exception 'proven acceptance did not open one later reissue: %', taken;
+  end if;
+  if not public.email_operation_remember(scope, 'holder-c', 'token-reissue') then
+    raise exception 'later reissue did not store one token';
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  lease_phase text;
+  blocked boolean;
+  saved text;
+  stamped timestamptz;
+begin
+  select phase, block_reissue, token into lease_phase, blocked, saved
+  from public.email_operation_lease
+  where scope = 'org-member:11111111-1111-4111-8111-111111111111:capok@example.com';
+  if lease_phase <> 'token' or blocked or saved <> 'token-reissue' then
+    raise exception 'reissue after acceptance was not one token: % % %', lease_phase, blocked, saved;
+  end if;
+  select invite_last_sent_at into stamped from public.organization_members
+  where invited_email = 'capok@example.com';
+  if stamped is null then
+    raise exception 'accepted queue failure did not start the cooldown';
+  end if;
+end $$;
+
+set role cutover_tester;
+do $$
+declare
+  http_scope text := 'org-member:11111111-1111-4111-8111-111111111111:caphttp@example.com';
+  msg_scope text := 'org-member:11111111-1111-4111-8111-111111111111:capmsg@example.com';
+  skip_scope text := 'org-member:11111111-1111-4111-8111-111111111111:capskip@example.com';
+  pre_scope text := 'org-member:11111111-1111-4111-8111-111111111111:cappre@example.com';
+  open_scope text := 'org-member:11111111-1111-4111-8111-111111111111:capopen@example.com';
+  term_scope text := 'org-member:11111111-1111-4111-8111-111111111111:capterm@example.com';
+  bare_scope text := 'org-member:11111111-1111-4111-8111-111111111111:capbare@example.com';
+  skipok_scope text := 'org-member:11111111-1111-4111-8111-111111111111:capskipok@example.com';
+  taken text;
+  saved text;
+  late text;
+begin
+  taken := public.email_operation_acquire(http_scope, 'holder-b', 180);
+  if taken <> 'blocked' then
+    raise exception 'failed queue with HTTP started minted: %', taken;
+  end if;
+  if public.email_operation_remember(http_scope, 'holder-b', 'brand-new-token') then
+    raise exception 'HTTP-started failure stored a new token';
+  end if;
+  taken := public.email_operation_acquire(http_scope, 'holder-c', 180);
+  if taken <> 'blocked' then
+    raise exception 'HTTP-started failure opened a later mint: %', taken;
+  end if;
+  late := public.email_operation_apply_queue_result('org_member_invite/caphttp', 'rejected');
+  if late <> 'ignored' then
+    raise exception 'late rejection cleared an HTTP-started block: %', late;
+  end if;
+  taken := public.email_operation_acquire(msg_scope, 'holder-b', 180);
+  if taken <> 'blocked' then
+    raise exception 'failed queue with a message id minted: %', taken;
+  end if;
+  taken := public.email_operation_acquire(skip_scope, 'holder-b', 180);
+  if taken <> 'blocked' then
+    raise exception 'skipped ambiguous queue minted: %', taken;
+  end if;
+  late := public.email_operation_apply_queue_result('org_member_invite/capskip', 'rejected');
+  if late <> 'ignored' then
+    raise exception 'late rejection cleared a skipped ambiguous block: %', late;
+  end if;
+  taken := public.email_operation_acquire(skip_scope, 'holder-c', 180);
+  if taken <> 'blocked' then
+    raise exception 'skipped ambiguous queue opened a later mint: %', taken;
+  end if;
+  taken := public.email_operation_acquire(skipok_scope, 'holder-b', 180);
+  if taken <> 'settled' then
+    raise exception 'skipped queue with an accepted attempt minted: %', taken;
+  end if;
+  if public.email_operation_remember(skipok_scope, 'holder-b', 'brand-new-token') then
+    raise exception 'skipped acceptance stored a new token';
+  end if;
+  taken := public.email_operation_acquire(term_scope, 'holder-b', 180);
+  if taken <> 'go' then
+    raise exception 'classified decline did not allow one new token: %', taken;
+  end if;
+  if not public.email_operation_remember(term_scope, 'holder-b', 'token-after-terminal') then
+    raise exception 'classified decline did not store one token';
+  end if;
+  taken := public.email_operation_acquire(bare_scope, 'holder-b', 180);
+  if taken <> 'blocked' then
+    raise exception 'unclassified HTTP rejection minted: %', taken;
+  end if;
+  if public.email_operation_remember(bare_scope, 'holder-b', 'brand-new-token') then
+    raise exception 'unclassified HTTP rejection stored a new token';
+  end if;
+  taken := public.email_operation_acquire(open_scope, 'holder-b', 180);
+  if taken <> 'queued' then
+    raise exception 'under-cap sending row minted: %', taken;
+  end if;
+  saved := public.email_operation_recall(open_scope);
+  if saved <> 'token-capopen@example.com' then
+    raise exception 'under-cap row dropped its token: %', saved;
+  end if;
+  taken := public.email_operation_acquire(pre_scope, 'holder-b', 180);
+  if taken <> 'go' then
+    raise exception 'pre-HTTP failure did not allow one new token: %', taken;
+  end if;
+  if not public.email_operation_remember(pre_scope, 'holder-b', 'token-after-prehttp') then
+    raise exception 'pre-HTTP failure did not store one token';
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  blocked boolean;
+  lease_phase text;
+  stamped timestamptz;
+begin
+  select phase, block_reissue into lease_phase, blocked
+  from public.email_operation_lease
+  where scope = 'org-member:11111111-1111-4111-8111-111111111111:caphttp@example.com';
+  if lease_phase <> 'ambiguous' or blocked is not true then
+    raise exception 'HTTP-started failure was not blocked: % %', lease_phase, blocked;
+  end if;
+  select invite_last_sent_at into stamped from public.organization_members
+  where invited_email = 'caphttp@example.com';
+  if stamped is not null then
+    raise exception 'HTTP uncertainty started the cooldown';
+  end if;
+end $$;
+
+-- A later acceptance on a blocked row upgrades it. A rejection does not.
+update public.email_delivery_attempts
+  set phase = 'primary_accepted', delivery_status = 'accepted', provider_message_id = 'msg-late'
+where idempotency_key = 'org_member_invite/capbare';
+set role cutover_tester;
+do $$
+declare
+  late text;
+  taken text;
+begin
+  late := public.email_operation_apply_queue_result('org_member_invite/capbare', 'rejected');
+  if late <> 'accepted' then
+    raise exception 'late acceptance stayed blocked: %', late;
+  end if;
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:capbare@example.com', 'holder-d', 180
+  );
+  if taken <> 'go' then
+    raise exception 'upgraded acceptance did not open one later reissue: %', taken;
+  end if;
+end $$;
+reset role;
+SQL
+
+# An older draft of this file created the phase check without queued. Re-applying
+# the current constraint replace must widen it. Null-key queue rows stay.
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+insert into public.email_queue (status, idempotency_key)
+values ('pending', null), ('ambiguous', null);
+update public.email_operation_lease set phase = 'settled' where phase = 'queued';
+alter table public.email_operation_lease drop constraint email_operation_lease_phase_check;
+alter table public.email_operation_lease
+  add constraint email_operation_lease_phase_check
+  check (phase in ('acquired', 'token', 'http', 'settled', 'ambiguous', 'failed'));
+alter table public.email_operation_lease drop constraint if exists email_operation_lease_phase_check;
+alter table public.email_operation_lease
+  add constraint email_operation_lease_phase_check
+  check (phase in ('acquired', 'token', 'http', 'queued', 'settled', 'ambiguous', 'failed'));
+do $$
+declare
+  null_rows int;
+begin
+  update public.email_operation_lease
+    set phase = 'queued'
+  where scope = 'org-member:11111111-1111-4111-8111-111111111111:capopen@example.com';
+  if not found then
+    raise exception 'widened phase check rejected queued';
+  end if;
+  select count(*) into null_rows from public.email_queue where idempotency_key is null;
+  if null_rows <> 2 then
+    raise exception 'null-key queue rows were not kept: %', null_rows;
+  end if;
+end $$;
+SQL
+
 echo "email-cutover postgres proof ok"

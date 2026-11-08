@@ -30,6 +30,41 @@ function businessQueueKey(key: string | null | undefined): string | null {
   return trimmed;
 }
 
+type AttemptEvidence = "accepted" | "uncertain" | "pre_http";
+
+/** Queue status is not provider evidence. A classified decline is not uncertainty. */
+function classifyAttempt(row: {
+  phase?: string | null;
+  rejection_class?: string | null;
+  http_started?: boolean | null;
+  provider_message_id?: string | null;
+  delivery_status?: string | null;
+} | null): AttemptEvidence {
+  if (!row) return "pre_http";
+  const phase = row.phase ?? "";
+  if (
+    phase === "primary_accepted" ||
+    phase === "fallback_accepted" ||
+    row.delivery_status === "accepted" ||
+    row.delivery_status === "delivered"
+  ) {
+    return "accepted";
+  }
+  if (row.provider_message_id) return "uncertain";
+  if (phase === "primary_ambiguous" || phase === "fallback_ambiguous") return "uncertain";
+  if ((phase === "primary_inflight" || phase === "fallback_inflight") && row.http_started) {
+    return "uncertain";
+  }
+  if (
+    (phase === "primary_rejected" || phase === "fallback_rejected") &&
+    row.http_started &&
+    (row.rejection_class == null || row.rejection_class === "unknown")
+  ) {
+    return "uncertain";
+  }
+  return "pre_http";
+}
+
 async function noteQueueLease(
   admin: { rpc?: (name: string, args: never) => PromiseLike<{ error: { message?: string } | null }> },
   key: string | null | undefined,
@@ -67,10 +102,13 @@ async function noteQueueLease(
  *
  * Recovery: a run that dies between claim and result write leaves the row in
  * sending. Each run first returns sending rows claimed more than
- * STALE_CLAIM_MS ago to pending (or failed once MAX_ATTEMPTS is used up).
- * This trades a possible duplicate (Resend accepted the email but the result
- * write was lost) for never silently dropping one; the attempts cap bounds
- * duplicates to at most MAX_ATTEMPTS sends.
+ * STALE_CLAIM_MS ago to pending while attempts remain. At the cap, the
+ * delivery attempt decides the row. An acceptance is sent. A message id, an
+ * ambiguous phase, an inflight HTTP start, or an unclassified rejection that
+ * started HTTP is ambiguous and is not retried. A classified decline with no
+ * message id, and a pre-HTTP failure, are failed. The claim increments
+ * attempts before the provider call, so the cap is not itself proof the
+ * provider declined.
  * Secured with Authorization: Bearer CRON_SECRET.
  */
 export async function GET(request: NextRequest) {
@@ -93,23 +131,66 @@ export async function GET(request: NextRequest) {
   }
 
   const staleBefore = new Date(Date.now() - STALE_CLAIM_MS).toISOString();
-  const { data: requeued, error: requeueError } = await admin
+  const { data: staleRows, error: staleError } = await admin
     .from("email_queue")
-    .update({ status: "pending", last_error: "claim expired" } as never)
+    .select("id, attempts, idempotency_key")
     .eq("status", "sending")
-    .lt("claimed_at", staleBefore)
-    .lt("attempts", MAX_ATTEMPTS)
-    .select("id");
-  const { data: expired, error: expireError } = await admin
-    .from("email_queue")
-    .update({ status: "failed", last_error: "claim expired" } as never)
-    .eq("status", "sending")
-    .lt("claimed_at", staleBefore)
-    .gte("attempts", MAX_ATTEMPTS)
-    .select("id");
-  if (requeueError || expireError) console.error("email-queue recovery error:", requeueError ?? expireError);
-  const recovered = ((requeued as unknown[] | null) ?? []).length;
-  const expiredClaims = ((expired as unknown[] | null) ?? []).length;
+    .lt("claimed_at", staleBefore);
+  if (staleError) console.error("email-queue recovery error:", staleError);
+  let recovered = 0;
+  let expiredClaims = 0;
+  for (const stale of (staleRows as { id: string; attempts: number; idempotency_key?: string | null }[] | null) ?? []) {
+    if (stale.attempts < MAX_ATTEMPTS) {
+      await admin
+        .from("email_queue")
+        .update({ status: "pending", last_error: "claim expired" } as never)
+        .eq("id", stale.id);
+      await noteQueueLease(admin, stale.idempotency_key, "pending");
+      recovered += 1;
+      continue;
+    }
+    let evidence: AttemptEvidence = "pre_http";
+    const attemptKey = businessQueueKey(stale.idempotency_key);
+    if (attemptKey) {
+      try {
+        const { data: attempt, error: attemptError } = await admin
+          .from("email_delivery_attempts")
+          .select("phase, rejection_class, http_started, provider_message_id, delivery_status")
+          .eq("idempotency_key", attemptKey)
+          .maybeSingle();
+        evidence = attemptError ? "uncertain" : classifyAttempt(attempt as {
+          phase?: string | null;
+          rejection_class?: string | null;
+          http_started?: boolean | null;
+          provider_message_id?: string | null;
+          delivery_status?: string | null;
+        } | null);
+      } catch (e) {
+        console.error("email-queue attempt lookup failed:", e);
+        evidence = "uncertain";
+      }
+    }
+    if (evidence === "accepted") {
+      await admin
+        .from("email_queue")
+        .update({ status: "sent", sent_at: new Date().toISOString(), last_error: null } as never)
+        .eq("id", stale.id);
+      await noteQueueLease(admin, stale.idempotency_key, "accepted");
+    } else if (evidence === "uncertain") {
+      await admin
+        .from("email_queue")
+        .update({ status: "ambiguous", last_error: "claim expired after HTTP" } as never)
+        .eq("id", stale.id);
+      await noteQueueLease(admin, stale.idempotency_key, "ambiguous");
+    } else {
+      await admin
+        .from("email_queue")
+        .update({ status: "failed", last_error: "claim expired" } as never)
+        .eq("id", stale.id);
+      await noteQueueLease(admin, stale.idempotency_key, "rejected");
+    }
+    expiredClaims += 1;
+  }
 
   const nowIso = new Date().toISOString();
   const limit = drainLimit();
