@@ -50,7 +50,16 @@ export type CutoverDeps = {
     cap: number | null,
     seed: number | null,
   ) => Promise<ReserveOutcome>;
-  release: (provider: "brevo" | "resend", windowKey: string, recipients: number) => Promise<void>;
+  /**
+   * Refund this attempt and clear quota_held in one step.
+   * already_released does not decrement. unavailable means the counter was not touched.
+   */
+  releaseHeld: (
+    key: string,
+    provider: "brevo" | "resend",
+    windowKey: string,
+    recipients: number,
+  ) => Promise<"released" | "already_released" | "missing" | "unavailable">;
   exhaust: (provider: "brevo" | "resend", windowKey: string) => Promise<void>;
   consumeResend: (brandId: string, recipients: number) => Promise<"reserved" | "full" | "unknown">;
   /** bounce/complaint block every kind. unsubscribe blocks notification kinds. unknown blocks notification kinds only. */
@@ -451,8 +460,14 @@ export async function runBrevoCutover(
     if (wrote !== "ok") {
       return { ok: false, error: "Brevo rate limited the request and the receipt could not be stored.", retryable: true };
     }
-    await deps.markQuotaHeld(idempotencyKey, false);
-    await deps.release("brevo", windowKey, count);
+    const released = await deps.releaseHeld(idempotencyKey, "brevo", windowKey, count);
+    if (released === "unavailable" || released === "missing") {
+      return {
+        ok: false,
+        error: "Brevo rate limited the request and the reservation could not be released. It was not refunded twice.",
+        retryable: true,
+      };
+    }
     logCutover(params.kind, "brevo", "rate_limited");
     return {
       ok: false,
@@ -473,8 +488,7 @@ export async function runBrevoCutover(
       false,
     );
     if (wrote === "ok") {
-      await deps.markQuotaHeld(idempotencyKey, false);
-      await deps.release("brevo", windowKey, count);
+      await deps.releaseHeld(idempotencyKey, "brevo", windowKey, count);
     }
     logCutover(params.kind, "brevo", "permanent");
     return wrote === "ok"
@@ -501,8 +515,15 @@ export async function runBrevoCutover(
       retryable: true,
     };
   }
-  await deps.markQuotaHeld(idempotencyKey, false);
-  await deps.release("brevo", windowKey, count);
+  const released = await deps.releaseHeld(idempotencyKey, "brevo", windowKey, count);
+  if (released === "unavailable" || released === "missing") {
+    logCutover(params.kind, "brevo", "release_failed");
+    return {
+      ok: false,
+      error: "Brevo rejected the message and the reservation could not be released. Resend was not called.",
+      retryable: true,
+    };
+  }
   if (classified.kind === "quota") await deps.exhaust("brevo", windowKey);
   logCutover(params.kind, "brevo", rejectionClass);
   return sendFallback(params, deps, recipients, idempotencyKey, count, false);
@@ -610,11 +631,16 @@ export function createMemoryCutoverDeps(opts: {
         if (applied.row) state.quotas.set(key, applied.row);
         return applied.outcome;
       }),
-    release: (provider, windowKey, recipients) =>
+    releaseHeld: (key, provider, windowKey, recipients) =>
       serial(() => {
-        const key = quotaKey(provider, windowKey);
-        const next = applyRelease(state.quotas.get(key) ?? null, recipients);
-        if (next) state.quotas.set(key, next);
+        const row = state.attempts.get(key);
+        if (!row) return "missing";
+        if (!row.quotaHeld) return "already_released";
+        const qk = quotaKey(provider, windowKey);
+        const next = applyRelease(state.quotas.get(qk) ?? null, recipients);
+        if (next) state.quotas.set(qk, next);
+        state.attempts.set(key, { ...row, quotaHeld: false, updatedAt: now().getTime() });
+        return "released";
       }),
     exhaust: (provider, windowKey) =>
       serial(() => {
@@ -640,7 +666,7 @@ export function productionCutoverDeps(env: Env = process.env): CutoverDeps {
     clearHttp: (key) => rpcClearHttp(key),
     finish: (key, patch) => rpcFinish(key, patch),
     reserve: (provider, windowKey, recipients, cap, seed) => rpcReserve(provider, windowKey, recipients, cap, seed),
-    release: (provider, windowKey, recipients) => rpcRelease(provider, windowKey, recipients),
+    releaseHeld: (key, provider, windowKey, recipients) => rpcReleaseHeld(key, provider, windowKey, recipients),
     exhaust: (provider, windowKey) => rpcExhaust(provider, windowKey),
     consumeResend: (brandId, recipients) => consumeSharedResendBudget(brandId, recipients, new Date(), env),
     recipientBlock: (email, kind) => rpcRecipientBlock(email, kind),
@@ -849,23 +875,35 @@ export async function cutoverBlocksNewLogin(scope: string, env: Env = process.en
       p_scope: scope,
       p_within_seconds: 600,
     } as never);
-    if (error) return false;
+    if (error) return true;
     return data === true;
   } catch {
-    return false;
+    // A failed lookup cannot prove the last attempt was not accepted.
+    return true;
   }
 }
 
-async function rpcRelease(provider: "brevo" | "resend", windowKey: string, recipients: number): Promise<void> {
+async function rpcReleaseHeld(
+  key: string,
+  provider: "brevo" | "resend",
+  windowKey: string,
+  recipients: number,
+): Promise<"released" | "already_released" | "missing" | "unavailable"> {
   try {
     const client = await admin();
-    await client.rpc("release_email_provider_quota", {
+    const { data, error } = await client.rpc("email_delivery_release_held", {
+      p_key: key,
       p_provider: provider,
       p_window_key: windowKey,
       p_recipients: recipients,
+      p_now: new Date().toISOString(),
     } as never);
+    if (error) return "unavailable";
+    if (data === "released" || data === "already_released" || data === "missing") return data;
+    return "unavailable";
   } catch (e) {
-    console.error("release_email_provider_quota failed:", e instanceof Error ? e.message : "error");
+    console.error("email_delivery_release_held failed:", e instanceof Error ? e.message : "error");
+    return "unavailable";
   }
 }
 

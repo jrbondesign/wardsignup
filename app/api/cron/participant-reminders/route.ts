@@ -246,13 +246,32 @@ export async function GET(request: NextRequest) {
       signupId: r.id,
     });
 
+    if (!sendResult.ok && sendResult.ambiguous) {
+      // The provider may already have accepted it. The claim stays so this
+      // slot is not mailed again. The stamp is not a delivery receipt.
+      errors.push(`${r.id}: unconfirmed`);
+      continue;
+    }
+
+    if (!sendResult.ok && sendResult.terminal) {
+      errors.push(`${r.id}: suppressed`);
+      continue;
+    }
+
     if (!sendResult.ok && sendResult.retryable) {
       // Not sent. Clear the claim so the next run can retry while the slot
       // is still inside the 0–25h window. A later run past the slot does not send.
-      const { error: clearErr } = await admin
+      let { error: clearErr } = await admin
         .from("signups")
         .update({ reminder_sent_at: null } as never)
         .eq("id", r.id);
+      if (clearErr) {
+        const again = await admin
+          .from("signups")
+          .update({ reminder_sent_at: null } as never)
+          .eq("id", r.id);
+        clearErr = again.error;
+      }
       errors.push(`${r.id}: ${sendResult.error}${clearErr ? ` (clear failed: ${clearErr.message})` : ""}`);
       continue;
     }

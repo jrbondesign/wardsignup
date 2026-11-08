@@ -149,7 +149,10 @@ export async function GET(request: NextRequest) {
       realtime: isRealtimeKind(raw.kind),
       fromQueue: true,
       // Row id: an attempt Resend accepted but we never heard back from is not sent again.
-      idempotencyKey: `email-queue/${raw.id}`,
+      idempotencyKey:
+        typeof raw.idempotency_key === "string" && raw.idempotency_key.trim()
+          ? raw.idempotency_key.trim()
+          : `email-queue/${raw.id}`,
     });
 
     if (r.ok) {

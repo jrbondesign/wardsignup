@@ -12,6 +12,8 @@ export type QueuedEmailInsert = {
   reply_to: string | null;
   attachments: Array<{ filename: string; content: string }> | null;
   send_after: string;
+  /** Present only after the cutover migration, and only when a business key exists. */
+  idempotency_key?: string;
 };
 
 export type QueuedEmailRow = QueuedEmailInsert & {

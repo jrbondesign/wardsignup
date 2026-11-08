@@ -176,37 +176,11 @@ async function consumeDailyCounter(action: string, key: string, bucket: Date, ma
 }
 
 /**
- * Resend has room when both the UTC day safety cap and the Arizona day budget
- * do. The cap is checked first so a send refused by the cap doesn't use up
- * Arizona budget. A send the Arizona budget refuses has already counted one
- * against the cap; that errs on the safe side (fewer sends, never a 429).
- */
-/**
  * Fail-closed copy of the live Resend counters. A read error does not send.
- * The production path above stays fail-open. Cutover fallback uses this so it
- * sees mail already counted today instead of a second counter that starts at 0.
+ * Both windows are reserved in one database call, so a full Arizona bucket
+ * does not keep a UTC slot. The production path above stays fail-open and
+ * still consumes one window at a time.
  */
-async function consumeDailyCounterFailClosed(
-  action: string,
-  key: string,
-  bucket: Date,
-  max: number,
-): Promise<"reserved" | "full" | "unknown"> {
-  try {
-    const admin = createServiceRoleClient();
-    const { data, error } = await admin.rpc("try_consume_action_rate", {
-      p_action: action,
-      p_ip_hash: createHash("sha256").update(key).digest("hex"),
-      p_bucket: bucket.toISOString(),
-      p_max: max,
-    } as never);
-    if (error) return "unknown";
-    return data === true ? "reserved" : "full";
-  } catch {
-    return "unknown";
-  }
-}
-
 export async function consumeSharedResendBudget(
   brandId: string,
   recipients: number,
@@ -216,23 +190,23 @@ export async function consumeSharedResendBudget(
   if (!Number.isInteger(recipients) || recipients < 1 || recipients > 20) return "unknown";
   const cap = resendUtcDayCap(env);
   const soft = resendDailySoftLimit(env);
-  for (let i = 0; i < recipients; i += 1) {
-    const utc = await consumeDailyCounterFailClosed(
-      "email_resend_daily",
-      `resend-daily:${brandId}`,
-      utcDayStart(now),
-      cap,
-    );
-    if (utc !== "reserved") return utc;
-    const phx = await consumeDailyCounterFailClosed(
-      "email_resend_phx_day",
-      `resend-phx-day:${brandId}`,
-      phoenixDayStartUtc(now),
-      soft,
-    );
-    if (phx !== "reserved") return phx;
+  try {
+    const admin = createServiceRoleClient();
+    const { data, error } = await admin.rpc("try_consume_resend_pair", {
+      p_utc_hash: createHash("sha256").update(`resend-daily:${brandId}`).digest("hex"),
+      p_utc_bucket: utcDayStart(now).toISOString(),
+      p_utc_max: cap,
+      p_phx_hash: createHash("sha256").update(`resend-phx-day:${brandId}`).digest("hex"),
+      p_phx_bucket: phoenixDayStartUtc(now).toISOString(),
+      p_phx_max: soft,
+      p_amount: recipients,
+    } as never);
+    if (error) return "unknown";
+    if (data === "reserved" || data === "full") return data;
+    return "unknown";
+  } catch {
+    return "unknown";
   }
-  return "reserved";
 }
 
 async function consumeResendDailyBudget(brandId: string, now: Date = new Date()): Promise<boolean> {
@@ -518,6 +492,15 @@ export async function deliverEmail(
   // permanent (validation) and in_progress never fail over: the first would
   // fail on Brevo too, the second may already be on its way through Resend.
   return { ok: false, error: message };
+}
+
+/** One extra attempt on the same callback. The caller passes the same idempotency key. */
+export async function retryDeliver<T extends { ok: true } | { ok: false; retryable?: boolean }>(
+  send: () => Promise<T>,
+): Promise<T> {
+  const first = await send();
+  if (!first.ok && first.retryable) return send();
+  return first;
 }
 
 /** True when some provider can send for this brand (Resend key, or the Brevo fallback). */

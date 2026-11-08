@@ -6,12 +6,12 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { safeReturnPath } from "@/lib/auth-return-path";
 import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
 import { consumeActionRate } from "@/lib/rate-limit";
-import { consumeEmailKeyRate } from "@/lib/email-send";
+import { consumeEmailKeyRate, releaseEmailKeyRate } from "@/lib/email-send";
 import { magicLinkDedupeBuckets, normalizeEmail } from "@/lib/email-throttle";
 import { checkBotId } from "botid/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { getClientIp } from "@/lib/request-ip";
-import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
+import { deliverEmail, hasEmailProviderConfigured, retryDeliver } from "@/lib/email-deliver";
 import { cutoverBlocksNewLogin } from "@/lib/email-cutover";
 import { cutoverOperationKey } from "@/lib/email-operation-key";
 
@@ -106,9 +106,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const hostHeader = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+    const brand = getBrandFromHost(hostHeader);
+    // An uncertain earlier accept blocks this request before it takes the
+    // 5-minute slot, so a lookup failure does not look like a sent link.
+    if (await cutoverBlocksNewLogin(`magic:${brand.id}:${email}`)) {
+      return NextResponse.json({ ok: true, delivery: "unconfirmed" });
+    }
+
     // Double click guard: if a link already went to this address in the last
     // 5 minutes, say so instead of sending another email.
-    const [thisMinute, ...nextMinutes] = magicLinkDedupeBuckets(new Date());
+    const dedupeBuckets = magicLinkDedupeBuckets(new Date());
+    const [thisMinute, ...nextMinutes] = dedupeBuckets;
     const dedupeKey = `magic-link:${email}`;
     const firstInWindow = await consumeEmailKeyRate("magic_link_dedupe", dedupeKey, 1, thisMinute);
     if (!firstInWindow) {
@@ -137,16 +146,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid request." }, { status: 400 });
     }
 
-    const hostHeader = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-    const brand = getBrandFromHost(hostHeader);
-
     let callbackUrl = `${origin}/auth/callback`;
     if (nextParam) {
       callbackUrl += `?next=${encodeURIComponent(nextParam)}`;
-    }
-
-    if (await cutoverBlocksNewLogin(`magic:${brand.id}:${email}`)) {
-      return NextResponse.json({ ok: true, delivery: "unconfirmed" });
     }
 
     const admin = createServiceRoleClient();
@@ -202,7 +204,7 @@ export async function POST(request: NextRequest) {
          </div>`
       : "";
 
-    const sendRes = await deliverEmail({
+    const sendRes = await retryDeliver(() => deliverEmail({
       brand,
       kind: "magic_link",
       from,
@@ -224,9 +226,18 @@ export async function POST(request: NextRequest) {
           </p>
         </div>
       `,
-    }, { urgent: true });
+    }, { urgent: true }));
     const sendErr = sendRes.ok ? null : { message: sendRes.error };
 
+    if (!sendRes.ok && sendRes.retryable) {
+      await Promise.all(
+        dedupeBuckets.map((b) => releaseEmailKeyRate("magic_link_dedupe", dedupeKey, b)),
+      );
+      return NextResponse.json(
+        { error: messageFromResendError(sendErr), retryable: true },
+        { status: 503 },
+      );
+    }
     if (!sendRes.ok && sendRes.ambiguous) {
       return NextResponse.json({ ok: true, delivery: "unconfirmed" });
     }

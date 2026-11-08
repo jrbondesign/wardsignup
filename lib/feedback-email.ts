@@ -1,4 +1,8 @@
 import type { PublicBrand } from "@/lib/brand/types";
+import { feedbackEmailFrom } from "@/lib/brand/email-from";
+import { escapeHtml } from "@/lib/html-escape";
+import { sendGuardedEmail } from "@/lib/email-send";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
 import { PHOENIX_TZ, phoenixDateKey } from "@/lib/phoenix-time";
 
 /** "Oct 18, 2026, 6:58 PM MST" in Arizona time, for founder emails. */
@@ -15,23 +19,20 @@ function formatPhoenixDateTime(iso: string): string {
     timeZoneName: "short",
   });
 }
-import { feedbackEmailFrom } from "@/lib/brand/email-from";
-import { escapeHtml } from "@/lib/html-escape";
-import { sendGuardedEmail } from "@/lib/email-send";
-
 /** Replies should reach a real inbox, same as the welcome email. */
 const feedbackReplyTo =
   process.env.WELCOME_REPLY_TO?.trim() || "jonathan@wardsignup.com";
 
 export type FeedbackSendResult =
-  | { ok: true }
-  | { ok: false; error: string };
+  | { ok: true; queued?: boolean }
+  | { ok: false; error: string; retryable?: boolean; terminal?: boolean };
 
 export async function sendFeedbackAskEmail(params: {
   brand: PublicBrand;
   to: string;
   firstName: string | null;
   formUrl: string;
+  requestId: string;
 }): Promise<FeedbackSendResult> {
   const { brand, to, firstName, formUrl } = params;
   const first = firstName?.trim() || "there";
@@ -70,6 +71,7 @@ Made with ❤️ in Arizona`;
     to,
     subject: `Quick question about your ${brand.name} event`,
     text,
+    idempotencyKey: cutoverOperationKey("feedback_ask", [params.requestId]),
     html: `
       <div style="font-family: Georgia, 'Times New Roman', serif; max-width: 560px; margin: 0 auto; padding: 40px 20px; color: #0D2B35;">
         <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">Hi ${safeFirst},</p>
@@ -108,9 +110,14 @@ Made with ❤️ in Arizona`;
   });
 
   if (!send.ok) {
-    return { ok: false, error: send.error || send.skipped || "send failed" };
+    return {
+      ok: false,
+      error: send.error || send.skipped || "send failed",
+      retryable: Boolean(send.retryable),
+      terminal: Boolean(send.terminal) || send.skipped === "suppressed",
+    };
   }
-  return { ok: true };
+  return { ok: true, queued: Boolean(send.queued) };
 }
 
 export type FeedbackDigestRow = {
@@ -199,12 +206,18 @@ Q4. What's the #1 thing holding it back from being perfect?
     subject: `New ${brand.name} feedback from ${creatorEmail}`,
     text,
     html,
+    idempotencyKey: cutoverOperationKey("feedback_response", [brand.id, creatorEmail, respondedAt]),
   });
 
   if (!send.ok) {
-    return { ok: false, error: send.error || send.skipped || "send failed" };
+    return {
+      ok: false,
+      error: send.error || send.skipped || "send failed",
+      retryable: Boolean(send.retryable),
+      terminal: Boolean(send.terminal) || send.skipped === "suppressed",
+    };
   }
-  return { ok: true };
+  return { ok: true, queued: Boolean(send.queued) };
 }
 
 const PMF_LABELS: Record<string, string> = {

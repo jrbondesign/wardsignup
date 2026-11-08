@@ -44,6 +44,8 @@ export type GuardedSendResult =
       ambiguous?: boolean;
       /** Try this same message later. No other provider was called. */
       retryable?: boolean;
+      /** A later drain will send this same idempotency key. Not a delivery receipt. */
+      queued?: boolean;
       /** The idempotency key is finished. Do not keep retrying it. */
       terminal?: boolean;
     };
@@ -189,8 +191,8 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     return { ok: false, skipped: "no_resend_key", error: `Resend API key missing for brand ${brand.id}` };
   }
 
-  const queueIt = async (): Promise<GuardedSendResult> => {
-    const q = await enqueueEmail({
+  const queueIt = async (sendAfter?: Date): Promise<GuardedSendResult> => {
+    const row: Parameters<typeof enqueueEmail>[0] = {
       brand_id: brand.id,
       category,
       kind: params.kind ?? "other",
@@ -202,8 +204,11 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
       reply_to: replyTo ?? null,
       attachments: attachments?.length ? attachments : null,
       // Near real time mail is due now (hourly drain); batch mail waits for 12:05 AM Arizona.
-      send_after: (realtime ? new Date() : nextResetSendAfter(new Date())).toISOString(),
-    }, { dedupe: realtime });
+      send_after: (sendAfter ?? (realtime ? new Date() : nextResetSendAfter(new Date()))).toISOString(),
+    };
+    const businessKey = params.idempotencyKey?.trim();
+    if (businessKey) row.idempotency_key = businessKey;
+    const q = await enqueueEmail(row, { dedupe: realtime || Boolean(sendAfter) });
     return q.ok ? { ok: true, queued: true } : { ok: false, error: q.error };
   };
 
@@ -283,6 +288,17 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
   if (sent.ambiguous) return { ok: false, error: sent.error, ambiguous: true };
   if (sent.terminal) return { ok: false, error: sent.error, terminal: true };
   if (sent.retryable) {
+    // Signup confirmation has no later cron. Park the same key for the hourly
+    // drain instead of dropping the second 429. Reminders and sign-in links
+    // are not parked here: the reminder cron retries, and a magic link is a
+    // live credential the person is waiting on.
+    if (params.kind === "signup_confirmation" && !params.fromQueue) {
+      const parked = await queueIt(new Date());
+      if (parked.ok && parked.queued) {
+        return { ok: false, error: sent.error, retryable: true, queued: true };
+      }
+      return { ok: false, error: parked.ok ? sent.error : parked.error, retryable: true };
+    }
     if (promptKind) return { ok: false, error: sent.error, retryable: true };
     if (!params.fromQueue) return queueIt();
     return { ok: false, error: sent.error, retryable: true };
@@ -331,6 +347,21 @@ export async function consumeEmailKeyRate(
   } catch (e) {
     console.error(`email key rate failed for ${action} (failing closed):`, e);
     return false;
+  }
+}
+
+/** Give back one slot taken by consumeEmailKeyRate. A second call does not go below zero. */
+export async function releaseEmailKeyRate(action: string, key: string, bucketStart: Date): Promise<void> {
+  try {
+    const admin = createServiceRoleClient();
+    const { error } = await admin.rpc("release_action_rate_slot", {
+      p_action: action,
+      p_ip_hash: createHash("sha256").update(key).digest("hex"),
+      p_bucket: bucketStart.toISOString(),
+    } as never);
+    if (error) console.error(`email key rate release error for ${action}:`, error);
+  } catch (e) {
+    console.error(`email key rate release failed for ${action}:`, e);
   }
 }
 

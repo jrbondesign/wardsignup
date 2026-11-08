@@ -14,6 +14,8 @@ import { idempotencyTag } from "@/lib/email-cutover-config";
 export type QuotaRow = {
   reserved: number;
   exhausted: boolean;
+  /** External usage captured when this window opened. Releases cannot pass it. */
+  seed?: number;
 };
 
 export type ReserveOutcome =
@@ -44,7 +46,7 @@ export function applyReserve(
   if (!row && (seed === null || !Number.isInteger(seed) || seed < 0)) {
     return { row, outcome: { result: "unknown" } };
   }
-  const current = row ?? { reserved: seed ?? 0, exhausted: false };
+  const current = row ?? { reserved: seed ?? 0, exhausted: false, seed: seed ?? 0 };
   if (current.reserved + recipients > cap) {
     return { row: current, outcome: { result: "full", reserved: current.reserved, cap } };
   }
@@ -55,7 +57,8 @@ export function applyReserve(
 export function applyRelease(row: QuotaRow | null, recipients: number): QuotaRow | null {
   if (!row) return row;
   const n = Number.isInteger(recipients) && recipients > 0 ? recipients : 0;
-  return { ...row, reserved: Math.max(0, row.reserved - n) };
+  const floor = row.seed ?? 0;
+  return { ...row, reserved: Math.max(floor, row.reserved - n) };
 }
 
 export function applyExhaust(row: QuotaRow | null): QuotaRow {

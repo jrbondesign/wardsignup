@@ -197,6 +197,102 @@ begin
 end $$;
 reset role;
 
+set role cutover_tester;
+do $$
+declare
+  outcome jsonb;
+  released text;
+  reserved int;
+  seed int;
+  phx int;
+  utc int;
+begin
+  outcome := public.reserve_email_provider_quota('brevo', 'refund', 1, 300, 12);
+  if outcome->>'result' <> 'reserved' or (outcome->>'reserved')::int <> 13 then
+    raise exception 'refund reserve %', outcome;
+  end if;
+  perform public.email_delivery_claim('refund-1', 'wardsignup', 'magic_link', 'a@example.com', 1, now(), null);
+  if not public.email_delivery_mark_quota_held('refund-1', true, now()) then
+    raise exception 'could not mark held';
+  end if;
+  -- Releasing more than this attempt reserved still cannot pass the seed.
+  released := public.email_delivery_release_held('refund-1', 'brevo', 'refund', 20, now());
+  if released <> 'released' then
+    raise exception 'first release %', released;
+  end if;
+  reset role;
+  select reserved_recipients, seed_recipients into reserved, seed
+  from public.email_provider_quota where window_key = 'refund';
+  if reserved <> 12 or seed <> 12 then
+    raise exception 'release went under seed: reserved % seed %', reserved, seed;
+  end if;
+  set role cutover_tester;
+  released := public.email_delivery_release_held('refund-1', 'brevo', 'refund', 20, now());
+  if released <> 'already_released' then
+    raise exception 'replay release %', released;
+  end if;
+  reset role;
+  select reserved_recipients into reserved from public.email_provider_quota where window_key = 'refund';
+  if reserved <> 12 then
+    raise exception 'replay changed reserved to %', reserved;
+  end if;
+
+  -- Existing Resend usage: a full UTC window does not take a Phoenix slot.
+  insert into public.action_rate_limit (action, ip_hash, bucket_start, request_count)
+  values ('email_resend_daily', 'utc-prior', '2026-11-08 00:00:00+00', 2);
+  set role cutover_tester;
+  if public.try_consume_resend_pair(
+    'utc-prior', '2026-11-08 00:00:00+00', 2,
+    'phx-prior', '2026-11-08 07:00:00+00', 100,
+    1
+  ) <> 'full' then
+    raise exception 'full utc window was consumed';
+  end if;
+  if public.try_consume_resend_pair(
+    'utc-bad', '2026-11-08 00:00:00+00', 2,
+    'phx-bad', '2026-11-08 07:00:00+00', 100,
+    0
+  ) <> 'invalid' then
+    raise exception 'invalid amount was accepted';
+  end if;
+  reset role;
+  select request_count into phx from public.action_rate_limit
+  where action = 'email_resend_phx_day' and ip_hash = 'phx-prior';
+  if phx is not null then
+    raise exception 'phoenix window moved while utc was full: %', phx;
+  end if;
+  select request_count into utc from public.action_rate_limit
+  where action = 'email_resend_daily' and ip_hash = 'utc-prior';
+  if utc <> 2 then
+    raise exception 'utc prior usage changed to %', utc;
+  end if;
+end $$;
+reset role;
+SQL
+
+# Five parallel Resend pair consumes against a cap of 2. Both windows stop at 2.
+for i in 1 2 3 4 5; do
+  "${PSQL[@]}" -d "${DB}" -c "set role cutover_tester; select public.try_consume_resend_pair('utc-race', '2026-11-08 00:00:00+00', 2, 'phx-race', '2026-11-08 07:00:00+00', 2, 1);" >/dev/null &
+done
+wait
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+do $$
+declare
+  utc int;
+  phx int;
+begin
+  select request_count into utc from public.action_rate_limit
+  where action = 'email_resend_daily' and ip_hash = 'utc-race';
+  select request_count into phx from public.action_rate_limit
+  where action = 'email_resend_phx_day' and ip_hash = 'phx-race';
+  if utc <> 2 or phx <> 2 then
+    raise exception 'parallel resend pair utc % phx %, expected 2 and 2', utc, phx;
+  end if;
+end $$;
+SQL
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
 -- anon cannot call the quota function or read the table.
 do $$
 begin

@@ -11,6 +11,7 @@ import { isAppEmailInvitesEnabled } from "@/lib/limits";
 import type { Campaign, Database } from "@/lib/types";
 import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { consumeEmailKeyRate, sendGuardedEmail } from "@/lib/email-send";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
 import { consumeActionRate } from "@/lib/rate-limit";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { withUtm } from "@/lib/utm";
@@ -197,6 +198,8 @@ export async function POST(request: NextRequest) {
       category: "notification",
         from: inviteEmailFrom(campaignBrand),
         to: inviteeEmailLower,
+        kind: "event_invite",
+        idempotencyKey: cutoverOperationKey("event_invite", [event_id, inviteeEmailLower]),
         subject: `You're invited to teach: ${eventRow.name}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -235,12 +238,19 @@ export async function POST(request: NextRequest) {
         `,
       });
       if (!send.ok) {
-        // Be honest: a failed send is a failed invite. The stored row records
-        // the attempt; the 502 stops client retry loops from re-sending.
+        // Be honest: a failed send is a failed invite. The stored row is the
+        // operation. Ambiguous means the provider may already have it.
         console.error("Invite email send failed:", send.error || send.skipped);
+        if (send.ambiguous) {
+          return NextResponse.json({ success: true, invite, delivery: "unconfirmed" });
+        }
         return NextResponse.json(
-          { error: "The invite could not be emailed. Please try again later." },
-          { status: 502 },
+          {
+            error: "The invite could not be emailed. Please try again later.",
+            retryable: Boolean(send.retryable),
+            invite,
+          },
+          { status: send.retryable ? 503 : 502 },
         );
       }
     }

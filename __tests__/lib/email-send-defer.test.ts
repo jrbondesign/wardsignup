@@ -161,10 +161,20 @@ describe("Brevo failure on near real time mail", () => {
       .mockResolvedValueOnce({ ok: false, error: "Brevo rate limited", retryable: true })
       .mockResolvedValueOnce({ ok: false, error: "Brevo rate limited", retryable: true });
     const result = await sendGuardedEmail({ ...base, urgent: true, kind: "signup_confirmation", idempotencyKey: "signup/1" });
-    expect(result).toEqual({ ok: false, error: "Brevo rate limited", retryable: true });
+    expect(result).toEqual({ ok: false, error: "Brevo rate limited", retryable: true, queued: true });
     expect(deliverEmail).toHaveBeenCalledTimes(2);
     expect(deliverEmail.mock.calls[0][0].idempotencyKey).toBe("signup/1");
     expect(deliverEmail.mock.calls[1][0].idempotencyKey).toBe("signup/1");
+    expect(enqueueEmail).toHaveBeenCalledTimes(1);
+    expect(enqueueEmail.mock.calls[0][0].idempotency_key).toBe("signup/1");
+    expect(enqueueEmail.mock.calls[0][0].send_after).toBe(new Date("2026-10-11T15:11:00Z").toISOString());
+  });
+
+  it("does not park a reminder 429 for the hourly drain", async () => {
+    jest.setSystemTime(new Date("2026-10-11T15:11:00Z"));
+    deliverEmail.mockResolvedValue({ ok: false, error: "Brevo rate limited", retryable: true });
+    const result = await sendGuardedEmail({ ...base, urgent: true, kind: "reminder", idempotencyKey: "reminder/1" });
+    expect(result).toEqual({ ok: false, error: "Brevo rate limited", retryable: true });
     expect(enqueueEmail).not.toHaveBeenCalled();
   });
 

@@ -6,6 +6,7 @@ import { getBrandFromHost, inviteEmailFrom, publicSiteOriginFromRequest } from "
 import { escapeHtml } from "@/lib/html-escape";
 import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
 import { buildBrandSignatureFooterHtml } from "@/lib/site-footer";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { isRealOrgId, isTestOrgId, isTestOwnerEmail } from "@/lib/test-orgs";
@@ -196,6 +197,8 @@ export async function POST(
       category: "notification",
         from: inviteEmailFrom(hostBrand),
         to: rawEmail,
+        kind: "org_member_invite",
+        idempotencyKey: cutoverOperationKey("org_member_invite", [org.id, rawEmail, tokenHash]),
         subject,
         html: `
           <div style="font-family:Georgia,'Times New Roman',serif;max-width:560px;min-width:0;width:100%;box-sizing:border-box;margin:0 auto;padding:40px 20px;color:#0D2B35;word-wrap:break-word;word-break:break-word;overflow-wrap:break-word;">
@@ -232,9 +235,16 @@ export async function POST(
       });
       if (!send.ok) {
         console.error("Invite member: email error:", send.error || send.skipped);
+        if (send.ambiguous) {
+          return NextResponse.json({ ok: true, delivery: "unconfirmed", member: memberRow });
+        }
         return NextResponse.json(
-          { error: "Invite saved but email failed to send.", member: memberRow },
-          { status: 502 },
+          {
+            error: "Invite saved but email failed to send.",
+            retryable: Boolean(send.retryable),
+            member: memberRow,
+          },
+          { status: send.retryable ? 503 : 502 },
         );
       }
       await supabase

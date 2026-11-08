@@ -7,6 +7,9 @@ create table if not exists public.email_provider_quota (
   provider text not null check (provider in ('brevo', 'resend')),
   window_key text not null,
   reserved_recipients integer not null default 0 check (reserved_recipients >= 0),
+  -- Dashboard usage captured when this window opened, including marketing.
+  -- Releases of our own reservations cannot go below it.
+  seed_recipients integer not null default 0 check (seed_recipients >= 0),
   exhausted boolean not null default false,
   updated_at timestamptz not null default now(),
   primary key (provider, window_key)
@@ -130,8 +133,12 @@ begin
     end if;
     row_reserved := p_seed;
     if row_reserved + p_recipients > p_cap then
-      insert into public.email_provider_quota (provider, window_key, reserved_recipients, exhausted)
-      values (p_provider, p_window_key, row_reserved, false);
+      insert into public.email_provider_quota (
+        provider, window_key, reserved_recipients, seed_recipients, exhausted
+      ) values (
+        p_provider, p_window_key, row_reserved, row_reserved, false
+      )
+      on conflict (provider, window_key) do nothing;
       return jsonb_build_object('result', 'full', 'reserved', row_reserved, 'cap', p_cap);
     end if;
   end if;
@@ -140,8 +147,11 @@ begin
     return jsonb_build_object('result', 'full', 'reserved', row_reserved, 'cap', p_cap);
   end if;
 
-  insert into public.email_provider_quota (provider, window_key, reserved_recipients, exhausted)
-  values (p_provider, p_window_key, row_reserved + p_recipients, false)
+  insert into public.email_provider_quota (
+    provider, window_key, reserved_recipients, seed_recipients, exhausted
+  ) values (
+    p_provider, p_window_key, row_reserved + p_recipients, coalesce(p_seed, 0), false
+  )
   on conflict (provider, window_key) do update
     set reserved_recipients = excluded.reserved_recipients,
         updated_at = now();
@@ -165,9 +175,55 @@ begin
   end if;
   perform pg_advisory_xact_lock(hashtext('email-quota'), hashtext(p_provider || ':' || p_window_key));
   update public.email_provider_quota
-    set reserved_recipients = greatest(0, reserved_recipients - p_recipients),
+    set reserved_recipients = greatest(seed_recipients, reserved_recipients - p_recipients),
         updated_at = now()
   where provider = p_provider and window_key = p_window_key;
+end;
+$$;
+
+-- Clears quota_held and refunds this attempt in one transaction.
+-- A second call sees the flag clear and does not decrement again.
+-- The counter cannot fall below seed_recipients.
+create or replace function public.email_delivery_release_held(
+  p_key text,
+  p_provider text,
+  p_window_key text,
+  p_recipients integer,
+  p_now timestamptz
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  held boolean;
+begin
+  if p_key is null or length(trim(p_key)) = 0 then
+    return 'missing';
+  end if;
+  perform pg_advisory_xact_lock(hashtext('email-delivery'), hashtext(p_key));
+  select quota_held into held
+  from public.email_delivery_attempts
+  where idempotency_key = p_key
+  for update;
+  if not found then
+    return 'missing';
+  end if;
+  if not held then
+    return 'already_released';
+  end if;
+  if p_recipients is not null and p_recipients > 0 then
+    perform pg_advisory_xact_lock(hashtext('email-quota'), hashtext(p_provider || ':' || p_window_key));
+    update public.email_provider_quota
+      set reserved_recipients = greatest(seed_recipients, reserved_recipients - p_recipients),
+          updated_at = p_now
+    where provider = p_provider and window_key = p_window_key;
+  end if;
+  update public.email_delivery_attempts
+    set quota_held = false,
+        updated_at = p_now
+  where idempotency_key = p_key;
+  return 'released';
 end;
 $$;
 
@@ -578,6 +634,89 @@ revoke all on function public.forget_email_webhook_event(text, text) from public
 revoke all on function public.apply_email_provider_event(text, text, text) from public, anon, authenticated;
 revoke all on function public.email_delivery_has_recent_uncertainty(text, integer) from public, anon, authenticated;
 
+-- Both Resend windows move together. A full Arizona bucket does not keep a UTC slot.
+create table if not exists public.action_rate_limit (
+  action text not null,
+  ip_hash text not null,
+  bucket_start timestamptz not null,
+  request_count int not null default 0,
+  primary key (action, ip_hash, bucket_start)
+);
+
+create or replace function public.try_consume_resend_pair(
+  p_utc_hash text,
+  p_utc_bucket timestamptz,
+  p_utc_max integer,
+  p_phx_hash text,
+  p_phx_bucket timestamptz,
+  p_phx_max integer,
+  p_amount integer
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  utc_count integer;
+  phx_count integer;
+begin
+  if p_amount is null or p_amount < 1 or p_amount > 20 then
+    return 'invalid';
+  end if;
+  if p_utc_max is null or p_utc_max < 1 or p_phx_max is null or p_phx_max < 1 then
+    return 'unknown';
+  end if;
+  perform pg_advisory_xact_lock(hashtext('resend-pair'), hashtext(p_utc_hash || ':' || p_utc_bucket::text));
+  select request_count into utc_count
+  from public.action_rate_limit
+  where action = 'email_resend_daily' and ip_hash = p_utc_hash and bucket_start = p_utc_bucket
+  for update;
+  if not found then utc_count := 0; end if;
+  select request_count into phx_count
+  from public.action_rate_limit
+  where action = 'email_resend_phx_day' and ip_hash = p_phx_hash and bucket_start = p_phx_bucket
+  for update;
+  if not found then phx_count := 0; end if;
+  if utc_count + p_amount > p_utc_max or phx_count + p_amount > p_phx_max then
+    return 'full';
+  end if;
+  insert into public.action_rate_limit (action, ip_hash, bucket_start, request_count)
+  values ('email_resend_daily', p_utc_hash, p_utc_bucket, utc_count + p_amount)
+  on conflict (action, ip_hash, bucket_start) do update
+    set request_count = excluded.request_count;
+  insert into public.action_rate_limit (action, ip_hash, bucket_start, request_count)
+  values ('email_resend_phx_day', p_phx_hash, p_phx_bucket, phx_count + p_amount)
+  on conflict (action, ip_hash, bucket_start) do update
+    set request_count = excluded.request_count;
+  return 'reserved';
+end;
+$$;
+
+create or replace function public.release_action_rate_slot(
+  p_action text,
+  p_ip_hash text,
+  p_bucket timestamptz
+) returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.action_rate_limit
+    set request_count = request_count - 1
+  where action = p_action
+    and ip_hash = p_ip_hash
+    and bucket_start = p_bucket
+    and request_count > 0;
+end;
+$$;
+
+alter table public.email_queue add column if not exists idempotency_key text;
+
+revoke all on function public.email_delivery_release_held(text, text, text, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public.try_consume_resend_pair(text, timestamptz, integer, text, timestamptz, integer, integer) from public, anon, authenticated;
+revoke all on function public.release_action_rate_slot(text, text, timestamptz) from public, anon, authenticated;
+
 grant execute on function public.reserve_email_provider_quota(text, text, integer, integer, integer) to service_role;
 grant execute on function public.release_email_provider_quota(text, text, integer) to service_role;
 grant execute on function public.exhaust_email_provider_quota(text, text) to service_role;
@@ -594,6 +733,9 @@ grant execute on function public.email_webhook_event_seen(text, text) to service
 grant execute on function public.forget_email_webhook_event(text, text) to service_role;
 grant execute on function public.apply_email_provider_event(text, text, text) to service_role;
 grant execute on function public.email_delivery_has_recent_uncertainty(text, integer) to service_role;
+grant execute on function public.email_delivery_release_held(text, text, text, integer, timestamptz) to service_role;
+grant execute on function public.try_consume_resend_pair(text, timestamptz, integer, text, timestamptz, integer, integer) to service_role;
+grant execute on function public.release_action_rate_slot(text, text, timestamptz) to service_role;
 
 comment on table public.email_provider_quota is
   'App-side recipient reservations for the gated email cutover. A window does not reset on a timer; Brevo reset time is unconfirmed.';

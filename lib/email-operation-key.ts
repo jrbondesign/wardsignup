@@ -10,8 +10,26 @@ type Env = Record<string, string | undefined>;
  * A missing part refuses the key rather than collapsing different operations
  * (a new login token, a different signup) onto one row.
  */
+export type CutoverPurpose =
+  | "magic_link"
+  | "signup_confirmation"
+  | "org_invite"
+  | "reminder"
+  | "welcome"
+  | "organizer_digest"
+  | "organizer_report"
+  | "organizer_faster"
+  | "event_invite"
+  | "org_member_invite"
+  | "feedback_ask"
+  | "feedback_response"
+  | "feedback_digest"
+  | "new_creator"
+  | "calendar_reconnect"
+  | "calendar_founder";
+
 export function cutoverOperationKey(
-  purpose: "magic_link" | "signup_confirmation" | "org_invite" | "reminder",
+  purpose: CutoverPurpose,
   parts: Array<string | null | undefined>,
   env: Env = process.env,
 ): string | undefined {

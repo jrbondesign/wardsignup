@@ -11,6 +11,8 @@ import { formatTimeRange } from "@/lib/utils";
 import { spansMultipleDays } from "@/lib/calendar-times";
 import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
+import { phoenixDateKey } from "@/lib/phoenix-time";
 import { formatInTimeZone } from "date-fns-tz";
 import {
   resolveEffectiveEventTimezone,
@@ -537,6 +539,10 @@ export async function sendOrganizerMetricsEmail(
   resendId?: string;
   /** Recipient when send succeeded (helps debug “wrong inbox”). */
   sentTo?: string;
+  retryable?: boolean;
+  queued?: boolean;
+  ambiguous?: boolean;
+  terminal?: boolean;
 }> {
   const { data: campaign, error: cErr } = await admin
     .from("campaigns")
@@ -645,6 +651,7 @@ export async function sendOrganizerMetricsEmail(
   }
 
   try {
+    const hour = new Date().toISOString().slice(0, 13);
     const send = await sendGuardedEmail({
       brand,
       category: "notification",
@@ -656,12 +663,25 @@ export async function sendOrganizerMetricsEmail(
       // for with "Send report now" goes right away.
       deferrable: kind === "digest",
       kind: kind === "digest" ? "digest" : "report",
+      idempotencyKey: cutoverOperationKey(
+        kind === "digest" ? "organizer_digest" : "organizer_report",
+        kind === "digest"
+          ? [campaignId, to, phoenixDateKey()]
+          : [campaignId, to, phoenixDateKey(), hour],
+      ),
     });
     if (!send.ok) {
       console.error("organizer email send blocked/failed:", send.error || send.skipped);
-      return { ok: false, error: send.error || send.skipped };
+      return {
+        ok: false,
+        error: send.error || send.skipped,
+        retryable: Boolean(send.retryable),
+        queued: Boolean(send.queued),
+        ambiguous: Boolean(send.ambiguous),
+        terminal: Boolean(send.terminal) || send.skipped === "suppressed",
+      };
     }
-    return { ok: true, sentTo: to };
+    return { ok: true, sentTo: to, queued: Boolean(send.queued) };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("Resend organizer email error:", e);
@@ -705,6 +725,10 @@ export async function sendOrganizerFasterAlertEmail(
   error?: string;
   resendId?: string;
   sentTo?: string;
+  retryable?: boolean;
+  queued?: boolean;
+  ambiguous?: boolean;
+  terminal?: boolean;
 }> {
   const { data: campaign, error: cErr } = await admin
     .from("campaigns")
@@ -871,13 +895,29 @@ export async function sendOrganizerFasterAlertEmail(
       to,
       subject: subjectForKind(brand, "faster", name, newCount),
       html,
+      kind: "faster",
+      idempotencyKey: cutoverOperationKey("organizer_faster", [campaignId, to, since]),
     });
+    if (!send.ok && send.retryable && !send.queued) {
+      // The watermark is a claim, not a receipt. This attempt was not accepted,
+      // so the next run can include the same signups. The key stays the same.
+      await admin
+        .from("campaigns")
+        .update({ organizer_last_instant_notify_at: since } as never)
+        .eq("id", campaignId);
+    }
     if (!send.ok) {
       console.error("organizer faster send blocked/failed:", send.error || send.skipped);
-      return { ok: false, error: send.error || send.skipped };
+      return {
+        ok: false,
+        error: send.error || send.skipped,
+        retryable: Boolean(send.retryable),
+        ambiguous: Boolean(send.ambiguous),
+        terminal: Boolean(send.terminal) || send.skipped === "suppressed",
+      };
     }
 
-    return { ok: true, sentTo: to };
+    return { ok: true, sentTo: to, queued: Boolean(send.queued) };
   } catch (e: unknown) {
     const msg = e instanceof Error ? e.message : String(e);
     console.error("Resend organizer faster email error:", e);

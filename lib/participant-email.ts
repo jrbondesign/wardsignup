@@ -90,7 +90,7 @@ export async function sendParticipantSignupConfirmation(params: {
   guestNames?: string[];
   /** Signup row id. Required for a stable cutover key. Omitted on the live path. */
   operationId?: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true } | { ok: false; error: string; retryable?: boolean; queued?: boolean; ambiguous?: boolean; terminal?: boolean }> {
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
   if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
@@ -166,7 +166,14 @@ export async function sendParticipantSignupConfirmation(params: {
   });
 
   if (!send.ok) {
-    return { ok: false, error: send.error || send.skipped || "send failed" };
+    return {
+      ok: false,
+      error: send.error || send.skipped || "send failed",
+      retryable: Boolean(send.retryable),
+      queued: Boolean(send.queued),
+      ambiguous: Boolean(send.ambiguous),
+      terminal: Boolean(send.terminal) || send.skipped === "suppressed",
+    };
   }
   return { ok: true };
 }
@@ -180,7 +187,7 @@ export async function sendParticipantReminderEmail(params: {
   cancelToken?: string;
   /** Signup row id. Required for a stable cutover key. */
   signupId?: string;
-}): Promise<{ ok: true } | { ok: false; error: string; retryable?: boolean }> {
+}): Promise<{ ok: true } | { ok: false; error: string; retryable?: boolean; ambiguous?: boolean; terminal?: boolean }> {
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
   if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
@@ -256,7 +263,13 @@ export async function sendParticipantReminderEmail(params: {
   });
 
   if (!send.ok) {
-    return { ok: false, error: send.error || send.skipped || "send failed", retryable: send.retryable };
+    return {
+      ok: false,
+      error: send.error || send.skipped || "send failed",
+      retryable: Boolean(send.retryable),
+      ambiguous: Boolean(send.ambiguous),
+      terminal: Boolean(send.terminal) || send.skipped === "suppressed",
+    };
   }
   return { ok: true };
 }
@@ -274,7 +287,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
   guestNames?: string[];
   /** Stable id for the whole batch, such as the sorted signup ids. */
   operationId?: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true } | { ok: false; error: string; retryable?: boolean; queued?: boolean; ambiguous?: boolean; terminal?: boolean }> {
   if (params.sessions.length === 0) {
     return { ok: false, error: "No sessions to confirm" };
   }
@@ -405,7 +418,14 @@ export async function sendParticipantBatchSignupConfirmation(params: {
   });
 
   if (!send.ok) {
-    return { ok: false, error: send.error || send.skipped || "send failed" };
+    return {
+      ok: false,
+      error: send.error || send.skipped || "send failed",
+      retryable: Boolean(send.retryable),
+      queued: Boolean(send.queued),
+      ambiguous: Boolean(send.ambiguous),
+      terminal: Boolean(send.terminal) || send.skipped === "suppressed",
+    };
   }
   return { ok: true };
 }

@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { consumeActionRate } from "@/lib/rate-limit";
-import { consumeEmailKeyRate } from "@/lib/email-send";
+import { consumeEmailKeyRate, releaseEmailKeyRate } from "@/lib/email-send";
 import { magicLinkDedupeBuckets, normalizeEmail } from "@/lib/email-throttle";
 import { getBrandFromHost } from "@/lib/brand";
 import { magicLinkEmailFrom } from "@/lib/brand/email-from";
-import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
+import { deliverEmail, hasEmailProviderConfigured, retryDeliver } from "@/lib/email-deliver";
+import { cutoverBlocksNewLogin } from "@/lib/email-cutover";
 import { cutoverOperationKey } from "@/lib/email-operation-key";
 import { escapeHtml } from "@/lib/html-escape";
 import { getPostHogClient } from "@/lib/posthog-server";
@@ -125,8 +126,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid invitation" }, { status: 400 });
     }
 
+    const hostHeader = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+    const brand = getBrandFromHost(hostHeader);
+    if (await cutoverBlocksNewLogin(`invite:${tokenHash}`)) {
+      return NextResponse.json({ ok: true, delivery: "unconfirmed" });
+    }
+
     // Dedupe: if a link already went to this address in the last 5 minutes
-    const [thisMinute, ...nextMinutes] = magicLinkDedupeBuckets(new Date());
+    const dedupeBuckets = magicLinkDedupeBuckets(new Date());
+    const [thisMinute, ...nextMinutes] = dedupeBuckets;
     const dedupeKey = `invite-magic-link:${email}:${tokenHash}`;
     const firstInWindow = await consumeEmailKeyRate(
       "invite_magic_link_dedupe",
@@ -145,9 +153,6 @@ export async function POST(request: NextRequest) {
     if (!origin) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
-
-    const hostHeader = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-    const brand = getBrandFromHost(hostHeader);
 
     // Generate magic link for this user
     const callbackUrl = `${origin}/auth/callback?next=${encodeURIComponent(`/orgs/accept?token=${encodeURIComponent(token)}`)}`;
@@ -183,7 +188,7 @@ export async function POST(request: NextRequest) {
     const safeSiteUrl = escapeHtml(brand.siteUrl);
     const safeSiteHost = escapeHtml(brand.siteHost);
 
-    const sendRes = await deliverEmail(
+    const sendRes = await retryDeliver(() => deliverEmail(
       {
         brand,
         kind: "org_invite_link",
@@ -207,8 +212,17 @@ export async function POST(request: NextRequest) {
         `,
       },
       { urgent: true },
-    );
+    ));
 
+    if (!sendRes.ok && sendRes.retryable) {
+      await Promise.all(
+        dedupeBuckets.map((b) => releaseEmailKeyRate("invite_magic_link_dedupe", dedupeKey, b)),
+      );
+      return NextResponse.json(
+        { error: "Failed to send email", retryable: true },
+        { status: 503 },
+      );
+    }
     if (!sendRes.ok && sendRes.ambiguous) {
       return NextResponse.json({ ok: true, delivery: "unconfirmed" });
     }

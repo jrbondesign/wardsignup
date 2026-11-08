@@ -120,7 +120,7 @@ describe("markConnectionBroken", () => {
     const tos = mockSend.mock.calls.map((c) => c[0].to).sort();
     expect(tos).toEqual(["creator@example.com", "jonathan@wardsignup.com"]);
     const creatorCall = mockSend.mock.calls.find((c) => c[0].to === "creator@example.com");
-    expect(creatorCall?.[0].urgent).toBe(true);
+    expect(creatorCall?.[0].realtime).toBe(true);
     expect(calls.some((c) => c.table === "campaign_calendar_sync" && (c.args[0] as any).last_error === CONNECTION_BROKEN_ERROR)).toBe(true);
     expect(calls.some((c) => (c.args[0] as any).broken_notified_at)).toBe(true);
   });

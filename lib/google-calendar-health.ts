@@ -11,6 +11,7 @@
 import { creatorNotifyEmailFrom, getDefaultPublicBrand, publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import type { PublicBrand } from "@/lib/brand/types";
 import { sendGuardedEmail } from "@/lib/email-send";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
 import { FOUNDER_NOTIFY_TO } from "@/lib/founder-notify";
 import { escapeHtml } from "@/lib/html-escape";
 
@@ -122,12 +123,14 @@ export async function markConnectionBroken(admin: Admin, input: MarkBrokenInput)
       `[gcal-health] CONNECTION BROKEN connection=${row.id} org=${row.organization_id} user=${row.user_id} campaign=${input.campaignId ?? "n/a"} reason=${reason}`,
     );
 
-    await notifyBroken(admin, row, input.campaignId ?? null, reason);
+    const notified = await notifyBroken(admin, row, input.campaignId ?? null, reason, nowIso);
 
-    await admin
-      .from("google_calendar_connections")
-      .update({ broken_notified_at: new Date().toISOString() })
-      .eq("id", row.id);
+    if (notified) {
+      await admin
+        .from("google_calendar_connections")
+        .update({ broken_notified_at: new Date().toISOString() })
+        .eq("id", row.id);
+    }
     return true;
   } catch (e) {
     console.error("[gcal-health] markConnectionBroken failed:", e);
@@ -140,7 +143,8 @@ async function notifyBroken(
   row: { id: string; user_id: string; organization_id: string; google_email: string },
   campaignId: string | null,
   reason: string,
-): Promise<void> {
+  brokenAt: string,
+): Promise<boolean> {
   // Pick an event to link to: the one that failed, else any synced event on this connection.
   let eventId = campaignId;
   if (!eventId) {
@@ -178,6 +182,7 @@ async function notifyBroken(
     console.error("[gcal-health] creator lookup failed:", e);
   }
 
+  let creatorSettled = true;
   if (creatorEmail) {
     const mail = buildCreatorReconnectEmail({ brand, eventName, googleEmail: row.google_email, link });
     const sent = await sendGuardedEmail({
@@ -188,10 +193,12 @@ async function notifyBroken(
       subject: mail.subject,
       html: mail.html,
       text: mail.text,
-      // Sync is already broken; never let the email queue defer this.
-      urgent: true,
+      realtime: true,
+      kind: "calendar_reconnect",
+      idempotencyKey: cutoverOperationKey("calendar_reconnect", [row.id, brokenAt]),
     });
     if (!sent.ok) console.error("[gcal-health] creator reconnect email not sent:", sent);
+    creatorSettled = Boolean(sent.ok || sent.ambiguous);
   } else {
     console.error(`[gcal-health] no creator email for user ${row.user_id}`);
   }
@@ -214,8 +221,13 @@ async function notifyBroken(
     subject: `Google Calendar sync broke: ${eventName}`,
     html: `<pre style="font-family: ui-monospace, Menlo, monospace; font-size: 13px; white-space: pre-wrap;">${escapeHtml(founderText)}</pre>`,
     text: founderText,
+    realtime: true,
+    kind: "calendar_founder",
+    idempotencyKey: cutoverOperationKey("calendar_founder", [row.id, brokenAt]),
   });
   if (!founder.ok) console.error("[gcal-health] founder alert email not sent:", founder);
+  const founderSettled = Boolean(founder.ok || founder.ambiguous);
+  return creatorSettled && founderSettled;
 }
 
 /** Clear broken state after a successful reconnect. Never throws. */

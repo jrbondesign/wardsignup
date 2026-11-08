@@ -13,7 +13,7 @@ jest.mock("@/lib/resend-for-brand", () => ({
 jest.mock("@/lib/posthog-server", () => ({ getPostHogClient: () => ({ capture: jest.fn() }) }));
 
 import { postBrevoTransactional } from "@/lib/email-brevo-transport";
-import { createMemoryCutoverDeps, runBrevoCutover } from "@/lib/email-cutover";
+import { createMemoryCutoverDeps, cutoverBlocksNewLogin, runBrevoCutover } from "@/lib/email-cutover";
 import { cutoverOperationKey } from "@/lib/email-operation-key";
 import {
   BREVO_FREE_PLAN_DAILY_RECIPIENTS,
@@ -288,6 +288,40 @@ describe("provider outcomes", () => {
     expect(second).toMatchObject({ ok: true, provider: "brevo", messageId: "<second@brevo>" });
     expect(brevo).toHaveBeenCalledTimes(2);
     expect(resend).not.toHaveBeenCalled();
+  });
+
+  it("does not walk under the seed when a release fails and the retry is rate limited again", async () => {
+    const { deps, brevo, resend } = harness({
+      ...baseEnv,
+      BREVO_DAILY_RECIPIENT_CAP: "300",
+      BREVO_QUOTA_USED_AT_OPEN: "12",
+    });
+    const real = deps.releaseHeld.bind(deps);
+    let releases = 0;
+    deps.releaseHeld = async (...args) => {
+      releases += 1;
+      if (releases === 1) return "unavailable";
+      return real(...args);
+    };
+    brevo.mockResolvedValue({
+      status: 429,
+      body: JSON.stringify({ code: "too_many_requests", message: "API call rate limit exceeded" }),
+    });
+    const first = await send(deps, { idempotencyKey: "seed-release" });
+    expect(first).toMatchObject({ ok: false, retryable: true });
+    expect(resend).not.toHaveBeenCalled();
+    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(13);
+    const second = await send(deps, { idempotencyKey: "seed-release" });
+    expect(second).toMatchObject({ ok: false, retryable: true });
+    expect(brevo).toHaveBeenCalledTimes(2);
+    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(12);
+    const replay = await deps.releaseHeld("seed-release", "brevo", "unconfirmed-reset", 1);
+    expect(replay).toBe("already_released");
+    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(12);
+  });
+
+  it("blocks a new login when the uncertainty lookup fails", async () => {
+    await expect(cutoverBlocksNewLogin("magic:wardsignup:a@example.com", baseEnv)).resolves.toBe(true);
   });
 
   it("does not fall back after a timeout, a 5xx, or a 201 without a message id", async () => {
