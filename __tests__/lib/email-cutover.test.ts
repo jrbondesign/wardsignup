@@ -520,6 +520,18 @@ describe("provider outcomes", () => {
       terminal: true,
     });
   });
+
+  it("does not send a magic link or a welcome when the suppression list cannot be read", async () => {
+    for (const kind of ["magic_link", "welcome", "signup_confirmation", "org_invite_link"] as const) {
+      const blocked = harness();
+      blocked.deps.recipientBlock = async () => "unknown";
+      const result = await send(blocked.deps, { idempotencyKey: `unknown-${kind}`, kind });
+      expect(result).toMatchObject({ ok: false, retryable: true });
+      expect(blocked.brevo).not.toHaveBeenCalled();
+      expect(blocked.resend).not.toHaveBeenCalled();
+      expect(blocked.deps.state.attempts.size).toBe(0);
+    }
+  });
 });
 
 describe("operation keys", () => {

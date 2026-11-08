@@ -325,10 +325,12 @@ export async function runBrevoCutover(
       terminal: true,
     };
   }
-  if (block === "unknown" && !TRANSACTIONAL_KINDS.has(params.kind ?? "")) {
+  // A failed read is not "no row". Every gated kind, including a sign-in link,
+  // stops here. Resend is not called. The caller can retry once the list is readable.
+  if (block === "unknown") {
     return {
       ok: false,
-      error: "Suppression list could not be read. No notification was sent.",
+      error: "Suppression list could not be read. No email was sent.",
       retryable: true,
     };
   }

@@ -216,6 +216,21 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     const q = await enqueueEmail(row, { dedupe: realtime || Boolean(sendAfter) });
     return q.ok ? { ok: true, queued: true } : { ok: false, error: q.error };
   };
+  // A live credential or a reminder is retried by the waiting request or the
+  // reminder cron. Parking it would send a link the next request invalidates,
+  // or send the reminder twice. Every other kind keeps the same key and is
+  // due now, and the result is queued, not sent.
+  const parkDueNow = async (reason: string | undefined): Promise<GuardedSendResult> => {
+    const live = params.kind === "magic_link" || params.kind === "org_invite_link" || params.kind === "reminder";
+    if (params.fromQueue || live) {
+      return { ok: false, error: reason, retryable: true };
+    }
+    const parked = await queueIt(new Date());
+    if (parked.ok && parked.queued) {
+      return { ok: false, error: reason, retryable: true, queued: true };
+    }
+    return { ok: false, error: parked.ok ? reason : parked.error, retryable: true };
+  };
 
   const now = new Date();
   if (
@@ -235,10 +250,13 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     : "none";
   const hardInvalid = reason === "bounce" || reason === "complaint";
   const optedOut = reason === "unsubscribe" || reason === "manual" || reason === "unknown";
-  // A lookup failure is not an unsubscribe. On the cutover it stays retryable
-  // for notifications. Gate-off still treats it as suppressed, as before.
-  if (reason === "unknown" && category === "notification" && isBrevoCutoverEnabled()) {
-    return { ok: false, error: "Suppression list could not be read. No notification was sent.", retryable: true };
+  // A lookup failure is not an unsubscribe and not permission to send.
+  // Gate on: every kind stops, including a sign-in or welcome. The same key
+  // is queued due now unless it is a live credential or a reminder. The drain
+  // reads the list again. Gate off still treats an unknown notification as
+  // suppressed and does not look up transactional mail.
+  if (reason === "unknown" && isBrevoCutoverEnabled()) {
+    return parkDueNow("Suppression list could not be read. No email was sent.");
   }
   if (hardInvalid || (category === "notification" && optedOut)) {
     // Hard bounces and complaints block every category once the cutover is on.
@@ -282,9 +300,9 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     params.kind === "signup_confirmation" ||
     params.kind === "magic_link" ||
     params.kind === "org_invite_link";
-  // One same-provider retry in this request. A 429 is not accepted, so this
-  // is not a second provider and not the next-day queue.
-  if (!sent.ok && sent.retryable && promptKind && !params.fromQueue) {
+  // One same-provider retry. Gate on, that covers every kind. Gate off keeps
+  // the previous prompt-only retry. A 429 is not accepted and is not a second provider.
+  if (!sent.ok && sent.retryable && (isBrevoCutoverEnabled() || promptKind) && !params.fromQueue) {
     sent = await deliverEmail(deliverParams, { urgent, realtime });
   }
   if (sent.ok) return { ok: true, provider: sent.provider };
@@ -294,10 +312,14 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
   if (sent.ambiguous) return { ok: false, error: sent.error, ambiguous: true };
   if (sent.terminal) return { ok: false, error: sent.error, terminal: true };
   if (sent.retryable) {
-    // Signup confirmation has no later cron. Park the same key for the hourly
-    // drain instead of dropping the second 429. Reminders and sign-in links
-    // are not parked here: the reminder cron retries, and a magic link is a
-    // live credential the person is waiting on.
+    if (isBrevoCutoverEnabled()) {
+      // Same key, due now, not a successful send. The morning digest schedule
+      // above is the only path that still waits for 12:05 AM Arizona.
+      return parkDueNow(sent.error);
+    }
+    // Gate off stays on the previous contract. Signup confirmation is the one
+    // kind parked due now. Other prompt mail is not queued. Batch mail waits
+    // until 12:05 AM Arizona and is reported as queued.
     if (params.kind === "signup_confirmation" && !params.fromQueue) {
       const parked = await queueIt(new Date());
       if (parked.ok && parked.queued) {
@@ -310,14 +332,15 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     return { ok: false, error: sent.error, retryable: true };
   }
   if (sent.overBudget) {
-    // Out of Resend budget and Brevo couldn't take it: near real time mail is
-    // queued due now for the hourly drain; batch mail waits for 12:05 AM Arizona.
-    if (!params.fromQueue && (realtime || deferEnabled())) return queueIt();
+    if (isBrevoCutoverEnabled() && !params.fromQueue) return parkDueNow(sent.error);
+    // Gate off: near real time mail is queued due now; batch mail waits for
+    // 12:05 AM Arizona. The drain stops this batch instead of queueing again.
+    if (!isBrevoCutoverEnabled() && !params.fromQueue && (realtime || deferEnabled())) return queueIt();
     return { ok: false, error: sent.error, overBudget: true };
   }
   if (realtime && sent.brevoFailed) {
-    // Resend was full and Brevo failed: queue it due now for the hourly drain
-    // (3 attempts with backoff there) instead of failing the welcome.
+    if (isBrevoCutoverEnabled() && !params.fromQueue) return parkDueNow(sent.error);
+    // Gate off queues a welcome due now. The drain counts the failure.
     if (!params.fromQueue) return queueIt();
     return { ok: false, error: sent.error, brevoFailed: true };
   }

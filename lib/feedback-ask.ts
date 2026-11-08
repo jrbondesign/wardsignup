@@ -188,7 +188,7 @@ export async function runFeedbackAskPass(
         formUrl: `${siteOrigin}/feedback/${row.token}`,
         requestId: row.id,
       });
-      if (!result.ok) {
+      if (!result.ok && !result.queued) {
         errors.push(`${row.email_lower}: ${result.error}`);
         return false;
       }
@@ -202,12 +202,14 @@ export async function runFeedbackAskPass(
         // a permanent skip only if the row vanished; here the row exists.
         errors.push(`${row.email_lower}: mark-sent failed: ${updErr.message}`);
       }
-      posthog.capture({
-        distinctId: row.user_id,
-        event: "feedback_requested",
-        properties: { brand_id: brandId },
-      });
-      return true;
+      if (result.ok && !result.queued) {
+        posthog.capture({
+          distinctId: row.user_id,
+          event: "feedback_requested",
+          properties: { brand_id: brandId },
+        });
+      }
+      return Boolean(result.ok && !result.queued);
     } catch (e) {
       errors.push(
         `${row.email_lower}: ${e instanceof Error ? e.message : String(e)}`,
@@ -285,6 +287,7 @@ export type FeedbackDigestSummary = {
   ran: boolean;
   responses: number;
   error?: string;
+  queued?: boolean;
 };
 
 /**
@@ -344,9 +347,9 @@ export async function runFeedbackDigestPass(
       rows.map((r) => r.id).sort().join(","),
     ]),
   });
-  if (!send.ok) {
+  if (!send.ok && !send.queued) {
     console.error("feedback-digest send error:", send.error || send.skipped);
-    if (isBrevoCutoverEnabled() && send.retryable) {
+    if (isBrevoCutoverEnabled() && send.retryable && !send.queued) {
       await admin
         .from("cron_runs")
         .delete()
@@ -365,5 +368,5 @@ export async function runFeedbackDigestPass(
     );
   if (updateErr) console.error("feedback-digest triage update:", updateErr);
 
-  return { ran: true, responses: rows.length };
+  return { ran: true, responses: send.ok && !send.queued ? rows.length : 0, queued: Boolean(send.queued) };
 }

@@ -106,6 +106,17 @@ export async function POST(
 
     const result = await sendOrganizerMetricsEmail(admin, eventId, "manual", { operationId });
 
+    if (result.queued) {
+      return NextResponse.json(
+        { ok: true, delivery: "queued", ...(result.sentTo ? { sentTo: result.sentTo } : {}) },
+        { status: 202 },
+      );
+    }
+    if (!result.ok && result.ambiguous) {
+      return NextResponse.json(
+        { ok: true, delivery: "unconfirmed", ...(result.sentTo ? { sentTo: result.sentTo } : {}) },
+      );
+    }
     if (!result.ok) {
       if (result.skipped === "no_organizer_email") {
         return NextResponse.json(
@@ -114,13 +125,14 @@ export async function POST(
         );
       }
       return NextResponse.json(
-        { error: result.error || "Failed to send email" },
-        { status: 500 },
+        { error: result.error || "Failed to send email", retryable: Boolean(result.retryable) },
+        { status: result.retryable ? 503 : 500 },
       );
     }
 
     return NextResponse.json({
       ok: true,
+      delivery: "sent",
       ...(result.resendId ? { resendId: result.resendId } : {}),
       ...(result.sentTo ? { sentTo: result.sentTo } : {}),
     });

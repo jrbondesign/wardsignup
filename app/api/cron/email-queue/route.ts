@@ -155,6 +155,18 @@ export async function GET(request: NextRequest) {
           : `email-queue/${raw.id}`,
     });
 
+    if (r.queued) {
+      await admin
+        .from("email_queue")
+        .update({
+          status: "pending",
+          attempts: raw.attempts,
+          send_after: new Date(Date.now() + 60_000).toISOString(),
+          last_error: ("error" in r ? r.error : undefined) ?? "queued",
+        } as never)
+        .eq("id", raw.id);
+      continue;
+    }
     if (r.ok) {
       await admin
         .from("email_queue")

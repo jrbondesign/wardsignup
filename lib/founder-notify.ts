@@ -86,7 +86,7 @@ export async function notifyFounderIfFirstEvent(opts: {
         `,
       idempotencyKey: cutoverOperationKey("new_creator", [user.id]),
     });
-    if (!sent.ok && sent.retryable) {
+    if (!sent.ok && sent.retryable && !sent.queued) {
       // The log row is a claim, not a receipt. This attempt was not accepted.
       await admin
         .from("creator_signup_notification_log")

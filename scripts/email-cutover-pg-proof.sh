@@ -541,6 +541,169 @@ end $$;
 reset role;
 SQL
 
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire('org-member:org:delay@example.com', 'holder-a', 180);
+  if taken <> 'go' then
+    raise exception 'delay lease did not start: %', taken;
+  end if;
+  if not public.email_operation_remember('org-member:org:delay@example.com', 'holder-a', 'plaintext-one') then
+    raise exception 'delay lease did not store the link';
+  end if;
+  if public.email_operation_remember('org-member:org:delay@example.com', 'holder-a', '') then
+    raise exception 'remember cleared the token before finish';
+  end if;
+  if public.email_operation_recall('org-member:org:delay@example.com') <> 'plaintext-one' then
+    raise exception 'token changed before finish';
+  end if;
+end $$;
+reset role;
+
+update public.email_operation_lease
+  set updated_at = now() - interval '179 seconds'
+where scope = 'org-member:org:delay@example.com';
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire('org-member:org:delay@example.com', 'holder-b', 180);
+  if taken <> 'busy' then
+    raise exception '179s lease was not busy: %', taken;
+  end if;
+  if public.email_operation_recall('org-member:org:delay@example.com') <> 'plaintext-one' then
+    raise exception '179s recall changed the token';
+  end if;
+end $$;
+reset role;
+
+update public.email_operation_lease
+  set updated_at = now() - interval '181 seconds'
+where scope = 'org-member:org:delay@example.com';
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire('org-member:org:delay@example.com', 'holder-b', 180);
+  if taken <> 'go' then
+    raise exception '181s takeover failed: %', taken;
+  end if;
+  if public.email_operation_recall('org-member:org:delay@example.com') <> 'plaintext-one' then
+    raise exception '181s takeover changed the token';
+  end if;
+end $$;
+reset role;
+
+-- The old crash: token cleared while the lease is still sending.
+update public.email_operation_lease
+  set token = null, updated_at = now() - interval '181 seconds'
+where scope = 'org-member:org:delay@example.com';
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+  saved text;
+begin
+  saved := public.email_operation_recall('org-member:org:delay@example.com');
+  if saved is not null then
+    raise exception 'crash recall was %', saved;
+  end if;
+  taken := public.email_operation_acquire('org-member:org:delay@example.com', 'holder-c', 180);
+  if taken <> 'blocked' then
+    raise exception 'empty-token takeover was %', taken;
+  end if;
+end $$;
+reset role;
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+  lease_state text;
+  saved text;
+  blocked boolean;
+begin
+  taken := public.email_operation_acquire('org-member:org:atomic@example.com', 'holder-a', 180);
+  if taken <> 'go' then
+    raise exception 'atomic lease did not start: %', taken;
+  end if;
+  if not public.email_operation_remember('org-member:org:atomic@example.com', 'holder-a', 'plaintext-one') then
+    raise exception 'atomic remember failed';
+  end if;
+  if not public.email_operation_finish('org-member:org:atomic@example.com', 'holder-a', 'ambiguous') then
+    raise exception 'ambiguous finish failed';
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  lease_state text;
+  saved text;
+  blocked boolean;
+begin
+  select state, token, block_reissue
+    into lease_state, saved, blocked
+  from public.email_operation_lease
+  where scope = 'org-member:org:atomic@example.com';
+  if lease_state <> 'settled' or saved is not null or blocked is not true then
+    raise exception 'ambiguous finish left state % token % blocked %', lease_state, saved, blocked;
+  end if;
+end $$;
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire('org-member:org:atomic@example.com', 'holder-b', 180);
+  if taken <> 'blocked' then
+    raise exception 'ambiguous lease was reusable: %', taken;
+  end if;
+end $$;
+reset role;
+SQL
+
+status=0
+pids=()
+for i in 1 2 3 4 5; do
+  "${PSQL[@]}" -d "${DB}" -c "set role cutover_tester; select public.email_operation_acquire('org-member:org:atomic@example.com', 'later-$i', 180);" >/dev/null &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "$pid" || status=1
+done
+if [[ "$status" -ne 0 ]]; then
+  echo "ambiguous lease race failed"
+  exit 1
+fi
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+do $$
+declare
+  lease_state text;
+  saved text;
+  blocked boolean;
+  lease_holder text;
+begin
+  select state, token, block_reissue, holder
+    into lease_state, saved, blocked, lease_holder
+  from public.email_operation_lease
+  where scope = 'org-member:org:atomic@example.com';
+  if lease_state <> 'settled' or saved is not null or blocked is not true or lease_holder <> 'holder-a' then
+    raise exception 'delayed replay took the ambiguous lease: % % % %', lease_state, saved, blocked, lease_holder;
+  end if;
+end $$;
+SQL
+
 status=0
 pids=()
 for i in 1 2 3 4 5; do

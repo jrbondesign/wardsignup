@@ -12,11 +12,18 @@ export const inviteTools = [
       message: z.string().optional().describe("Optional personal message to include in the email"),
     }),
     async handler(input: { event_id: string; invitee_email: string; invitee_name: string; message?: string }) {
-      await apiCall("/api/invites", {
+      const data = await apiCall<{ delivery?: string }>("/api/invites", {
         method: "POST",
         body: JSON.stringify(input),
       });
-      return `Invite sent to ${input.invitee_name} (${input.invitee_email}) for event ${input.event_id}.`;
+      const who = `${input.invitee_name} (${input.invitee_email})`;
+      if (data.delivery === "queued") {
+        return `Invite queued for ${who} for event ${input.event_id}. It has not been sent yet.`;
+      }
+      if (data.delivery === "unconfirmed") {
+        return `Invite to ${who} for event ${input.event_id} may already be on its way. Delivery was not confirmed.`;
+      }
+      return `Invite sent to ${who} for event ${input.event_id}.`;
     },
   },
 

@@ -114,7 +114,7 @@ describe("/api/cron/organizer-faster", () => {
   it("queries only opted-in campaigns for this brand and sends for each", async () => {
     const { queries } = setup({ data: [{ id: "c1" }, { id: "c2" }], error: null });
     const body = await (await GET(cronRequest(PATH, SECRET))).json();
-    expect(body).toEqual({ ok: true, brandId: "wardsignup", sent: 2, skipped: 0 });
+    expect(body).toEqual({ ok: true, brandId: "wardsignup", sent: 2, queued: 0, skipped: 0 });
     expect(mockSend).toHaveBeenCalledTimes(2);
     expect(mockSend.mock.calls.map((c) => c[1])).toEqual(["c1", "c2"]);
     expect(queries[0].table).toBe("campaigns");

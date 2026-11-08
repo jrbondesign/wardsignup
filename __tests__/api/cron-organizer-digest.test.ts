@@ -238,6 +238,24 @@ describe("/api/cron/organizer-digest", () => {
     expect(stampedIds(queries)).toEqual(["c1"]);
   });
 
+  it("does not count a rate-limited digest as sent", async () => {
+    mockSend.mockResolvedValue({
+      ok: false,
+      error: "Brevo rate limited",
+      retryable: true,
+      queued: true,
+      sentTo: "org-c1@example.com",
+    });
+    const { queries } = setup({
+      campaigns: [campaign("c1")],
+      sessions: [{ campaign_id: "c1", session_date: "2026-10-25" }],
+    });
+    const body = await (await GET(cronRequest(PATH, SECRET))).json();
+    expect(body.sent).toBe(0);
+    expect(body.errors).toBeUndefined();
+    expect(stampedIds(queries)).toEqual(["c1"]);
+  });
+
   it("does not stamp when every send fails, and reports errors", async () => {
     mockSend.mockResolvedValue({ ok: false, error: "resend 500" });
     const { queries } = setup({

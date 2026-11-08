@@ -164,6 +164,9 @@ export async function POST(
             { status: 409 },
           );
         }
+        if (lease === "blocked") {
+          return NextResponse.json({ ok: true, delivery: "unconfirmed" });
+        }
         console.error("email_operation_acquire failed:", leaseError);
         return NextResponse.json(
           { error: "The invite could not be started. Please try again later.", retryable: true },
@@ -194,12 +197,12 @@ export async function POST(
         token = recalled;
         tokenHash = crypto.createHash("sha256").update(token).digest("hex");
       } else {
-        const { error: rememberError } = await leaseAdmin.rpc("email_operation_remember", {
+        const { data: remembered, error: rememberError } = await leaseAdmin.rpc("email_operation_remember", {
           p_scope: opScope,
           p_holder: holder,
           p_token: token,
         } as never);
-        if (rememberError) {
+        if (rememberError || remembered !== true) {
           console.error("email_operation_remember failed:", rememberError);
           await leaseAdmin.rpc("email_operation_finish", {
             p_scope: opScope,
@@ -317,33 +320,38 @@ export async function POST(
         `,
       });
       const memberId = (memberRow as { id: string }).id;
-      const settled = Boolean(send.ok || (!send.ok && (send.ambiguous || send.queued)));
+      const queued = Boolean(send.queued);
+      const ambiguous = !send.ok && Boolean(send.ambiguous);
       const retryable = !send.ok && Boolean(send.retryable);
+      // One database call finishes the lease and clears the token. A separate
+      // clear would leave a sending row with no token, and a later request
+      // would mint a second link for an attempt that may already have been accepted.
+      const disposition = send.ok && !queued
+        ? "accepted"
+        : ambiguous || queued
+          ? "ambiguous"
+          : retryable
+            ? "retryable"
+            : "terminal";
       if (gateOn && leaseAdmin) {
-        // Settled (accepted, ambiguous, or queued) keeps the hash and starts
-        // the hour cooldown, so the next POST does not replace a link that
-        // may already be in the inbox. A retryable miss keeps the plaintext
-        // so the next POST is the same operation. A terminal rejection clears
-        // it so a later POST can issue a new link.
-        if (settled || !retryable) {
-          await leaseAdmin.rpc("email_operation_remember", {
-            p_scope: opScope,
-            p_holder: holder,
-            p_token: null,
-          } as never);
-          if (settled) {
-            await supabase
-              .from("organization_members")
-              .update({ invite_last_sent_at: new Date().toISOString() } as never)
-              .eq("id", memberId);
-          }
-        }
         const { error: finishError } = await leaseAdmin.rpc("email_operation_finish", {
           p_scope: opScope,
           p_holder: holder,
-          p_state: settled ? "settled" : "failed",
+          p_state: disposition,
         } as never);
         if (finishError) console.error("email_operation_finish failed:", finishError);
+        if (disposition === "accepted" || disposition === "ambiguous") {
+          await supabase
+            .from("organization_members")
+            .update({ invite_last_sent_at: new Date().toISOString() } as never)
+            .eq("id", memberId);
+        }
+      }
+      if (queued) {
+        return NextResponse.json(
+          { ok: true, delivery: "queued", member: memberRow },
+          { status: 202 },
+        );
       }
       if (!send.ok) {
         console.error("Invite member: email error:", send.error || send.skipped);

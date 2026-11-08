@@ -191,6 +191,140 @@ describe("Brevo failure on near real time mail", () => {
     expect(enqueueEmail.mock.calls[0][1]).toEqual({ dedupe: false });
   });
 
+  it("gate on: a report, faster alert, and in-window digest 429 retry once and queue due now", async () => {
+    process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
+    try {
+      for (const kind of ["report", "faster"] as const) {
+        deliverEmail.mockClear();
+        enqueueEmail.mockClear();
+        jest.setSystemTime(new Date("2026-10-11T15:11:00Z"));
+        deliverEmail.mockResolvedValue({ ok: false, error: "Brevo rate limited", retryable: true });
+        const result = await sendGuardedEmail({ ...base, kind, idempotencyKey: `${kind}/1` });
+        expect(result).toEqual({ ok: false, error: "Brevo rate limited", retryable: true, queued: true });
+        expect(deliverEmail).toHaveBeenCalledTimes(2);
+        expect(deliverEmail.mock.calls[1][0].idempotencyKey).toBe(`${kind}/1`);
+        expect(enqueueEmail.mock.calls[0][0]).toMatchObject({
+          idempotency_key: `${kind}/1`,
+          kind,
+          send_after: "2026-10-11T15:11:00.000Z",
+        });
+      }
+      deliverEmail.mockClear();
+      enqueueEmail.mockClear();
+      jest.setSystemTime(new Date("2026-10-12T12:05:00Z"));
+      deliverEmail.mockResolvedValue({ ok: false, error: "Brevo rate limited", retryable: true });
+      const digest = await sendGuardedEmail({
+        ...base,
+        deferrable: true,
+        kind: "digest",
+        idempotencyKey: "digest/1",
+      });
+      expect(digest).toEqual({ ok: false, error: "Brevo rate limited", retryable: true, queued: true });
+      expect(deliverEmail).toHaveBeenCalledTimes(2);
+      expect(enqueueEmail.mock.calls[0][0].send_after).toBe("2026-10-12T12:05:00.000Z");
+    } finally {
+      delete process.env.EMAIL_PROVIDER_CUTOVER;
+    }
+  });
+
+  it("gate on: an unattempted digest still waits for 12:05 AM Arizona", async () => {
+    process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
+    try {
+      jest.setSystemTime(new Date("2026-10-11T15:11:00Z"));
+      const result = await sendGuardedEmail({ ...base, deferrable: true, kind: "digest", idempotencyKey: "digest/tomorrow" });
+      expect(result).toEqual({ ok: true, queued: true });
+      expect(deliverEmail).not.toHaveBeenCalled();
+      expect(enqueueEmail.mock.calls[0][0].send_after).toBe("2026-10-12T07:05:00.000Z");
+    } finally {
+      delete process.env.EMAIL_PROVIDER_CUTOVER;
+    }
+  });
+
+  it("gate on: a sign-in link and a reminder are not parked", async () => {
+    process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
+    try {
+      jest.setSystemTime(new Date("2026-10-11T15:11:00Z"));
+      deliverEmail.mockResolvedValue({ ok: false, error: "Brevo rate limited", retryable: true });
+      for (const kind of ["magic_link", "org_invite_link", "reminder"] as const) {
+        enqueueEmail.mockClear();
+        const result = await sendGuardedEmail({ ...base, urgent: true, kind, idempotencyKey: `${kind}/1` });
+        expect(result).toEqual({ ok: false, error: "Brevo rate limited", retryable: true });
+        expect(enqueueEmail).not.toHaveBeenCalled();
+      }
+    } finally {
+      delete process.env.EMAIL_PROVIDER_CUTOVER;
+    }
+  });
+
+  it("gate on: a failed suppression read stops every kind and does not fall back", async () => {
+    process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
+    maybeSingle.mockResolvedValue({ data: null, error: { message: "down" } });
+    try {
+      jest.setSystemTime(new Date("2026-10-12T16:00:00Z"));
+      const welcome = await sendGuardedEmail({
+        ...base,
+        kind: "welcome",
+        realtime: true,
+        idempotencyKey: "welcome/1",
+      });
+      expect(welcome).toEqual({
+        ok: false,
+        error: "Suppression list could not be read. No email was sent.",
+        retryable: true,
+        queued: true,
+      });
+      expect(deliverEmail).not.toHaveBeenCalled();
+      expect(enqueueEmail.mock.calls[0][0]).toMatchObject({
+        idempotency_key: "welcome/1",
+        send_after: "2026-10-12T16:00:00.000Z",
+      });
+      enqueueEmail.mockClear();
+      const login = await sendGuardedEmail({ ...base, kind: "magic_link", urgent: true, idempotencyKey: "login/1" });
+      expect(login).toEqual({
+        ok: false,
+        error: "Suppression list could not be read. No email was sent.",
+        retryable: true,
+      });
+      expect(deliverEmail).not.toHaveBeenCalled();
+      expect(enqueueEmail).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.EMAIL_PROVIDER_CUTOVER;
+      maybeSingle.mockResolvedValue({ data: null, error: null });
+    }
+  });
+
+  it("gate on: an unsubscribe still allows a welcome and a hard bounce blocks it", async () => {
+    process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
+    try {
+      maybeSingle.mockResolvedValueOnce({ data: { reason: "unsubscribe" }, error: null });
+      deliverEmail.mockResolvedValue({ ok: true, provider: "brevo" });
+      expect(await sendGuardedEmail({ ...base, kind: "welcome", realtime: true })).toMatchObject({ ok: true });
+      expect(deliverEmail).toHaveBeenCalledTimes(1);
+      deliverEmail.mockClear();
+      maybeSingle.mockResolvedValueOnce({ data: { reason: "bounce" }, error: null });
+      const bounced = await sendGuardedEmail({ ...base, kind: "welcome", realtime: true });
+      expect(bounced).toMatchObject({ ok: false, skipped: "suppressed" });
+      expect(deliverEmail).not.toHaveBeenCalled();
+      expect(enqueueEmail).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.EMAIL_PROVIDER_CUTOVER;
+      maybeSingle.mockResolvedValue({ data: null, error: null });
+    }
+  });
+
+  it("gate off: a transactional send does not consult the suppression list", async () => {
+    maybeSingle.mockClear();
+    maybeSingle.mockResolvedValue({ data: null, error: { message: "down" } });
+    try {
+      deliverEmail.mockResolvedValue({ ok: true, provider: "resend" });
+      expect(await sendGuardedEmail({ ...base, kind: "welcome", realtime: true })).toMatchObject({ ok: true });
+      expect(maybeSingle).not.toHaveBeenCalled();
+      expect(deliverEmail).toHaveBeenCalledTimes(1);
+    } finally {
+      maybeSingle.mockResolvedValue({ data: null, error: null });
+    }
+  });
+
   it("a queue insert failure is reported, so the welcome route can retry", async () => {
     jest.setSystemTime(new Date("2026-10-12T16:00:00Z"));
     deliverEmail.mockResolvedValue({ ok: false, error: "Brevo 500: boom", brevoFailed: true });

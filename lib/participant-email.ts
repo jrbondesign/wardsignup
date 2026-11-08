@@ -187,7 +187,7 @@ export async function sendParticipantReminderEmail(params: {
   cancelToken?: string;
   /** Signup row id. Required for a stable cutover key. */
   signupId?: string;
-}): Promise<{ ok: true } | { ok: false; error: string; retryable?: boolean; ambiguous?: boolean; terminal?: boolean }> {
+}): Promise<{ ok: true } | { ok: false; error: string; retryable?: boolean; queued?: boolean; ambiguous?: boolean; terminal?: boolean }> {
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
   if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
@@ -267,6 +267,7 @@ export async function sendParticipantReminderEmail(params: {
       ok: false,
       error: send.error || send.skipped || "send failed",
       retryable: Boolean(send.retryable),
+      queued: Boolean(send.queued),
       ambiguous: Boolean(send.ambiguous),
       terminal: Boolean(send.terminal) || send.skipped === "suppressed",
     };

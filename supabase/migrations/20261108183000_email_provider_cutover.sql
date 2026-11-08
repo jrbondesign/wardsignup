@@ -937,10 +937,14 @@ create table if not exists public.email_operation_lease (
   holder text not null,
   state text not null check (state in ('sending', 'settled', 'failed')),
   token text,
+  had_token boolean not null default false,
+  block_reissue boolean not null default false,
   updated_at timestamptz not null default now()
 );
 
 alter table public.email_operation_lease add column if not exists token text;
+alter table public.email_operation_lease add column if not exists had_token boolean not null default false;
+alter table public.email_operation_lease add column if not exists block_reissue boolean not null default false;
 
 alter table public.email_operation_lease enable row level security;
 revoke all on public.email_operation_lease from public, anon, authenticated;
@@ -969,14 +973,24 @@ begin
   perform pg_advisory_xact_lock(hashtext('email-op'), hashtext(p_scope));
   select * into rec from public.email_operation_lease where scope = p_scope for update;
   if not found then
-    insert into public.email_operation_lease (scope, holder, state, updated_at)
-    values (p_scope, p_holder, 'sending', now());
+    insert into public.email_operation_lease (scope, holder, state, token, had_token, block_reissue, updated_at)
+    values (p_scope, p_holder, 'sending', null, false, false, now());
     return 'go';
+  end if;
+  -- An ambiguous finish sets this in the same update that clears the token.
+  -- A later holder must not mint a replacement link.
+  if rec.block_reissue then
+    return 'blocked';
   end if;
   if rec.state = 'sending'
      and rec.holder <> p_holder
      and rec.updated_at > now() - make_interval(secs => stale_seconds) then
     return 'busy';
+  end if;
+  -- Token was stored, then removed, while the lease is still sending. That is
+  -- the crash gap between a clear and a finish. Do not hand it out as "mint".
+  if rec.state = 'sending' and rec.token is null and rec.had_token then
+    return 'blocked';
   end if;
   update public.email_operation_lease
     set holder = p_holder, state = 'sending', updated_at = now()
@@ -995,11 +1009,22 @@ security definer
 set search_path = public
 as $$
 begin
-  if p_state is null or p_state not in ('settled', 'failed') then
+  -- settled/accepted: delivered, token cleared, a later reissue is allowed.
+  -- failed/retryable: not accepted, token kept for the same link.
+  -- ambiguous: may have been accepted. Token cleared and reissue blocked together.
+  -- terminal: rejected, token cleared, a new link is allowed.
+  if p_state is null or p_state not in ('settled', 'accepted', 'failed', 'retryable', 'ambiguous', 'terminal') then
     return false;
   end if;
   update public.email_operation_lease
-    set state = p_state, updated_at = now()
+    set state = case
+          when p_state in ('settled', 'accepted', 'ambiguous') then 'settled'
+          else 'failed'
+        end,
+        block_reissue = (p_state = 'ambiguous'),
+        had_token = case when p_state in ('failed', 'retryable') then had_token else false end,
+        token = case when p_state in ('failed', 'retryable') then token else null end,
+        updated_at = now()
   where scope = p_scope
     and holder = p_holder
     and state = 'sending';
@@ -1019,9 +1044,14 @@ security definer
 set search_path = public
 as $$
 begin
+  -- Clearing is finish's job, in the same update as the new state. A separate
+  -- clear leaves a sending row with no token, which a stale takeover would mint.
+  if p_token is null or length(trim(p_token)) = 0 then
+    return false;
+  end if;
   update public.email_operation_lease
-    set token = nullif(p_token, '')
-  where scope = p_scope and holder = p_holder;
+    set token = trim(p_token), had_token = true
+  where scope = p_scope and holder = p_holder and state = 'sending';
   return found;
 end;
 $$;

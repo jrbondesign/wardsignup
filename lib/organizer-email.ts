@@ -913,6 +913,7 @@ export async function sendOrganizerFasterAlertEmail(
         ok: false,
         error: send.error || send.skipped,
         retryable: Boolean(send.retryable),
+        queued: Boolean(send.queued),
         ambiguous: Boolean(send.ambiguous),
         terminal: Boolean(send.terminal) || send.skipped === "suppressed",
       };

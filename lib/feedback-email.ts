@@ -25,7 +25,7 @@ const feedbackReplyTo =
 
 export type FeedbackSendResult =
   | { ok: true; queued?: boolean }
-  | { ok: false; error: string; retryable?: boolean; terminal?: boolean };
+  | { ok: false; error: string; retryable?: boolean; queued?: boolean; terminal?: boolean };
 
 export async function sendFeedbackAskEmail(params: {
   brand: PublicBrand;
@@ -114,6 +114,7 @@ Made with ❤️ in Arizona`;
       ok: false,
       error: send.error || send.skipped || "send failed",
       retryable: Boolean(send.retryable),
+      queued: Boolean(send.queued),
       terminal: Boolean(send.terminal) || send.skipped === "suppressed",
     };
   }
@@ -214,6 +215,7 @@ Q4. What's the #1 thing holding it back from being perfect?
       ok: false,
       error: send.error || send.skipped || "send failed",
       retryable: Boolean(send.retryable),
+      queued: Boolean(send.queued),
       terminal: Boolean(send.terminal) || send.skipped === "suppressed",
     };
   }

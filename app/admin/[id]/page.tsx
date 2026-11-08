@@ -82,7 +82,7 @@ export default function AdminPage({ params }: { params: Promise<{ id: string }> 
         message={toastMessage}
         show={showToast}
         onClose={() => setShowToast(false)}
-        duration={toastMessage.includes("Report sent") ? 8000 : 3000}
+        duration={/Report (sent|queued|may already)/.test(toastMessage) ? 8000 : 3000}
       />
       
       {confirmDialog && (

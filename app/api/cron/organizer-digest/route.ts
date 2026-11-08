@@ -187,10 +187,10 @@ export async function GET(request: NextRequest) {
       let delivered = false;
       if (organizerDue) {
         const result = await sendOrganizerMetricsEmail(admin, c.id, "digest");
-        if (result.ok) {
+        if (result.ok || result.queued) {
           delivered = true;
           acceptedOrQueued += 1;
-          if (!result.queued) sent += 1;
+          if (result.ok && !result.queued) sent += 1;
           if (organizerEmail) emailedOrganizers.add(organizerEmail);
           if (result.sentTo) emailedOrganizers.add(result.sentTo.trim().toLowerCase());
         } else if (result.retryable) {
@@ -205,10 +205,10 @@ export async function GET(request: NextRequest) {
 
       if (leaderTo && !emailedOrganizers.has(leaderTo)) {
         const lr = await sendOrganizerMetricsEmail(admin, c.id, "digest", { to: leaderTo });
-        if (lr.ok) {
+        if (lr.ok || lr.queued) {
           delivered = true;
           acceptedOrQueued += 1;
-          if (!lr.queued) sent += 1;
+          if (lr.ok && !lr.queued) sent += 1;
           emailedOrganizers.add(leaderTo);
         } else if (lr.retryable) {
           retryableLeft += 1;

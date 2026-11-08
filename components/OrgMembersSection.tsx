@@ -100,7 +100,15 @@ export default function OrgMembersSection({ organizationId, isOwner, currentUser
         setMessage({ kind: "error", text: data?.error ?? "Failed to send invite." });
         return;
       }
-      setMessage({ kind: "ok", text: `Invitation sent to ${trimmed}.` });
+      const delivery = data?.delivery;
+      setMessage({
+        kind: "ok",
+        text: delivery === "queued"
+          ? `Invitation queued for ${trimmed}. It has not been sent yet.`
+          : delivery === "unconfirmed"
+            ? `Invitation to ${trimmed} may already be on its way. Delivery was not confirmed.`
+            : `Invitation sent to ${trimmed}.`,
+      });
       setInviteEmail("");
       await load();
     } finally {
@@ -180,9 +188,15 @@ export default function OrgMembersSection({ organizationId, isOwner, currentUser
           text: `Ownership transferred to ${transferTarget.email}. You're now a co-admin.`,
         });
       } else {
+        const invited = transferEmailInput.trim();
+        const delivery = data?.delivery;
         setMessage({
           kind: "ok",
-          text: `Invitation sent to ${transferEmailInput.trim()}. Ownership will transfer when they accept.`,
+          text: delivery === "queued"
+            ? `Invitation queued for ${invited}. It has not been sent yet. Ownership will transfer when they accept.`
+            : delivery === "unconfirmed"
+              ? `Invitation to ${invited} may already be on its way. Delivery was not confirmed.`
+              : `Invitation sent to ${invited}. Ownership will transfer when they accept.`,
         });
       }
       setTransferTarget(null);

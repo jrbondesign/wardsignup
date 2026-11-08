@@ -27,6 +27,7 @@ type Member = {
 };
 
 let savedToken: string | null = null;
+let reissueBlocked = false;
 
 function harness() {
   const state: { member: Member | null; upserts: Array<Record<string, unknown>> } = {
@@ -87,11 +88,22 @@ function req() {
 
 const params = { params: Promise.resolve({ id: ORG }) };
 
-function leaseRpc(name: string, args?: { p_token?: string | null }) {
-  if (name === "email_operation_acquire") return { data: "go", error: null };
+function leaseRpc(name: string, args?: { p_token?: string | null; p_state?: string }) {
+  if (name === "email_operation_acquire") return { data: reissueBlocked ? "blocked" : "go", error: null };
   if (name === "email_operation_recall") return { data: savedToken, error: null };
   if (name === "email_operation_remember") {
-    savedToken = args?.p_token ?? null;
+    if (!args?.p_token) return { data: false, error: null };
+    savedToken = args.p_token;
+    return { data: true, error: null };
+  }
+  if (name === "email_operation_finish") {
+    if (args?.p_state === "ambiguous") {
+      savedToken = null;
+      reissueBlocked = true;
+    } else if (args?.p_state === "accepted" || args?.p_state === "terminal" || args?.p_state === "settled") {
+      savedToken = null;
+      reissueBlocked = false;
+    }
     return { data: true, error: null };
   }
   return { data: true, error: null };
@@ -100,6 +112,7 @@ function leaseRpc(name: string, args?: { p_token?: string | null }) {
 beforeEach(() => {
   process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
   savedToken = null;
+  reissueBlocked = false;
   rpc.mockReset();
   rpc.mockImplementation(async (name: string, args?: { p_token?: string | null }) => leaseRpc(name, args));
   (createServiceRoleClient as jest.Mock).mockReturnValue({ rpc });
@@ -146,6 +159,59 @@ it("does not replace a token after an ambiguous send", async () => {
   expect(sendGuardedEmail).toHaveBeenCalledTimes(1);
   expect(state.upserts).toHaveLength(1);
   expect(keys()[0]).toMatch(/^org_member_invite\//);
+  const rememberClears = rpc.mock.calls.filter(
+    (call) => call[0] === "email_operation_remember" && !(call[1] as { p_token?: string } | undefined)?.p_token,
+  );
+  expect(rememberClears).toHaveLength(0);
+  expect(rpc.mock.calls.filter((call) => call[0] === "email_operation_finish").map((call) => (call[1] as { p_state: string }).p_state)).toEqual([
+    "ambiguous",
+  ]);
+});
+
+it("does not mint after an ambiguous finish once the cooldown and uncertainty have expired", async () => {
+  const { state, supabase } = harness();
+  (getAuthFromRequest as jest.Mock).mockResolvedValue({
+    ok: true,
+    supabase,
+    user: { id: OWNER, email: "owner@example.com" },
+  });
+  (sendGuardedEmail as jest.Mock).mockResolvedValueOnce({ ok: false, error: "timed out", ambiguous: true });
+  const first = await POST(req(), params);
+  expect(first.status).toBe(200);
+  const hash = state.member?.accept_token_hash;
+  state.member!.invite_last_sent_at = null;
+  (cutoverBlocksNewLogin as jest.Mock).mockResolvedValue(false);
+  const later = await POST(req(), params);
+  expect(later.status).toBe(200);
+  expect(await later.json()).toEqual({ ok: true, delivery: "unconfirmed" });
+  expect(sendGuardedEmail).toHaveBeenCalledTimes(1);
+  expect(state.upserts).toHaveLength(1);
+  expect(state.member?.accept_token_hash).toBe(hash);
+});
+
+it("reports a queued invite as queued and does not mint a second link", async () => {
+  const { state, supabase } = harness();
+  (getAuthFromRequest as jest.Mock).mockResolvedValue({
+    ok: true,
+    supabase,
+    user: { id: OWNER, email: "owner@example.com" },
+  });
+  (sendGuardedEmail as jest.Mock).mockResolvedValueOnce({
+    ok: false,
+    error: "Brevo rate limited",
+    retryable: true,
+    queued: true,
+  });
+  const res = await POST(req(), params);
+  expect(res.status).toBe(202);
+  expect(await res.json()).toMatchObject({ ok: true, delivery: "queued" });
+  expect(rpc.mock.calls.filter((call) => call[0] === "email_operation_finish").map((call) => (call[1] as { p_state: string }).p_state)).toEqual([
+    "ambiguous",
+  ]);
+  expect(state.upserts).toHaveLength(1);
+  const again = await POST(req(), params);
+  expect(again.status).toBe(429);
+  expect(sendGuardedEmail).toHaveBeenCalledTimes(1);
 });
 
 it("reuses the same token when the send is retryable and mints a new one after a settled cooldown", async () => {

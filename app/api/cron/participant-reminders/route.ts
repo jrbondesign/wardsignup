@@ -258,7 +258,7 @@ export async function GET(request: NextRequest) {
       continue;
     }
 
-    if (!sendResult.ok && sendResult.retryable) {
+    if (!sendResult.ok && sendResult.retryable && !sendResult.queued) {
       // Not sent. Clear the claim so the next run can retry while the slot
       // is still inside the 0–25h window. A later run past the slot does not send.
       let { error: clearErr } = await admin

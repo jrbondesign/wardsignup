@@ -276,7 +276,7 @@ export async function POST(request: Request) {
               sessionCancelUrls,
               guestNames: guest_names.length > 0 ? guest_names : undefined,
             });
-            if (!r.ok) console.error("Bulk confirmation send:", r.error);
+            if (!r.ok && !r.queued) console.error("Bulk confirmation send:", r.error);
           }
 
           const leaderCampaign = campaign as unknown as LeaderCampaignEmailFields;

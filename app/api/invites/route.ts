@@ -314,6 +314,9 @@ export async function POST(request: NextRequest) {
         // Be honest: a failed send is a failed invite. The stored row is the
         // operation. Ambiguous means the provider may already have it.
         console.error("Invite email send failed:", send.error || send.skipped);
+        if (send.queued) {
+          return NextResponse.json({ success: true, invite, delivery: "queued" }, { status: 202 });
+        }
         if (send.ambiguous) {
           return NextResponse.json({ success: true, invite, delivery: "unconfirmed" });
         }

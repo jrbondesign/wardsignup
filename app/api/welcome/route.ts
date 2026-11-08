@@ -238,7 +238,9 @@ export async function POST(request: NextRequest) {
 
     if (!welcomeSend.ok) {
       console.error("Welcome email send error:", welcomeSend.error || welcomeSend.skipped);
-      const keepClaim = Boolean(welcomeSend.ambiguous || welcomeSend.terminal || welcomeSend.skipped === "suppressed");
+      const keepClaim = Boolean(
+        welcomeSend.ambiguous || welcomeSend.queued || welcomeSend.terminal || welcomeSend.skipped === "suppressed",
+      );
       if (!keepClaim && adminForWelcome) {
         await adminForWelcome
           .from("welcome_email_sent")
@@ -248,6 +250,9 @@ export async function POST(request: NextRequest) {
       }
       if (welcomeSend.ambiguous) {
         return NextResponse.json({ ok: true, delivery: "unconfirmed" });
+      }
+      if (welcomeSend.queued) {
+        return NextResponse.json({ ok: true, delivery: "queued" }, { status: 202 });
       }
       return NextResponse.json(
         { error: welcomeSend.error || "Could not send welcome email", retryable: Boolean(welcomeSend.retryable) },
