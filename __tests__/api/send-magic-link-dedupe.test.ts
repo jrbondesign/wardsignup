@@ -5,7 +5,11 @@ jest.mock("botid/server", () => ({ checkBotId: jest.fn().mockResolvedValue({ isB
 jest.mock("@/lib/rate-limit", () => ({
   consumeActionRate: jest.fn().mockResolvedValue({ allowed: true }),
 }));
-jest.mock("@/lib/email-send", () => ({ consumeEmailKeyRate: jest.fn() }));
+jest.mock("@/lib/email-send", () => ({
+  consumeEmailKeyRate: jest.fn(),
+  consumeOwnedEmailSlot: jest.fn(),
+  releaseOwnedEmailSlot: jest.fn(),
+}));
 const generateLink = jest.fn();
 jest.mock("@/lib/supabase-admin", () => ({
   createServiceRoleClient: () => ({ auth: { admin: { generateLink } } }),
@@ -17,10 +21,11 @@ jest.mock("@/lib/resend-for-brand", () => ({
 jest.mock("@/lib/posthog-server", () => ({ getPostHogClient: () => ({ capture: jest.fn() }) }));
 
 import { NextRequest } from "next/server";
-import { consumeEmailKeyRate } from "@/lib/email-send";
+import { consumeEmailKeyRate, consumeOwnedEmailSlot } from "@/lib/email-send";
 import { POST } from "@/app/api/auth/send-magic-link/route";
 
 const consume = consumeEmailKeyRate as jest.Mock;
+const owned = consumeOwnedEmailSlot as jest.Mock;
 
 function req(email: string) {
   return new NextRequest("https://wardsignup.com/api/auth/send-magic-link", {
@@ -32,22 +37,30 @@ function req(email: string) {
 
 beforeEach(() => {
   consume.mockReset();
+  owned.mockReset();
   emailsSend.mockClear();
   generateLink.mockReset();
   generateLink.mockResolvedValue({ data: { properties: { hashed_token: "h" } }, error: null });
 });
 
 it("returns success without sending when a link went out in the last 5 minutes", async () => {
-  consume.mockImplementation(async (action: string) => action !== "magic_link_dedupe");
+  owned.mockImplementation(async (action: string) => action !== "magic_link_dedupe");
   const res = await POST(req("  Ky@Example.com "));
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ ok: true, alreadySent: true });
-  expect(consume).toHaveBeenCalledWith("magic_link_dedupe", "magic-link:ky@example.com", 1, expect.any(Date));
+  expect(owned).toHaveBeenCalledWith(
+    "magic_link_dedupe",
+    "magic-link:ky@example.com",
+    1,
+    expect.any(Date),
+    expect.any(String),
+  );
   expect(emailsSend).not.toHaveBeenCalled();
   expect(generateLink).not.toHaveBeenCalled();
 });
 
 it("sends to the normalized address on the first request", async () => {
+  owned.mockResolvedValue(true);
   consume.mockResolvedValue(true);
   const res = await POST(req("Ky@Example.com"));
   expect(res.status).toBe(200);

@@ -4,7 +4,11 @@
 jest.mock("botid/server", () => ({ checkBotId: jest.fn().mockResolvedValue({ isBot: false }) }));
 const consumeActionRate = jest.fn().mockResolvedValue({ allowed: true });
 jest.mock("@/lib/rate-limit", () => ({ consumeActionRate: (...a: unknown[]) => consumeActionRate(...a) }));
-jest.mock("@/lib/email-send", () => ({ consumeEmailKeyRate: jest.fn().mockResolvedValue(true) }));
+jest.mock("@/lib/email-send", () => ({
+  consumeEmailKeyRate: jest.fn().mockResolvedValue(true),
+  consumeOwnedEmailSlot: jest.fn().mockResolvedValue(true),
+  releaseOwnedEmailSlot: jest.fn().mockResolvedValue(true),
+}));
 const generateLink = jest.fn();
 jest.mock("@/lib/supabase-admin", () => ({
   createServiceRoleClient: () => ({ auth: { admin: { generateLink } }, rpc: jest.fn().mockResolvedValue({ data: true, error: null }) }),

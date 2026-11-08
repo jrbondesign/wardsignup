@@ -7,6 +7,9 @@ import { escapeHtml } from "@/lib/html-escape";
 import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { cutoverOperationKey } from "@/lib/email-operation-key";
+import { cutoverBlocksNewLogin } from "@/lib/email-cutover";
+import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
+import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { buildBrandSignatureFooterHtml } from "@/lib/site-footer";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { isRealOrgId, isTestOrgId, isTestOwnerEmail } from "@/lib/test-orgs";
@@ -119,8 +122,12 @@ export async function POST(
       );
     }
 
-    const token = crypto.randomBytes(32).toString("hex");
-    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const gateOn = isBrevoCutoverEnabled();
+    const opScope = `org-member:${org.id}:${rawEmail}`;
+    const holder = crypto.randomUUID();
+    let leaseAdmin: ReturnType<typeof createServiceRoleClient> | null = null;
+    let token = crypto.randomBytes(32).toString("hex");
+    let tokenHash = crypto.createHash("sha256").update(token).digest("hex");
     const expiresAt = new Date(Date.now() + TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000).toISOString();
 
     // Re-invite cooldown: refreshing the token is fine, but re-emailing the
@@ -131,8 +138,7 @@ export async function POST(
       .eq("organization_id", org.id)
       .eq("invited_email", rawEmail)
       .maybeSingle();
-    const lastSent = (prevRow as { invite_last_sent_at?: string | null } | null)
-      ?.invite_last_sent_at;
+    const lastSent = (prevRow as { invite_last_sent_at?: string | null } | null)?.invite_last_sent_at;
     if (lastSent && Date.now() - new Date(lastSent).getTime() < 60 * 60 * 1000) {
       return NextResponse.json(
         { error: "An invite was just sent to this address. Try again in an hour." },
@@ -140,8 +146,77 @@ export async function POST(
       );
     }
 
+    if (gateOn) {
+      // An attempt that may already have been delivered keeps its token.
+      if (await cutoverBlocksNewLogin(opScope)) {
+        return NextResponse.json({ ok: true, delivery: "unconfirmed" });
+      }
+      leaseAdmin = createServiceRoleClient();
+      const { data: lease, error: leaseError } = await leaseAdmin.rpc("email_operation_acquire", {
+        p_scope: opScope,
+        p_holder: holder,
+        p_stale_seconds: 180,
+      } as never);
+      if (leaseError || lease !== "go") {
+        if (lease === "busy") {
+          return NextResponse.json(
+            { error: "An invite to this address is already being sent." },
+            { status: 409 },
+          );
+        }
+        console.error("email_operation_acquire failed:", leaseError);
+        return NextResponse.json(
+          { error: "The invite could not be started. Please try again later.", retryable: true },
+          { status: 503 },
+        );
+      }
+      // A retry of an attempt that was not accepted reuses the same link.
+      // The plaintext lives on the service-role lease, not on the member row.
+      // A settled attempt has cleared it, so this mints a new one only for an
+      // intentional reissue after the cooldown.
+      const { data: saved, error: recallError } = await leaseAdmin.rpc("email_operation_recall", {
+        p_scope: opScope,
+      } as never);
+      const recalled = saved as unknown;
+      if (recallError) {
+        console.error("email_operation_recall failed:", recallError);
+        await leaseAdmin.rpc("email_operation_finish", {
+          p_scope: opScope,
+          p_holder: holder,
+          p_state: "failed",
+        } as never);
+        return NextResponse.json(
+          { error: "The invite could not be started. Please try again later.", retryable: true },
+          { status: 503 },
+        );
+      }
+      if (typeof recalled === "string" && recalled.length > 0) {
+        token = recalled;
+        tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+      } else {
+        const { error: rememberError } = await leaseAdmin.rpc("email_operation_remember", {
+          p_scope: opScope,
+          p_holder: holder,
+          p_token: token,
+        } as never);
+        if (rememberError) {
+          console.error("email_operation_remember failed:", rememberError);
+          await leaseAdmin.rpc("email_operation_finish", {
+            p_scope: opScope,
+            p_holder: holder,
+            p_state: "failed",
+          } as never);
+          return NextResponse.json(
+            { error: "The invite could not be started. Please try again later.", retryable: true },
+            { status: 503 },
+          );
+        }
+      }
+    }
+
     // Upsert by (organization_id, invited_email) — re-inviting refreshes the token + status.
-    // Store hashed token in accept_token_hash, clear plaintext accept_token for new invites.
+    // Plaintext accept_token stays null. A gate-on retry reads the link from
+    // the service-role lease instead.
     const { data: memberRow, error: insertErr } = await supabase
       .from("organization_members")
       .upsert(
@@ -168,6 +243,13 @@ export async function POST(
     }
 
     if (!hasEmailProviderConfigured(hostBrand)) {
+      if (leaseAdmin) {
+        await leaseAdmin.rpc("email_operation_finish", {
+          p_scope: opScope,
+          p_holder: holder,
+          p_state: "failed",
+        } as never);
+      }
       // Persist the invite but tell the caller email failed.
       return NextResponse.json(
         { error: "Email is not configured for this site.", member: memberRow },
@@ -199,6 +281,7 @@ export async function POST(
         to: rawEmail,
         kind: "org_member_invite",
         idempotencyKey: cutoverOperationKey("org_member_invite", [org.id, rawEmail, tokenHash]),
+        operationScope: opScope,
         subject,
         html: `
           <div style="font-family:Georgia,'Times New Roman',serif;max-width:560px;min-width:0;width:100%;box-sizing:border-box;margin:0 auto;padding:40px 20px;color:#0D2B35;word-wrap:break-word;word-break:break-word;overflow-wrap:break-word;">
@@ -233,6 +316,35 @@ export async function POST(
           </div>
         `,
       });
+      const memberId = (memberRow as { id: string }).id;
+      const settled = Boolean(send.ok || (!send.ok && (send.ambiguous || send.queued)));
+      const retryable = !send.ok && Boolean(send.retryable);
+      if (gateOn && leaseAdmin) {
+        // Settled (accepted, ambiguous, or queued) keeps the hash and starts
+        // the hour cooldown, so the next POST does not replace a link that
+        // may already be in the inbox. A retryable miss keeps the plaintext
+        // so the next POST is the same operation. A terminal rejection clears
+        // it so a later POST can issue a new link.
+        if (settled || !retryable) {
+          await leaseAdmin.rpc("email_operation_remember", {
+            p_scope: opScope,
+            p_holder: holder,
+            p_token: null,
+          } as never);
+          if (settled) {
+            await supabase
+              .from("organization_members")
+              .update({ invite_last_sent_at: new Date().toISOString() } as never)
+              .eq("id", memberId);
+          }
+        }
+        const { error: finishError } = await leaseAdmin.rpc("email_operation_finish", {
+          p_scope: opScope,
+          p_holder: holder,
+          p_state: settled ? "settled" : "failed",
+        } as never);
+        if (finishError) console.error("email_operation_finish failed:", finishError);
+      }
       if (!send.ok) {
         console.error("Invite member: email error:", send.error || send.skipped);
         if (send.ambiguous) {
@@ -247,12 +359,21 @@ export async function POST(
           { status: send.retryable ? 503 : 502 },
         );
       }
-      await supabase
-        .from("organization_members")
-        .update({ invite_last_sent_at: new Date().toISOString() } as never)
-        .eq("id", (memberRow as { id: string }).id);
+      if (!gateOn) {
+        await supabase
+          .from("organization_members")
+          .update({ invite_last_sent_at: new Date().toISOString() } as never)
+          .eq("id", memberId);
+      }
     } catch (emailError) {
       console.error("Invite member: email error:", emailError);
+      if (leaseAdmin) {
+        await leaseAdmin.rpc("email_operation_finish", {
+          p_scope: opScope,
+          p_holder: holder,
+          p_state: "failed",
+        } as never).then(undefined, () => undefined);
+      }
       // Invite is still saved; surface the failure so the owner can retry.
       return NextResponse.json(
         { error: "Invite saved but email failed to send.", member: memberRow },

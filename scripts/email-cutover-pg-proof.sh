@@ -47,6 +47,15 @@ create table public.email_queue (
   status text not null default 'pending'
     check (status in ('pending', 'sending', 'sent', 'failed', 'skipped'))
 );
+create table public.event_invites (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null,
+  inviter_id uuid not null,
+  invitee_email text not null,
+  invitee_name text,
+  message text,
+  sent_at timestamptz not null default now()
+);
 grant usage on schema public to cutover_tester, anon;
 SQL
 
@@ -311,6 +320,316 @@ begin
     exception
       when insufficient_privilege then
         null;
+    end;
+    reset role;
+  end;
+end $$;
+SQL
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+set role cutover_tester;
+do $$
+declare
+  taken boolean;
+  n int;
+  holder text;
+begin
+  if not public.try_consume_owned_slot('magic_link_dedupe', 'slot-a', '2026-11-08 18:00:00+00', 1, 'holder-a') then
+    raise exception 'owner did not take the slot';
+  end if;
+  if public.try_consume_owned_slot('magic_link_dedupe', 'slot-a', '2026-11-08 18:00:00+00', 1, 'holder-b') then
+    raise exception 'second holder took an owned slot';
+  end if;
+  if public.release_owned_slot('magic_link_dedupe', 'slot-a', '2026-11-08 18:00:00+00', 'holder-b') then
+    raise exception 'other holder released the slot';
+  end if;
+  perform public.release_action_rate_slot('magic_link_dedupe', 'slot-a', '2026-11-08 18:00:00+00');
+  if public.try_consume_owned_slot('magic_link_dedupe', 'slot-a', '2026-11-08 18:00:00+00', 1, 'holder-b') then
+    raise exception 'blind release freed the slot';
+  end if;
+  if not public.release_owned_slot('magic_link_dedupe', 'slot-a', '2026-11-08 18:00:00+00', 'holder-a') then
+    raise exception 'owner release failed';
+  end if;
+  if public.release_owned_slot('magic_link_dedupe', 'slot-a', '2026-11-08 18:00:00+00', 'holder-a') then
+    raise exception 'repeated release changed the slot';
+  end if;
+  if not public.try_consume_owned_slot('magic_link_dedupe', 'slot-a', '2026-11-08 18:00:00+00', 1, 'holder-b') then
+    raise exception 'freed slot was not available';
+  end if;
+  if public.release_owned_slot('magic_link_dedupe', 'slot-a', '2026-11-08 18:00:00+00', 'holder-a') then
+    raise exception 'stale release dropped the new owner';
+  end if;
+  reset role;
+  select request_count, action_rate_limit.holder into n, holder
+  from public.action_rate_limit
+  where action = 'magic_link_dedupe' and ip_hash = 'slot-a';
+  if n <> 1 or holder <> 'holder-b' then
+    raise exception 'slot after stale release is % / %', n, holder;
+  end if;
+  set role cutover_tester;
+  taken := public.try_consume_owned_slot('magic_link_dedupe', 'slot-a', '2026-11-08 18:00:00+00', 1, 'holder-c');
+  if taken then
+    raise exception 'a third holder consumed the slot';
+  end if;
+end $$;
+reset role;
+SQL
+
+# Five concurrent consumes of one dedupe slot. Exactly one wins.
+status=0
+pids=()
+for i in 1 2 3 4 5; do
+  "${PSQL[@]}" -d "${DB}" -c "set role cutover_tester; select public.try_consume_owned_slot('magic_link_dedupe', 'slot-race', '2026-11-08 18:01:00+00', 1, 'race-$i');" >/dev/null &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "$pid" || status=1
+done
+if [[ "$status" -ne 0 ]]; then
+  echo "owned slot race failed"
+  exit 1
+fi
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+do $$
+declare
+  n int;
+  winners int;
+begin
+  select request_count into n from public.action_rate_limit
+  where action = 'magic_link_dedupe' and ip_hash = 'slot-race';
+  if n <> 1 then
+    raise exception 'parallel owned consumes left count %', n;
+  end if;
+  select count(*) into winners from public.action_rate_limit
+  where action = 'magic_link_dedupe' and ip_hash = 'slot-race' and holder is not null;
+  if winners <> 1 then
+    raise exception 'parallel owned consumes left no holder';
+  end if;
+end $$;
+
+set role cutover_tester;
+do $$
+declare
+  created jsonb;
+  other jsonb;
+  campaign uuid := '11111111-1111-4111-8111-111111111111';
+  inviter uuid := '22222222-2222-4222-8222-222222222222';
+begin
+  created := public.claim_event_invite(campaign, 'teacher@example.com', inviter, 'Ada', null, 'holder-a');
+  if created->>'result' <> 'created' then
+    raise exception 'event invite was not created: %', created;
+  end if;
+  other := public.claim_event_invite(campaign, 'teacher@example.com', inviter, 'Ada', null, 'holder-b');
+  if other->>'result' <> 'busy' or other->>'id' <> created->>'id' then
+    raise exception 'concurrent event invite was not busy: %', other;
+  end if;
+  if public.finish_event_invite((other->>'id')::uuid, 'holder-b', 'retryable') then
+    raise exception 'other holder finished the invite';
+  end if;
+  if not public.finish_event_invite((created->>'id')::uuid, 'holder-a', 'retryable') then
+    raise exception 'retryable finish failed';
+  end if;
+  other := public.claim_event_invite(campaign, 'teacher@example.com', inviter, 'Ada', null, 'holder-c');
+  if other->>'result' <> 'retry' or other->>'id' <> created->>'id' then
+    raise exception 'replay did not reuse the invite: %', other;
+  end if;
+  if not public.finish_event_invite((created->>'id')::uuid, 'holder-c', 'settled') then
+    raise exception 'settled finish failed';
+  end if;
+  if public.finish_event_invite((created->>'id')::uuid, 'holder-c', 'retryable') then
+    raise exception 'settled invite was downgraded';
+  end if;
+  other := public.claim_event_invite(campaign, 'teacher@example.com', inviter, 'Ada', null, 'holder-d');
+  if other->>'result' <> 'recent' then
+    raise exception 'settled invite was not recent: %', other;
+  end if;
+end $$;
+reset role;
+
+update public.event_invites
+  set email_outcome = 'pending',
+      email_holder = 'holder-stale',
+      email_held_at = now() - interval '5 minutes'
+where invitee_email = 'teacher@example.com';
+
+set role cutover_tester;
+do $$
+declare
+  again jsonb;
+  campaign uuid := '11111111-1111-4111-8111-111111111111';
+  inviter uuid := '22222222-2222-4222-8222-222222222222';
+  rows int;
+begin
+  again := public.claim_event_invite(campaign, 'teacher@example.com', inviter, 'Ada', null, 'holder-e');
+  if again->>'result' <> 'retry' then
+    raise exception 'stale pending invite was not retryable: %', again;
+  end if;
+  if not public.finish_event_invite((again->>'id')::uuid, 'holder-e', 'settled') then
+    raise exception 'stale finish failed';
+  end if;
+  reset role;
+  update public.event_invites
+    set sent_at = now() - interval '25 hours'
+  where id = (again->>'id')::uuid;
+  set role cutover_tester;
+  again := public.claim_event_invite(campaign, 'teacher@example.com', inviter, 'Ada', null, 'holder-f');
+  if again->>'result' <> 'created' then
+    raise exception 'later invite was not created: %', again;
+  end if;
+  reset role;
+  select count(*) into rows from public.event_invites where lower(invitee_email) = 'teacher@example.com';
+  if rows <> 2 then
+    raise exception 'later invite row count %', rows;
+  end if;
+end $$;
+reset role;
+
+set role cutover_tester;
+do $$
+declare
+  first text;
+  second text;
+begin
+  first := public.email_operation_acquire('org-member:org:bishop@example.com', 'holder-a', 180);
+  if first <> 'go' then
+    raise exception 'org lease did not start: %', first;
+  end if;
+  if not public.email_operation_remember('org-member:org:bishop@example.com', 'holder-a', 'same-link') then
+    raise exception 'holder could not store the invite link';
+  end if;
+  if public.email_operation_recall('org-member:org:bishop@example.com') <> 'same-link' then
+    raise exception 'recall did not return the stored link';
+  end if;
+  if public.email_operation_remember('org-member:org:bishop@example.com', 'holder-b', 'other-link') then
+    raise exception 'other holder replaced the stored link';
+  end if;
+  if public.email_operation_recall('org-member:org:bishop@example.com') <> 'same-link' then
+    raise exception 'stored link changed';
+  end if;
+  if public.email_operation_finish('org-member:org:bishop@example.com', 'holder-b', 'failed') then
+    raise exception 'other holder finished the org lease';
+  end if;
+  second := public.email_operation_acquire('org-member:org:bishop@example.com', 'holder-b', 180);
+  if second <> 'busy' then
+    raise exception 'second org invite was not busy: %', second;
+  end if;
+  if not public.email_operation_finish('org-member:org:bishop@example.com', 'holder-a', 'failed') then
+    raise exception 'org lease finish failed';
+  end if;
+  second := public.email_operation_acquire('org-member:org:bishop@example.com', 'holder-c', 30);
+  if second <> 'go' then
+    raise exception 'failed org lease was not reusable: %', second;
+  end if;
+end $$;
+reset role;
+
+update public.email_operation_lease
+  set updated_at = now() - interval '10 minutes'
+where scope = 'org-member:org:bishop@example.com';
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire('org-member:org:bishop@example.com', 'holder-d', 180);
+  if taken <> 'go' then
+    raise exception 'stale org lease was not reusable: %', taken;
+  end if;
+end $$;
+reset role;
+SQL
+
+status=0
+pids=()
+for i in 1 2 3 4 5; do
+  "${PSQL[@]}" -d "${DB}" -c "set role cutover_tester; select public.claim_event_invite('11111111-1111-4111-8111-111111111111'::uuid, 'race@example.com', '22222222-2222-4222-8222-222222222222'::uuid, null, null, 'race-$i');" >/dev/null &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "$pid" || status=1
+done
+if [[ "$status" -ne 0 ]]; then
+  echo "event invite race failed"
+  exit 1
+fi
+
+status=0
+pids=()
+for i in 1 2 3 4 5; do
+  "${PSQL[@]}" -d "${DB}" -c "set role cutover_tester; select public.email_operation_acquire('org-member:org:race@example.com', 'race-$i', 180);" >/dev/null &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "$pid" || status=1
+done
+if [[ "$status" -ne 0 ]]; then
+  echo "org lease race failed"
+  exit 1
+fi
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+do $$
+declare
+  invites int;
+  holders int;
+  lease_state text;
+begin
+  select count(*) into invites from public.event_invites where invitee_email = 'race@example.com';
+  if invites <> 1 then
+    raise exception 'parallel event invites created % rows', invites;
+  end if;
+  select count(*) into holders from public.email_operation_lease
+  where scope = 'org-member:org:race@example.com';
+  select state into lease_state from public.email_operation_lease
+  where scope = 'org-member:org:race@example.com';
+  if holders <> 1 or lease_state <> 'sending' then
+    raise exception 'parallel org lease rows % state %', holders, lease_state;
+  end if;
+end $$;
+
+do $$
+begin
+  begin
+    execute 'set role anon';
+    begin
+      perform public.try_consume_owned_slot('magic_link_dedupe', 'nope', '2026-11-08 18:00:00+00', 1, 'anon');
+      raise exception 'anon consumed an owned slot';
+    exception
+      when insufficient_privilege then null;
+    end;
+    begin
+      perform public.release_owned_slot('magic_link_dedupe', 'slot-a', '2026-11-08 18:00:00+00', 'holder-b');
+      raise exception 'anon released an owned slot';
+    exception
+      when insufficient_privilege then null;
+    end;
+    begin
+      perform public.claim_event_invite(
+        '11111111-1111-4111-8111-111111111111'::uuid, 'nope@example.com',
+        '22222222-2222-4222-8222-222222222222'::uuid, null, null, 'anon');
+      raise exception 'anon claimed an event invite';
+    exception
+      when insufficient_privilege then null;
+    end;
+    begin
+      perform public.email_operation_acquire('org-member:org:nope@example.com', 'anon', 180);
+      raise exception 'anon acquired an org lease';
+    exception
+      when insufficient_privilege then null;
+    end;
+    begin
+      perform public.email_operation_recall('org-member:org:bishop@example.com');
+      raise exception 'anon recalled an invite link';
+    exception
+      when insufficient_privilege then null;
+    end;
+    begin
+      perform 1 from public.email_operation_lease;
+      raise exception 'anon read an org lease';
+    exception
+      when insufficient_privilege then null;
     end;
     reset role;
   end;

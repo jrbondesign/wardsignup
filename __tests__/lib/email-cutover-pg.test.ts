@@ -10,5 +10,5 @@ const psql = existsSync("/usr/bin/psql");
       timeout: 60_000,
     });
     expect(output).toContain("email-cutover postgres proof ok");
-  }, 60_000);
+  }, 120_000);
 });

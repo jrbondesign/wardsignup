@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { consumeActionRate } from "@/lib/rate-limit";
-import { consumeEmailKeyRate, releaseEmailKeyRate } from "@/lib/email-send";
+import { consumeEmailKeyRate, consumeOwnedEmailSlot, releaseOwnedEmailSlot } from "@/lib/email-send";
 import { magicLinkDedupeBuckets, normalizeEmail } from "@/lib/email-throttle";
 import { getBrandFromHost } from "@/lib/brand";
 import { magicLinkEmailFrom } from "@/lib/brand/email-from";
@@ -10,7 +10,7 @@ import { cutoverBlocksNewLogin } from "@/lib/email-cutover";
 import { cutoverOperationKey } from "@/lib/email-operation-key";
 import { escapeHtml } from "@/lib/html-escape";
 import { getPostHogClient } from "@/lib/posthog-server";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 
 function parseJsonBody(raw: string): { token?: unknown } | null {
   const t = raw.trim();
@@ -136,17 +136,25 @@ export async function POST(request: NextRequest) {
     const dedupeBuckets = magicLinkDedupeBuckets(new Date());
     const [thisMinute, ...nextMinutes] = dedupeBuckets;
     const dedupeKey = `invite-magic-link:${email}:${tokenHash}`;
-    const firstInWindow = await consumeEmailKeyRate(
+    const slotOwner = randomUUID();
+    const firstInWindow = await consumeOwnedEmailSlot(
       "invite_magic_link_dedupe",
       dedupeKey,
       1,
       thisMinute,
+      slotOwner,
     );
+    if (firstInWindow === "unavailable") {
+      return NextResponse.json(
+        { error: "Could not start the invitation email. Please try again.", retryable: true },
+        { status: 503 },
+      );
+    }
     if (!firstInWindow) {
       return NextResponse.json({ ok: true, alreadySent: true });
     }
     await Promise.all(
-      nextMinutes.map((b) => consumeEmailKeyRate("invite_magic_link_dedupe", dedupeKey, 1, b)),
+      nextMinutes.map((b) => consumeOwnedEmailSlot("invite_magic_link_dedupe", dedupeKey, 1, b, slotOwner)),
     );
 
     const origin = requestOrigin(request);
@@ -216,7 +224,7 @@ export async function POST(request: NextRequest) {
 
     if (!sendRes.ok && sendRes.retryable) {
       await Promise.all(
-        dedupeBuckets.map((b) => releaseEmailKeyRate("invite_magic_link_dedupe", dedupeKey, b)),
+        dedupeBuckets.map((b) => releaseOwnedEmailSlot("invite_magic_link_dedupe", dedupeKey, b, slotOwner)),
       );
       return NextResponse.json(
         { error: "Failed to send email", retryable: true },

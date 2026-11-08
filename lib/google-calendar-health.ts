@@ -3,8 +3,8 @@
  *
  * Goal: sync never stops silently. When Google rejects our refresh token
  * (invalid_grant, revoked, expired) or answers 401 after a fresh refresh, the
- * connection is marked broken exactly once per breakage. That first transition
- * emails the creator a reconnect link and emails the founder, and is logged.
+ * connection is marked broken exactly once per breakage. The reconnect mail
+ * is retried until it is accepted, ambiguous, or queued, and is logged.
  * Reconnecting through the OAuth flow clears the broken state.
  */
 
@@ -82,9 +82,12 @@ export type MarkBrokenInput = {
 };
 
 /**
- * Mark a connection broken. Idempotent: only the first call per breakage
- * (status active to broken) sends notifications. Never throws.
- * Returns true when this call performed the transition.
+ * Mark a connection broken. The active-to-broken update happens once.
+ * Notification is separate: while broken_notified_at is null, a later call
+ * retries with the stored broken_at so a failed send is not lost. A settled
+ * send (accepted, ambiguous, or queued) stamps the row and is not repeated.
+ * Never throws. Returns true when this call transitioned the row or retried
+ * a notification that had not settled.
  */
 export async function markConnectionBroken(admin: Admin, input: MarkBrokenInput): Promise<boolean> {
   const nowIso = new Date().toISOString();
@@ -113,17 +116,29 @@ export async function markConnectionBroken(admin: Admin, input: MarkBrokenInput)
       console.error("[gcal-health] could not set broken status (migration applied?):", error.message ?? error);
       return false;
     }
-    const row = Array.isArray(data) ? data[0] : data;
+    let row = Array.isArray(data) ? data[0] : data;
+    let brokenAt = nowIso;
     if (!row) {
-      console.warn(`[gcal-health] connection ${input.connectionId} already broken; not notifying again`);
-      return false;
+      const { data: pending, error: pendingError } = await admin
+        .from("google_calendar_connections")
+        .select("id, user_id, organization_id, google_email, broken_at")
+        .eq("id", input.connectionId)
+        .eq("status", "broken")
+        .is("broken_notified_at", null)
+        .maybeSingle();
+      if (pendingError || !pending?.broken_at) {
+        console.warn(`[gcal-health] connection ${input.connectionId} already broken; notification already settled`);
+        return false;
+      }
+      row = pending;
+      brokenAt = pending.broken_at;
     }
 
     console.error(
       `[gcal-health] CONNECTION BROKEN connection=${row.id} org=${row.organization_id} user=${row.user_id} campaign=${input.campaignId ?? "n/a"} reason=${reason}`,
     );
 
-    const notified = await notifyBroken(admin, row, input.campaignId ?? null, reason, nowIso);
+    const notified = await notifyBroken(admin, row, input.campaignId ?? null, reason, brokenAt);
 
     if (notified) {
       await admin
@@ -198,7 +213,7 @@ async function notifyBroken(
       idempotencyKey: cutoverOperationKey("calendar_reconnect", [row.id, brokenAt]),
     });
     if (!sent.ok) console.error("[gcal-health] creator reconnect email not sent:", sent);
-    creatorSettled = Boolean(sent.ok || sent.ambiguous);
+    creatorSettled = sent.ok || (!sent.ok && Boolean(sent.ambiguous || sent.queued));
   } else {
     console.error(`[gcal-health] no creator email for user ${row.user_id}`);
   }
@@ -226,7 +241,7 @@ async function notifyBroken(
     idempotencyKey: cutoverOperationKey("calendar_founder", [row.id, brokenAt]),
   });
   if (!founder.ok) console.error("[gcal-health] founder alert email not sent:", founder);
-  const founderSettled = Boolean(founder.ok || founder.ambiguous);
+  const founderSettled = founder.ok || (!founder.ok && Boolean(founder.ambiguous || founder.queued));
   return creatorSettled && founderSettled;
 }
 

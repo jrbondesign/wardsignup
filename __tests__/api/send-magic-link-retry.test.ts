@@ -6,10 +6,12 @@ jest.mock("@/lib/rate-limit", () => ({
   consumeActionRate: jest.fn().mockResolvedValue({ allowed: true }),
 }));
 const consumeEmailKeyRate = jest.fn();
-const releaseEmailKeyRate = jest.fn();
+const consumeOwnedEmailSlot = jest.fn();
+const releaseOwnedEmailSlot = jest.fn();
 jest.mock("@/lib/email-send", () => ({
   consumeEmailKeyRate: (...args: unknown[]) => consumeEmailKeyRate(...args),
-  releaseEmailKeyRate: (...args: unknown[]) => releaseEmailKeyRate(...args),
+  consumeOwnedEmailSlot: (...args: unknown[]) => consumeOwnedEmailSlot(...args),
+  releaseOwnedEmailSlot: (...args: unknown[]) => releaseOwnedEmailSlot(...args),
 }));
 const generateLink = jest.fn();
 jest.mock("@/lib/supabase-admin", () => ({
@@ -48,7 +50,10 @@ beforeEach(() => {
   process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
   consumeEmailKeyRate.mockReset();
   consumeEmailKeyRate.mockResolvedValue(true);
-  releaseEmailKeyRate.mockReset();
+  consumeOwnedEmailSlot.mockReset();
+  consumeOwnedEmailSlot.mockResolvedValue(true);
+  releaseOwnedEmailSlot.mockReset();
+  releaseOwnedEmailSlot.mockResolvedValue(true);
   deliverEmail.mockReset();
   generateLink.mockReset();
   generateLink.mockResolvedValue({ data: { properties: { hashed_token: "hashed-token" } }, error: null });
@@ -69,7 +74,10 @@ it("returns 503 and releases the 5-minute slot when both attempts are rate limit
   const key = deliverEmail.mock.calls[0][0].idempotencyKey as string;
   expect(key.startsWith("magic_link/")).toBe(true);
   expect(deliverEmail.mock.calls[1][0].idempotencyKey).toBe(key);
-  expect(releaseEmailKeyRate).toHaveBeenCalled();
+  expect(releaseOwnedEmailSlot).toHaveBeenCalled();
+  const owner = consumeOwnedEmailSlot.mock.calls[0][4];
+  expect(typeof owner).toBe("string");
+  expect(releaseOwnedEmailSlot.mock.calls.every((call) => call[3] === owner)).toBe(true);
   const again = await POST(req());
   expect(again.status).toBe(503);
   expect(await again.json()).toMatchObject({ retryable: true });
@@ -80,7 +88,7 @@ it("keeps the dedupe slot when the provider may already have accepted the link",
   const res = await POST(req());
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ ok: true, delivery: "unconfirmed" });
-  expect(releaseEmailKeyRate).not.toHaveBeenCalled();
+  expect(releaseOwnedEmailSlot).not.toHaveBeenCalled();
   expect(deliverEmail).toHaveBeenCalledTimes(1);
 });
 
@@ -90,5 +98,6 @@ it("does not take the dedupe slot when an earlier attempt is uncertain", async (
   expect(res.status).toBe(200);
   expect(await res.json()).toEqual({ ok: true, delivery: "unconfirmed" });
   expect(consumeEmailKeyRate).not.toHaveBeenCalled();
+  expect(consumeOwnedEmailSlot).not.toHaveBeenCalled();
   expect(deliverEmail).not.toHaveBeenCalled();
 });

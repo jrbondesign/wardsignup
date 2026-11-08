@@ -6,7 +6,8 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { safeReturnPath } from "@/lib/auth-return-path";
 import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
 import { consumeActionRate } from "@/lib/rate-limit";
-import { consumeEmailKeyRate, releaseEmailKeyRate } from "@/lib/email-send";
+import { consumeEmailKeyRate, consumeOwnedEmailSlot, releaseOwnedEmailSlot } from "@/lib/email-send";
+import { randomUUID } from "crypto";
 import { magicLinkDedupeBuckets, normalizeEmail } from "@/lib/email-throttle";
 import { checkBotId } from "botid/server";
 import { verifyTurnstile } from "@/lib/turnstile";
@@ -119,12 +120,19 @@ export async function POST(request: NextRequest) {
     const dedupeBuckets = magicLinkDedupeBuckets(new Date());
     const [thisMinute, ...nextMinutes] = dedupeBuckets;
     const dedupeKey = `magic-link:${email}`;
-    const firstInWindow = await consumeEmailKeyRate("magic_link_dedupe", dedupeKey, 1, thisMinute);
+    const slotOwner = randomUUID();
+    const firstInWindow = await consumeOwnedEmailSlot("magic_link_dedupe", dedupeKey, 1, thisMinute, slotOwner);
+    if (firstInWindow === "unavailable") {
+      return NextResponse.json(
+        { error: "Could not start the sign-in email. Please try again.", retryable: true },
+        { status: 503 },
+      );
+    }
     if (!firstInWindow) {
       return NextResponse.json({ ok: true, alreadySent: true });
     }
     await Promise.all(
-      nextMinutes.map((b) => consumeEmailKeyRate("magic_link_dedupe", dedupeKey, 1, b)),
+      nextMinutes.map((b) => consumeOwnedEmailSlot("magic_link_dedupe", dedupeKey, 1, b, slotOwner)),
     );
 
     // Per-recipient cap: IP limits don't stop a rotating sender from mailing
@@ -231,7 +239,7 @@ export async function POST(request: NextRequest) {
 
     if (!sendRes.ok && sendRes.retryable) {
       await Promise.all(
-        dedupeBuckets.map((b) => releaseEmailKeyRate("magic_link_dedupe", dedupeKey, b)),
+        dedupeBuckets.map((b) => releaseOwnedEmailSlot("magic_link_dedupe", dedupeKey, b, slotOwner)),
       );
       return NextResponse.json(
         { error: messageFromResendError(sendErr), retryable: true },

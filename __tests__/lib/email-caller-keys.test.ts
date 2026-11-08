@@ -111,12 +111,17 @@ it("gives a digest and an on-demand report different stable keys", async () => {
   const admin = createServiceRoleClient();
   await sendOrganizerMetricsEmail(admin, "c1", "digest");
   await sendOrganizerMetricsEmail(admin, "c1", "digest");
-  await sendOrganizerMetricsEmail(admin, "c1", "manual");
-  const [first, second, report] = keys();
+  await sendOrganizerMetricsEmail(admin, "c1", "manual", { operationId: "1" });
+  await sendOrganizerMetricsEmail(admin, "c1", "manual", { operationId: "1" });
+  await sendOrganizerMetricsEmail(admin, "c1", "manual", { operationId: "2" });
+  const [first, second, report, replay, later] = keys();
   expect(first).toBe(second);
   expect(first.startsWith("organizer_digest/")).toBe(true);
   expect(report.startsWith("organizer_report/")).toBe(true);
   expect(report).not.toBe(first);
+  expect(replay).toBe(report);
+  expect(later).not.toBe(report);
+  expect(later.startsWith("organizer_report/")).toBe(true);
 });
 
 it("restores the faster watermark when the send is retryable", async () => {

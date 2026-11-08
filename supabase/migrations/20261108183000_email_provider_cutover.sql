@@ -640,8 +640,11 @@ create table if not exists public.action_rate_limit (
   ip_hash text not null,
   bucket_start timestamptz not null,
   request_count int not null default 0,
+  holder text,
   primary key (action, ip_hash, bucket_start)
 );
+
+alter table public.action_rate_limit add column if not exists holder text;
 
 create or replace function public.try_consume_resend_pair(
   p_utc_hash text,
@@ -692,6 +695,8 @@ begin
 end;
 $$;
 
+-- Retired. A blind decrement can take a slot a later request owns.
+-- Callers release with release_owned_slot, which matches the holder.
 create or replace function public.release_action_rate_slot(
   p_action text,
   p_ip_hash text,
@@ -702,12 +707,336 @@ security definer
 set search_path = public
 as $$
 begin
+  return;
+end;
+$$;
+
+-- One holder owns the slot. A second release, or another holder's release,
+-- does not change the count.
+create or replace function public.try_consume_owned_slot(
+  p_action text,
+  p_ip_hash text,
+  p_bucket timestamptz,
+  p_max integer,
+  p_holder text
+) returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_count integer;
+begin
+  if p_holder is null or length(trim(p_holder)) = 0 or p_max is null or p_max < 1 then
+    return false;
+  end if;
+  perform pg_advisory_xact_lock(
+    hashtext(p_action || ':' || p_ip_hash),
+    hashtext(p_bucket::text)
+  );
+  select request_count into current_count
+  from public.action_rate_limit
+  where action = p_action and ip_hash = p_ip_hash and bucket_start = p_bucket
+  for update;
+  if not found then
+    insert into public.action_rate_limit (action, ip_hash, bucket_start, request_count, holder)
+    values (p_action, p_ip_hash, p_bucket, 1, p_holder);
+    return true;
+  end if;
+  if current_count >= p_max then
+    return false;
+  end if;
   update public.action_rate_limit
-    set request_count = request_count - 1
+    set request_count = request_count + 1,
+        holder = p_holder
+  where action = p_action and ip_hash = p_ip_hash and bucket_start = p_bucket;
+  return true;
+end;
+$$;
+
+create or replace function public.release_owned_slot(
+  p_action text,
+  p_ip_hash text,
+  p_bucket timestamptz,
+  p_holder text
+) returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_holder is null or length(trim(p_holder)) = 0 then
+    return false;
+  end if;
+  update public.action_rate_limit
+    set request_count = request_count - 1,
+        holder = null
   where action = p_action
     and ip_hash = p_ip_hash
     and bucket_start = p_bucket
+    and holder = p_holder
     and request_count > 0;
+  return found;
+end;
+$$;
+
+-- Same lock as try_consume_action_rate. Returns the new count, or null when full.
+create or replace function public.try_consume_action_rate_count(
+  p_action text,
+  p_ip_hash text,
+  p_bucket timestamptz,
+  p_max integer
+) returns integer
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  current_count integer;
+begin
+  if p_max is null or p_max < 1 then
+    return null;
+  end if;
+  perform pg_advisory_xact_lock(
+    hashtext(p_action || ':' || p_ip_hash),
+    hashtext(p_bucket::text)
+  );
+  select request_count into current_count
+  from public.action_rate_limit
+  where action = p_action and ip_hash = p_ip_hash and bucket_start = p_bucket
+  for update;
+  if not found then
+    insert into public.action_rate_limit (action, ip_hash, bucket_start, request_count)
+    values (p_action, p_ip_hash, p_bucket, 1);
+    return 1;
+  end if;
+  if current_count >= p_max then
+    return null;
+  end if;
+  update public.action_rate_limit
+    set request_count = request_count + 1
+  where action = p_action and ip_hash = p_ip_hash and bucket_start = p_bucket
+  returning request_count into current_count;
+  return current_count;
+end;
+$$;
+
+-- One invite row per address and event inside 24 hours. The row id is the
+-- operation. A later day is a new row. A retry of the same row is not.
+alter table public.event_invites
+  add column if not exists email_outcome text,
+  add column if not exists email_holder text,
+  add column if not exists email_held_at timestamptz;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'event_invites_email_outcome_check'
+  ) then
+    alter table public.event_invites
+      add constraint event_invites_email_outcome_check
+      check (email_outcome is null or email_outcome in ('pending', 'retryable', 'settled'));
+  end if;
+end $$;
+
+create or replace function public.claim_event_invite(
+  p_campaign_id uuid,
+  p_email text,
+  p_inviter_id uuid,
+  p_name text,
+  p_message text,
+  p_holder text
+) returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  rec public.event_invites%rowtype;
+  new_id uuid;
+begin
+  if p_holder is null or length(trim(p_holder)) = 0
+     or p_email is null or length(trim(p_email)) = 0
+     or p_campaign_id is null or p_inviter_id is null then
+    return jsonb_build_object('result', 'unavailable');
+  end if;
+  perform pg_advisory_xact_lock(
+    hashtext('event-invite'),
+    hashtext(p_campaign_id::text || ':' || lower(trim(p_email)))
+  );
+  select * into rec
+  from public.event_invites
+  where campaign_id = p_campaign_id
+    and lower(invitee_email) = lower(trim(p_email))
+    and sent_at > now() - interval '24 hours'
+  order by sent_at desc
+  limit 1
+  for update;
+  if found then
+    if rec.email_outcome is null
+       or rec.email_outcome = 'settled'
+       or rec.email_outcome not in ('pending', 'retryable') then
+      return jsonb_build_object('result', 'recent', 'id', rec.id);
+    end if;
+    if rec.email_outcome = 'pending'
+       and rec.email_holder is not null
+       and rec.email_holder <> p_holder
+       and rec.email_held_at is not null
+       and rec.email_held_at > now() - interval '90 seconds' then
+      return jsonb_build_object('result', 'busy', 'id', rec.id);
+    end if;
+    update public.event_invites
+      set email_outcome = 'pending',
+          email_holder = p_holder,
+          email_held_at = now()
+    where id = rec.id;
+    return jsonb_build_object('result', 'retry', 'id', rec.id);
+  end if;
+  insert into public.event_invites (
+    campaign_id, inviter_id, invitee_email, invitee_name, message,
+    sent_at, email_outcome, email_holder, email_held_at
+  ) values (
+    p_campaign_id, p_inviter_id, lower(trim(p_email)),
+    nullif(p_name, ''), nullif(p_message, ''),
+    now(), 'pending', p_holder, now()
+  )
+  returning id into new_id;
+  return jsonb_build_object('result', 'created', 'id', new_id);
+end;
+$$;
+
+create or replace function public.finish_event_invite(
+  p_id uuid,
+  p_holder text,
+  p_outcome text
+) returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_outcome is null or p_outcome not in ('settled', 'retryable') then
+    return false;
+  end if;
+  update public.event_invites
+    set email_outcome = p_outcome
+  where id = p_id
+    and email_holder = p_holder
+    and email_outcome is distinct from 'settled';
+  return found;
+end;
+$$;
+
+-- One in-flight org invite per address. A settled or failed lease can be
+-- taken again. A fresh sending lease held by someone else is busy.
+-- Stale is at least 90s, longer than the 60s pre-HTTP inflight window, so a
+-- takeover cannot start a second provider call for an attempt that already
+-- reached HTTP.
+create table if not exists public.email_operation_lease (
+  scope text primary key,
+  holder text not null,
+  state text not null check (state in ('sending', 'settled', 'failed')),
+  token text,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.email_operation_lease add column if not exists token text;
+
+alter table public.email_operation_lease enable row level security;
+revoke all on public.email_operation_lease from public, anon, authenticated;
+
+create or replace function public.email_operation_acquire(
+  p_scope text,
+  p_holder text,
+  p_stale_seconds integer
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  rec public.email_operation_lease%rowtype;
+  stale_seconds integer;
+begin
+  if p_scope is null or length(trim(p_scope)) = 0
+     or p_holder is null or length(trim(p_holder)) = 0 then
+    return 'invalid';
+  end if;
+  stale_seconds := p_stale_seconds;
+  if stale_seconds is null or stale_seconds < 90 then
+    stale_seconds := 180;
+  end if;
+  perform pg_advisory_xact_lock(hashtext('email-op'), hashtext(p_scope));
+  select * into rec from public.email_operation_lease where scope = p_scope for update;
+  if not found then
+    insert into public.email_operation_lease (scope, holder, state, updated_at)
+    values (p_scope, p_holder, 'sending', now());
+    return 'go';
+  end if;
+  if rec.state = 'sending'
+     and rec.holder <> p_holder
+     and rec.updated_at > now() - make_interval(secs => stale_seconds) then
+    return 'busy';
+  end if;
+  update public.email_operation_lease
+    set holder = p_holder, state = 'sending', updated_at = now()
+  where scope = p_scope;
+  return 'go';
+end;
+$$;
+
+create or replace function public.email_operation_finish(
+  p_scope text,
+  p_holder text,
+  p_state text
+) returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if p_state is null or p_state not in ('settled', 'failed') then
+    return false;
+  end if;
+  update public.email_operation_lease
+    set state = p_state, updated_at = now()
+  where scope = p_scope
+    and holder = p_holder
+    and state = 'sending';
+  return found;
+end;
+$$;
+
+-- The accept link stays here, not on organization_members, until the attempt
+-- settles. Authenticated callers cannot read this table.
+create or replace function public.email_operation_remember(
+  p_scope text,
+  p_holder text,
+  p_token text
+) returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  update public.email_operation_lease
+    set token = nullif(p_token, '')
+  where scope = p_scope and holder = p_holder;
+  return found;
+end;
+$$;
+
+create or replace function public.email_operation_recall(p_scope text)
+returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  saved text;
+begin
+  select token into saved from public.email_operation_lease where scope = p_scope;
+  return saved;
 end;
 $$;
 
@@ -716,6 +1045,15 @@ alter table public.email_queue add column if not exists idempotency_key text;
 revoke all on function public.email_delivery_release_held(text, text, text, integer, timestamptz) from public, anon, authenticated;
 revoke all on function public.try_consume_resend_pair(text, timestamptz, integer, text, timestamptz, integer, integer) from public, anon, authenticated;
 revoke all on function public.release_action_rate_slot(text, text, timestamptz) from public, anon, authenticated;
+revoke all on function public.try_consume_owned_slot(text, text, timestamptz, integer, text) from public, anon, authenticated;
+revoke all on function public.release_owned_slot(text, text, timestamptz, text) from public, anon, authenticated;
+revoke all on function public.try_consume_action_rate_count(text, text, timestamptz, integer) from public, anon, authenticated;
+revoke all on function public.claim_event_invite(uuid, text, uuid, text, text, text) from public, anon, authenticated;
+revoke all on function public.finish_event_invite(uuid, text, text) from public, anon, authenticated;
+revoke all on function public.email_operation_acquire(text, text, integer) from public, anon, authenticated;
+revoke all on function public.email_operation_finish(text, text, text) from public, anon, authenticated;
+revoke all on function public.email_operation_remember(text, text, text) from public, anon, authenticated;
+revoke all on function public.email_operation_recall(text) from public, anon, authenticated;
 
 grant execute on function public.reserve_email_provider_quota(text, text, integer, integer, integer) to service_role;
 grant execute on function public.release_email_provider_quota(text, text, integer) to service_role;
@@ -736,6 +1074,15 @@ grant execute on function public.email_delivery_has_recent_uncertainty(text, int
 grant execute on function public.email_delivery_release_held(text, text, text, integer, timestamptz) to service_role;
 grant execute on function public.try_consume_resend_pair(text, timestamptz, integer, text, timestamptz, integer, integer) to service_role;
 grant execute on function public.release_action_rate_slot(text, text, timestamptz) to service_role;
+grant execute on function public.try_consume_owned_slot(text, text, timestamptz, integer, text) to service_role;
+grant execute on function public.release_owned_slot(text, text, timestamptz, text) to service_role;
+grant execute on function public.try_consume_action_rate_count(text, text, timestamptz, integer) to service_role;
+grant execute on function public.claim_event_invite(uuid, text, uuid, text, text, text) to service_role;
+grant execute on function public.finish_event_invite(uuid, text, text) to service_role;
+grant execute on function public.email_operation_acquire(text, text, integer) to service_role;
+grant execute on function public.email_operation_finish(text, text, text) to service_role;
+grant execute on function public.email_operation_remember(text, text, text) to service_role;
+grant execute on function public.email_operation_recall(text) to service_role;
 
 comment on table public.email_provider_quota is
   'App-side recipient reservations for the gated email cutover. A window does not reset on a timer; Brevo reset time is unconfirmed.';

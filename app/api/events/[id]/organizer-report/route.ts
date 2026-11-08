@@ -6,7 +6,8 @@ import { userCanAdminCampaign } from "@/lib/campaign-access";
 import type { Campaign } from "@/lib/types";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { sendOrganizerMetricsEmail } from "@/lib/organizer-email";
-import { consumeEmailKeyRate } from "@/lib/email-send";
+import { consumeEmailKeyRate, consumeEmailKeyRateCount } from "@/lib/email-send";
+import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
 
 export const dynamic = "force-dynamic";
 
@@ -67,19 +68,43 @@ export async function POST(
 
     // Manual reports are unlimited-click by nature; cap per event per hour so
     // a stuck client (or abuse of an organizer-controlled address) can't loop.
-    const underCap = await consumeEmailKeyRate(
-      "organizer_report_manual",
-      `organizer-report:${eventId}`,
-      5,
-    );
-    if (!underCap) {
-      return NextResponse.json(
-        { error: "Report limit reached for this hour. Please try again later." },
-        { status: 429 },
+    // While the gate is on, the consumed count is the operation id so clicks
+    // 2 through 5 are mailed instead of colliding with the first click.
+    let operationId: string | undefined;
+    if (isBrevoCutoverEnabled()) {
+      const slot = await consumeEmailKeyRateCount(
+        "organizer_report_manual",
+        `organizer-report:${eventId}`,
+        5,
       );
+      if (slot === "unavailable") {
+        return NextResponse.json(
+          { error: "The report could not be started. Please try again later.", retryable: true },
+          { status: 503 },
+        );
+      }
+      if (slot == null) {
+        return NextResponse.json(
+          { error: "Report limit reached for this hour. Please try again later." },
+          { status: 429 },
+        );
+      }
+      operationId = String(slot);
+    } else {
+      const underCap = await consumeEmailKeyRate(
+        "organizer_report_manual",
+        `organizer-report:${eventId}`,
+        5,
+      );
+      if (!underCap) {
+        return NextResponse.json(
+          { error: "Report limit reached for this hour. Please try again later." },
+          { status: 429 },
+        );
+      }
     }
 
-    const result = await sendOrganizerMetricsEmail(admin, eventId, "manual");
+    const result = await sendOrganizerMetricsEmail(admin, eventId, "manual", { operationId });
 
     if (!result.ok) {
       if (result.skipped === "no_organizer_email") {

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { randomUUID } from "crypto";
 import {
   getBrandFromHost,
   inviteEmailFrom,
@@ -12,6 +13,8 @@ import type { Campaign, Database } from "@/lib/types";
 import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { consumeEmailKeyRate, sendGuardedEmail } from "@/lib/email-send";
 import { cutoverOperationKey } from "@/lib/email-operation-key";
+import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
+import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { consumeActionRate } from "@/lib/rate-limit";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { withUtm } from "@/lib/utm";
@@ -125,42 +128,102 @@ export async function POST(request: NextRequest) {
         { status: 429 },
       );
     }
-    const { data: recentDup } = await supabase
-      .from("event_invites")
-      .select("id")
-      .eq("campaign_id", event_id)
-      .eq("invitee_email", inviteeEmailLower)
-      .gte("sent_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
-      .limit(1);
-    if (recentDup?.length) {
-      return NextResponse.json(
-        { error: "This person was already invited to this event in the last 24 hours." },
-        { status: 409 },
-      );
-    }
-
-    const inviteRow: EventInviteInsert = {
-      campaign_id: event_id,
-      inviter_id: user.id,
-      invitee_email: inviteeEmailLower,
-      invitee_name: invitee_name || null,
-      message: message || null,
-      sent_at: new Date().toISOString(),
+    const gateOn = isBrevoCutoverEnabled();
+    let invite: {
+      id: string;
+      campaign_id?: string;
+      inviter_id?: string;
+      invitee_email?: string;
+      invitee_name?: string | null;
+      message?: string | null;
     };
+    let inviteHolder: string | null = null;
+    let inviteAdmin: ReturnType<typeof createServiceRoleClient> | null = null;
+    if (gateOn) {
+      // The row id is the operation. A replay and a concurrent request share
+      // it. A new row after 24 hours is a later invite, not a duplicate.
+      inviteHolder = randomUUID();
+      inviteAdmin = createServiceRoleClient();
+      const { data, error } = await inviteAdmin.rpc("claim_event_invite", {
+        p_campaign_id: event_id,
+        p_email: inviteeEmailLower,
+        p_inviter_id: user.id,
+        p_name: typeof invitee_name === "string" ? invitee_name : null,
+        p_message: typeof message === "string" ? message : null,
+        p_holder: inviteHolder,
+      } as never);
+      const claim = data as { result?: string; id?: string } | null;
+      if (error || !claim?.result) {
+        console.error("claim_event_invite failed:", error);
+        return NextResponse.json(
+          { error: "The invite could not be started. Please try again later.", retryable: true },
+          { status: 503 },
+        );
+      }
+      if (claim.result === "recent") {
+        return NextResponse.json(
+          { error: "This person was already invited to this event in the last 24 hours." },
+          { status: 409 },
+        );
+      }
+      if (claim.result === "busy") {
+        return NextResponse.json(
+          { error: "An invite to this person is already being sent." },
+          { status: 409 },
+        );
+      }
+      if ((claim.result !== "created" && claim.result !== "retry") || !claim.id) {
+        return NextResponse.json(
+          { error: "The invite could not be started. Please try again later.", retryable: true },
+          { status: 503 },
+        );
+      }
+      invite = {
+        id: claim.id,
+        campaign_id: event_id,
+        inviter_id: user.id,
+        invitee_email: inviteeEmailLower,
+        invitee_name: invitee_name || null,
+        message: message || null,
+      };
+    } else {
+      const { data: recentDup } = await supabase
+        .from("event_invites")
+        .select("id")
+        .eq("campaign_id", event_id)
+        .eq("invitee_email", inviteeEmailLower)
+        .gte("sent_at", new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+        .limit(1);
+      if (recentDup?.length) {
+        return NextResponse.json(
+          { error: "This person was already invited to this event in the last 24 hours." },
+          { status: 409 },
+        );
+      }
 
-    // Store invite record
-    const { data: invite, error: insertError } = await supabase
-      .from("event_invites")
-      .insert(inviteRow as never)
-      .select()
-      .single();
+      const inviteRow: EventInviteInsert = {
+        campaign_id: event_id,
+        inviter_id: user.id,
+        invitee_email: inviteeEmailLower,
+        invitee_name: invitee_name || null,
+        message: message || null,
+        sent_at: new Date().toISOString(),
+      };
 
-    if (insertError) {
-      console.error("Error creating invite:", insertError);
-      return NextResponse.json(
-        { error: "Failed to create invite" },
-        { status: 500 }
-      );
+      const { data: inserted, error: insertError } = await supabase
+        .from("event_invites")
+        .insert(inviteRow as never)
+        .select()
+        .single();
+
+      if (insertError || !inserted) {
+        console.error("Error creating invite:", insertError);
+        return NextResponse.json(
+          { error: "Failed to create invite" },
+          { status: 500 }
+        );
+      }
+      invite = inserted as { id: string };
     }
 
     // Send email invitation (links + from-address match stored campaign brand/host)
@@ -199,7 +262,8 @@ export async function POST(request: NextRequest) {
         from: inviteEmailFrom(campaignBrand),
         to: inviteeEmailLower,
         kind: "event_invite",
-        idempotencyKey: cutoverOperationKey("event_invite", [event_id, inviteeEmailLower]),
+        idempotencyKey: cutoverOperationKey("event_invite", [invite.id]),
+        operationScope: `event-invite:${invite.id}`,
         subject: `You're invited to teach: ${eventRow.name}`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -237,6 +301,15 @@ export async function POST(request: NextRequest) {
           </div>
         `,
       });
+      const settled = Boolean(send.ok || (!send.ok && (send.ambiguous || send.queued)));
+      if (inviteAdmin && inviteHolder) {
+        const { error: finishError } = await inviteAdmin.rpc("finish_event_invite", {
+          p_id: invite.id,
+          p_holder: inviteHolder,
+          p_outcome: settled ? "settled" : "retryable",
+        } as never);
+        if (finishError) console.error("finish_event_invite failed:", finishError);
+      }
       if (!send.ok) {
         // Be honest: a failed send is a failed invite. The stored row is the
         // operation. Ambiguous means the provider may already have it.

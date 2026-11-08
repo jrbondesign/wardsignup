@@ -531,7 +531,7 @@ export async function sendOrganizerMetricsEmail(
   campaignId: string,
   kind: "digest" | "manual",
   /** Send to this address instead of the organizer (used for the event leader). */
-  opts?: { to?: string },
+  opts?: { to?: string; operationId?: string },
 ): Promise<{
   ok: boolean;
   skipped?: string;
@@ -651,7 +651,6 @@ export async function sendOrganizerMetricsEmail(
   }
 
   try {
-    const hour = new Date().toISOString().slice(0, 13);
     const send = await sendGuardedEmail({
       brand,
       category: "notification",
@@ -667,7 +666,9 @@ export async function sendOrganizerMetricsEmail(
         kind === "digest" ? "organizer_digest" : "organizer_report",
         kind === "digest"
           ? [campaignId, to, phoenixDateKey()]
-          : [campaignId, to, phoenixDateKey(), hour],
+          // The slot is the click. Clicks 2 through 5 in the same hour are
+          // later reports, not replays of the first one.
+          : [campaignId, to, phoenixDateKey(), opts?.operationId],
       ),
     });
     if (!send.ok) {

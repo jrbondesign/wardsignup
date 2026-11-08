@@ -170,6 +170,11 @@ export type GuardedSendParams = {
    * retry of an email Resend already accepted is never sent twice.
    */
   idempotencyKey?: string;
+  /**
+   * Groups an in-flight cutover attempt so a later request can see that the
+   * provider may already have accepted it. Ignored while the gate is off.
+   */
+  operationScope?: string | null;
 };
 
 export async function sendGuardedEmail(params: GuardedSendParams): Promise<GuardedSendResult> {
@@ -268,6 +273,7 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     headers,
     kind: params.kind,
     idempotencyKey: params.idempotencyKey,
+    operationScope: params.operationScope,
   };
   let sent = await deliverEmail(deliverParams, { urgent, realtime });
   const promptKind =
@@ -350,18 +356,93 @@ export async function consumeEmailKeyRate(
   }
 }
 
-/** Give back one slot taken by consumeEmailKeyRate. A second call does not go below zero. */
-export async function releaseEmailKeyRate(action: string, key: string, bucketStart: Date): Promise<void> {
+/**
+ * Take one dedupe slot and record who owns it. "unavailable" means the
+ * limiter could not be read; that is not the same as the slot already being
+ * taken. A later release only succeeds for this holder.
+ */
+export async function consumeOwnedEmailSlot(
+  action: string,
+  key: string,
+  maxPerWindow: number,
+  bucketStart: Date,
+  holder: string,
+): Promise<boolean | "unavailable"> {
   try {
     const admin = createServiceRoleClient();
-    const { error } = await admin.rpc("release_action_rate_slot", {
+    const { data, error } = await admin.rpc("try_consume_owned_slot", {
       p_action: action,
       p_ip_hash: createHash("sha256").update(key).digest("hex"),
       p_bucket: bucketStart.toISOString(),
+      p_max: maxPerWindow,
+      p_holder: holder,
     } as never);
-    if (error) console.error(`email key rate release error for ${action}:`, error);
+    if (error) {
+      console.error(`owned email slot error for ${action} (failing closed):`, error);
+      return "unavailable";
+    }
+    return data === true;
   } catch (e) {
-    console.error(`email key rate release failed for ${action}:`, e);
+    console.error(`owned email slot failed for ${action} (failing closed):`, e);
+    return "unavailable";
+  }
+}
+
+/** Release a slot only when this holder still owns it. A repeat is a no-op. */
+export async function releaseOwnedEmailSlot(
+  action: string,
+  key: string,
+  bucketStart: Date,
+  holder: string,
+): Promise<boolean> {
+  try {
+    const admin = createServiceRoleClient();
+    const { data, error } = await admin.rpc("release_owned_slot", {
+      p_action: action,
+      p_ip_hash: createHash("sha256").update(key).digest("hex"),
+      p_bucket: bucketStart.toISOString(),
+      p_holder: holder,
+    } as never);
+    if (error) {
+      console.error(`owned email slot release error for ${action}:`, error);
+      return false;
+    }
+    return data === true;
+  } catch (e) {
+    console.error(`owned email slot release failed for ${action}:`, e);
+    return false;
+  }
+}
+
+/**
+ * Increment a keyed cap and return the new count. Null means the cap is full.
+ * "unavailable" means the counter could not be read, which is not "full".
+ */
+export async function consumeEmailKeyRateCount(
+  action: string,
+  key: string,
+  maxPerHour: number,
+  bucketStart?: Date,
+): Promise<number | null | "unavailable"> {
+  try {
+    const admin = createServiceRoleClient();
+    const bucket = bucketStart ? new Date(bucketStart) : new Date();
+    if (!bucketStart) bucket.setMinutes(0, 0, 0);
+    const { data, error } = await admin.rpc("try_consume_action_rate_count", {
+      p_action: action,
+      p_ip_hash: createHash("sha256").update(key).digest("hex"),
+      p_bucket: bucket.toISOString(),
+      p_max: maxPerHour,
+    } as never);
+    if (error) {
+      console.error(`email key rate count error for ${action} (failing closed):`, error);
+      return "unavailable";
+    }
+    if (typeof data === "number" && Number.isInteger(data) && data >= 1) return data;
+    return null;
+  } catch (e) {
+    console.error(`email key rate count failed for ${action} (failing closed):`, e);
+    return "unavailable";
   }
 }
 
