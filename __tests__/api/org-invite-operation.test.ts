@@ -152,10 +152,11 @@ it("does not replace a token after an ambiguous send", async () => {
   expect(await first.json()).toMatchObject({ ok: true, delivery: "unconfirmed" });
   expect(state.upserts[0].accept_token).toBeNull();
   expect(savedToken).toBeNull();
-  expect(state.member?.invite_last_sent_at).toBeTruthy();
+  expect(state.member?.invite_last_sent_at ?? null).toBeNull();
   const hash = state.member?.accept_token_hash;
   const cooled = await POST(req(), params);
-  expect(cooled.status).toBe(429);
+  expect(cooled.status).toBe(200);
+  expect(await cooled.json()).toEqual({ ok: true, delivery: "unconfirmed" });
   expect(sendGuardedEmail).toHaveBeenCalledTimes(1);
   expect(state.upserts).toHaveLength(1);
   expect(state.member?.accept_token_hash).toBe(hash);
@@ -175,6 +176,28 @@ it("does not replace a token after an ambiguous send", async () => {
   expect(rpc.mock.calls.filter((call) => call[0] === "email_operation_finish").map((call) => (call[1] as { p_state: string }).p_state)).toEqual([
     "ambiguous",
   ]);
+});
+
+it("reports an already stamped ambiguous invite as unconfirmed", async () => {
+  const { state, supabase } = harness();
+  state.member = {
+    invite_last_sent_at: new Date().toISOString(),
+    accept_token: null,
+    accept_token_hash: "kept-hash",
+  };
+  reissueBlocked = true;
+  (getAuthFromRequest as jest.Mock).mockResolvedValue({
+    ok: true,
+    supabase,
+    user: { id: OWNER, email: "owner@example.com" },
+  });
+  const res = await POST(req(), params);
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ ok: true, delivery: "unconfirmed" });
+  expect(sendGuardedEmail).not.toHaveBeenCalled();
+  expect(rpc.mock.calls.filter((call) => call[0] === "email_operation_remember")).toHaveLength(0);
+  expect(state.upserts).toHaveLength(0);
+  expect(state.member?.accept_token_hash).toBe("kept-hash");
 });
 
 it("does not mint after an ambiguous finish once the cooldown and uncertainty have expired", async () => {
@@ -247,6 +270,10 @@ it("waits out the hour after the queued copy is accepted, then mints one new lin
     accept_token: null,
     accept_token_hash: firstHash as string,
   };
+  rpc.mockImplementationOnce(async (name: string, args?: { p_token?: string | null; p_state?: string }) => {
+    if (name === "email_operation_acquire") return { data: "settled", error: null };
+    return leaseRpc(name, args);
+  });
   const cooling = await POST(req(), params);
   expect(cooling.status).toBe(429);
   expect(sendGuardedEmail).toHaveBeenCalledTimes(1);

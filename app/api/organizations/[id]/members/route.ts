@@ -139,7 +139,13 @@ export async function POST(
       .eq("invited_email", rawEmail)
       .maybeSingle();
     const lastSent = (prevRow as { invite_last_sent_at?: string | null } | null)?.invite_last_sent_at;
-    if (lastSent && Date.now() - new Date(lastSent).getTime() < 60 * 60 * 1000) {
+    const recentInvite = Boolean(
+      lastSent && Date.now() - new Date(lastSent).getTime() < 60 * 60 * 1000,
+    );
+    // Gate off has no lease. The timestamp is the only cooldown.
+    // Gate on asks the lease first: an ambiguous row is unconfirmed even when
+    // an older write stamped this column, and a proven acceptance still waits.
+    if (!gateOn && recentInvite) {
       return NextResponse.json(
         { error: "An invite was just sent to this address. Try again in an hour." },
         { status: 429 },
@@ -171,6 +177,12 @@ export async function POST(
           return NextResponse.json({ ok: true, delivery: "queued" }, { status: 202 });
         }
         if (lease === "settled") {
+          if (recentInvite) {
+            return NextResponse.json(
+              { error: "An invite was just sent to this address. Try again in an hour." },
+              { status: 429 },
+            );
+          }
           return NextResponse.json({ ok: true, delivery: "sent" });
         }
         console.error("email_operation_acquire failed:", leaseError);
@@ -381,7 +393,7 @@ export async function POST(
           p_state: disposition,
         } as never);
         if (finishError) console.error("email_operation_finish failed:", finishError);
-        if (disposition === "accepted" || disposition === "ambiguous") {
+        if (disposition === "accepted") {
           await supabase
             .from("organization_members")
             .update({ invite_last_sent_at: new Date().toISOString() } as never)

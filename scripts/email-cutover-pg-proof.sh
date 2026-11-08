@@ -2412,4 +2412,172 @@ begin
 end $$;
 SQL
 
+# An ambiguous finish does not stamp. A route-shaped stamp still stays blocked.
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+insert into public.organization_members (organization_id, invited_email)
+values ('11111111-1111-4111-8111-111111111111', 'finishamb@example.com');
+set role cutover_tester;
+do $$
+declare
+  scope text := 'org-member:11111111-1111-4111-8111-111111111111:finishamb@example.com';
+  taken text;
+begin
+  taken := public.email_operation_acquire(scope, 'holder-a', 180);
+  if taken <> 'go' then
+    raise exception 'ambiguous finish lease did not start: %', taken;
+  end if;
+  if not public.email_operation_remember(scope, 'holder-a', 'token-amb') then
+    raise exception 'ambiguous finish lease did not store its token';
+  end if;
+  if not public.email_operation_finish(scope, 'holder-a', 'ambiguous') then
+    raise exception 'ambiguous finish did not block';
+  end if;
+  taken := public.email_operation_acquire(scope, 'holder-b', 180);
+  if taken <> 'blocked' then
+    raise exception 'ambiguous finish minted: %', taken;
+  end if;
+end $$;
+reset role;
+do $$
+declare
+  stamped timestamptz;
+begin
+  select invite_last_sent_at into stamped
+  from public.organization_members
+  where invited_email = 'finishamb@example.com';
+  if stamped is not null then
+    raise exception 'ambiguous finish stamped the cooldown';
+  end if;
+end $$;
+update public.organization_members
+  set invite_last_sent_at = now()
+where invited_email = 'finishamb@example.com';
+set role cutover_tester;
+do $$
+declare
+  scope text := 'org-member:11111111-1111-4111-8111-111111111111:finishamb@example.com';
+  taken text;
+begin
+  taken := public.email_operation_acquire(scope, 'holder-c', 180);
+  if taken <> 'blocked' then
+    raise exception 'stamped ambiguous lease was reported settled: %', taken;
+  end if;
+  if public.email_operation_remember(scope, 'holder-c', 'brand-new-token') then
+    raise exception 'stamped ambiguous lease stored a token';
+  end if;
+end $$;
+reset role;
+do $$
+declare
+  saved text;
+  blocked boolean;
+  lease_phase text;
+begin
+  select phase, block_reissue, token into lease_phase, blocked, saved
+  from public.email_operation_lease
+  where scope = 'org-member:11111111-1111-4111-8111-111111111111:finishamb@example.com';
+  if lease_phase <> 'ambiguous' or blocked is not true or saved is not null then
+    raise exception 'stamped ambiguous lease changed: % % %', lease_phase, blocked, saved;
+  end if;
+end $$;
+update public.organization_members
+  set invite_last_sent_at = now() - interval '2 hours'
+where invited_email = 'finishamb@example.com';
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:finishamb@example.com', 'holder-d', 180
+  );
+  if taken <> 'blocked' then
+    raise exception 'expired ambiguous stamp opened a mint: %', taken;
+  end if;
+end $$;
+reset role;
+SQL
+
+# Acquire holds the scope lock and the lease row, then apply needs the key.
+# Apply must take that scope lock before the key, or the two transactions deadlock.
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+insert into public.organization_members (organization_id, invited_email)
+values ('11111111-1111-4111-8111-111111111111', 'deadlock@example.com');
+insert into public.email_operation_lease (
+  scope, holder, state, token, had_token, block_reissue, phase, queue_key, updated_at
+) values (
+  'org-member:11111111-1111-4111-8111-111111111111:deadlock@example.com',
+  'holder-a', 'settled', 'token-dead', true, false, 'queued',
+  'org_member_invite/deadlock', now()
+);
+SQL
+
+dead_scope='org-member:11111111-1111-4111-8111-111111111111:deadlock@example.com'
+holder_pid=""
+"${PSQL[@]}" -d "${DB}" >/tmp/cutover-deadlock-holder.out <<SQL &
+begin;
+select pg_advisory_xact_lock(hashtext('email-op'), hashtext('${dead_scope}'));
+select 1 from public.email_operation_lease where scope = '${dead_scope}' for update;
+select pg_sleep(2);
+select public.email_operation_apply_queue_result('org_member_invite/deadlock', 'accepted');
+commit;
+SQL
+holder_pid=$!
+
+held=0
+for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+  held=$("${PSQL[@]}" -d "${DB}" -tAc "select count(*) from pg_locks where locktype = 'advisory' and granted and classid = hashtext('email-op') and objid = hashtext('${dead_scope}')" || true)
+  held="${held// /}"
+  if [[ "${held}" == "1" ]]; then
+    break
+  fi
+  sleep 0.05
+done
+if [[ "${held}" != "1" ]]; then
+  echo "lock-order holder did not take the scope lock"
+  wait "${holder_pid}" || true
+  cat /tmp/cutover-deadlock-holder.out || true
+  exit 1
+fi
+
+drain_status=0
+"${PSQL[@]}" -d "${DB}" -c "set deadlock_timeout = '500ms'; set lock_timeout = '8s'; select public.email_operation_apply_queue_result('org_member_invite/deadlock', 'rejected');" >/tmp/cutover-deadlock-drain.out || drain_status=$?
+wait "${holder_pid}" || holder_status=$?
+holder_status=${holder_status:-0}
+if [[ "${holder_status}" -ne 0 || "${drain_status}" -ne 0 ]]; then
+  echo "lock-order race aborted holder ${holder_status} drain ${drain_status}"
+  cat /tmp/cutover-deadlock-holder.out || true
+  cat /tmp/cutover-deadlock-drain.out || true
+  exit 1
+fi
+rm -f /tmp/cutover-deadlock-holder.out /tmp/cutover-deadlock-drain.out
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+do $$
+declare
+  lease_phase text;
+  blocked boolean;
+  saved text;
+  stamped timestamptz;
+  drain_ignored text;
+begin
+  select phase, block_reissue, token into lease_phase, blocked, saved
+  from public.email_operation_lease
+  where scope = 'org-member:11111111-1111-4111-8111-111111111111:deadlock@example.com';
+  if lease_phase <> 'settled' or blocked or saved is not null then
+    raise exception 'lock-order race did not settle once: % % %', lease_phase, blocked, saved;
+  end if;
+  select invite_last_sent_at into stamped
+  from public.organization_members
+  where invited_email = 'deadlock@example.com';
+  if stamped is null then
+    raise exception 'lock-order acceptance did not stamp the cooldown';
+  end if;
+  drain_ignored := public.email_operation_apply_queue_result('org_member_invite/deadlock', 'rejected');
+  if drain_ignored <> 'ignored' then
+    raise exception 'late rejection after the lock-order race downgraded acceptance: %', drain_ignored;
+  end if;
+end $$;
+SQL
+
 echo "email-cutover postgres proof ok"

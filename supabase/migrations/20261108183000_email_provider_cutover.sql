@@ -1056,6 +1056,11 @@ begin
   end if;
   perform pg_advisory_xact_lock(hashtext('email-op'), hashtext(p_scope));
   select * into rec from public.email_operation_lease where scope = p_scope for update;
+  -- An ambiguous lease is not an acceptance. The member timestamp can be set
+  -- by an older route write; it does not turn this row into a sent invite.
+  if found and (rec.block_reissue or rec.phase = 'ambiguous') then
+    return 'blocked';
+  end if;
   -- The member stamp is the cooldown, including when this scope has no lease yet.
   -- A stored token is not a new invite; its holder still reuses it below.
   if public.email_operation_invite_cooling(p_scope) and (not found or rec.token is null) then
@@ -1316,6 +1321,7 @@ declare
   rec public.email_operation_lease%rowtype;
   attempt public.email_delivery_attempts%rowtype;
   key text;
+  scope_for_lock text;
   attempt_found boolean := false;
 begin
   if p_idempotency_key is null or length(trim(p_idempotency_key)) = 0 then
@@ -1325,6 +1331,24 @@ begin
     return 'ignored';
   end if;
   key := trim(p_idempotency_key);
+  -- Same order as acquire: the scope lock, then this key, then the lease row.
+  -- Acquire already holds the scope lock and the row when it calls here. Taking
+  -- the key first deadlocks that caller against a drain that holds the key and
+  -- waits for the row.
+  select scope into scope_for_lock
+  from public.email_operation_lease
+  where queue_key = key
+  limit 1;
+  if scope_for_lock is null then
+    select operation_scope into scope_for_lock
+    from public.email_delivery_attempts
+    where idempotency_key = key
+      and operation_scope is not null
+    limit 1;
+  end if;
+  if scope_for_lock is not null then
+    perform pg_advisory_xact_lock(hashtext('email-op'), hashtext(scope_for_lock));
+  end if;
   perform pg_advisory_xact_lock(hashtext('email-op-key'), hashtext(key));
   select * into attempt from public.email_delivery_attempts where idempotency_key = key;
   attempt_found := found;
