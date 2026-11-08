@@ -1,0 +1,224 @@
+#!/usr/bin/env bash
+# Disposable local Postgres proof for the unapplied cutover migration.
+# Creates and drops its own database. Does not touch a hosted database.
+set -euo pipefail
+
+if ! command -v psql >/dev/null 2>&1; then
+  echo "psql is not installed"
+  exit 2
+fi
+if ! pg_isready -q 2>/dev/null && ! sudo -u postgres pg_isready -q; then
+  echo "local postgres is not running"
+  exit 2
+fi
+
+DB="wardsignup_cutover_proof_$$"
+PSQL=(sudo -u postgres psql -v ON_ERROR_STOP=1 -X -q)
+
+cleanup() {
+  sudo -u postgres psql -X -q -c "drop database if exists ${DB};" >/dev/null 2>&1 || true
+}
+trap cleanup EXIT
+
+"${PSQL[@]}" -d postgres -c "drop database if exists ${DB};"
+"${PSQL[@]}" -d postgres <<'SQL'
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'service_role') then
+    create role service_role nologin;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'anon') then
+    create role anon nologin;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'authenticated') then
+    create role authenticated nologin;
+  end if;
+  if not exists (select 1 from pg_roles where rolname = 'cutover_tester') then
+    create role cutover_tester nologin;
+  end if;
+end $$;
+SQL
+"${PSQL[@]}" -d postgres -c "grant service_role to cutover_tester;"
+"${PSQL[@]}" -d postgres -c "create database ${DB};"
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+create table public.email_queue (
+  id uuid primary key default gen_random_uuid(),
+  status text not null default 'pending'
+    check (status in ('pending', 'sending', 'sent', 'failed', 'skipped'))
+);
+grant usage on schema public to cutover_tester, anon;
+SQL
+
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+"${PSQL[@]}" -d "${DB}" -f "${ROOT}/supabase/migrations/20261108183000_email_provider_cutover.sql" >/dev/null
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+-- Functions are security definer. Direct table reads run as the owner because
+-- service_role has no RLS policy; Supabase's service_role bypasses RLS and
+-- this local role does not.
+set role cutover_tester;
+do $$
+declare
+  outcome jsonb;
+begin
+  outcome := public.reserve_email_provider_quota('brevo', 'open', 1, 300, null);
+  if outcome->>'result' <> 'unknown' then
+    raise exception 'missing seed returned %', outcome;
+  end if;
+  outcome := public.reserve_email_provider_quota('brevo', 'seeded', 1, 300, 12);
+  if outcome->>'result' <> 'reserved' or (outcome->>'reserved')::int <> 13 then
+    raise exception 'seeded reserve returned %', outcome;
+  end if;
+  outcome := public.reserve_email_provider_quota('brevo', 'seeded', 1, 300, 0);
+  if outcome->>'result' <> 'reserved' or (outcome->>'reserved')::int <> 14 then
+    raise exception 'second reserve returned %', outcome;
+  end if;
+  -- A window that is already full at open stays full. A later seed of 0 does not reopen it.
+  outcome := public.reserve_email_provider_quota('brevo', 'full-open', 1, 300, 300);
+  if outcome->>'result' <> 'full' or (outcome->>'reserved')::int <> 300 then
+    raise exception 'full-open reserve returned %', outcome;
+  end if;
+  outcome := public.reserve_email_provider_quota('brevo', 'full-open', 1, 300, 0);
+  if outcome->>'result' <> 'full' or (outcome->>'reserved')::int <> 300 then
+    raise exception 'full-open was reopened: %', outcome;
+  end if;
+end $$;
+reset role;
+do $$
+declare
+  n int;
+  reserved int;
+begin
+  select count(*) into n from public.email_provider_quota where window_key = 'open';
+  if n <> 0 then
+    raise exception 'missing seed inserted a row';
+  end if;
+  select reserved_recipients into reserved from public.email_provider_quota where window_key = 'seeded';
+  if reserved <> 14 then
+    raise exception 'seeded row is %', reserved;
+  end if;
+  select reserved_recipients into reserved from public.email_provider_quota where window_key = 'full-open';
+  if reserved <> 300 then
+    raise exception 'full-open row is %', reserved;
+  end if;
+end $$;
+SQL
+
+# Five parallel reservations against a cap of 2. The advisory lock must keep the total at 2.
+for i in 1 2 3 4 5; do
+  "${PSQL[@]}" -d "${DB}" -c "set role cutover_tester; select public.reserve_email_provider_quota('brevo', 'race', 1, 2, 0);" >/dev/null &
+done
+wait
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+do $$
+declare
+  reserved int;
+begin
+  select reserved_recipients into reserved
+  from public.email_provider_quota
+  where provider = 'brevo' and window_key = 'race';
+  if reserved <> 2 then
+    raise exception 'parallel reserve total %, expected 2', reserved;
+  end if;
+end $$;
+
+set role cutover_tester;
+do $$
+declare
+  outcome jsonb;
+  action text;
+  phase text;
+  http_started boolean;
+begin
+  -- Pre-HTTP inflight stays retryable after it is stale.
+  outcome := public.email_delivery_claim('k1', 'wardsignup', 'magic_link', 'a@example.com', 1, now(), 'magic:wardsignup:a@example.com');
+  if outcome->>'action' <> 'send_primary' then
+    raise exception 'first claim %', outcome;
+  end if;
+  reset role;
+  update public.email_delivery_attempts
+    set updated_at = now() - interval '2 minutes', http_started = false
+  where idempotency_key = 'k1';
+  set role cutover_tester;
+  outcome := public.email_delivery_claim('k1', 'wardsignup', 'magic_link', 'a@example.com', 1, now(), null);
+  action := outcome->>'action';
+  phase := outcome->'row'->>'phase';
+  if action <> 'send_primary' or phase <> 'primary_inflight' then
+    raise exception 'stale pre-http claim %', outcome;
+  end if;
+
+  -- HTTP-started inflight becomes ambiguous and does not send again.
+  perform public.email_delivery_mark_http_started('k1', now() - interval '2 minutes');
+  reset role;
+  update public.email_delivery_attempts
+    set updated_at = now() - interval '2 minutes'
+  where idempotency_key = 'k1';
+  set role cutover_tester;
+  outcome := public.email_delivery_claim('k1', 'wardsignup', 'magic_link', 'a@example.com', 1, now(), null);
+  action := outcome->>'action';
+  phase := outcome->'row'->>'phase';
+  http_started := (outcome->'row'->>'httpStarted')::boolean;
+  if action <> 'stop' or phase <> 'primary_ambiguous' or http_started is not true then
+    raise exception 'stale http claim %', outcome;
+  end if;
+
+  -- Finish failure is visible: a missing key returns false.
+  if public.email_delivery_finish('missing', 'primary_rejected', 'auth', 'brevo', null, 'no', null, false, now()) then
+    raise exception 'finish of a missing row returned true';
+  end if;
+
+  -- Message ids match with or without brackets.
+  perform public.email_delivery_claim('k2', 'wardsignup', 'magic_link', 'b@example.com', 1, now(), null);
+  if not public.email_delivery_finish('k2', 'primary_accepted', null, 'brevo', '<Abc@Brevo>', null, 'accepted', true, now()) then
+    raise exception 'finish did not record';
+  end if;
+  perform public.apply_email_provider_event('ABC@brevo', null, 'bounced');
+  reset role;
+  if (select delivery_status from public.email_delivery_attempts where idempotency_key = 'k2') <> 'bounced' then
+    raise exception 'normalized message id did not match';
+  end if;
+  set role cutover_tester;
+
+  -- Receipt is not a second apply. Seen is false, then true.
+  if public.email_webhook_event_seen('brevo', 'e1') then
+    raise exception 'event was seen before insert';
+  end if;
+  if not public.record_email_webhook_event('brevo', 'e1') then
+    raise exception 'event was not inserted';
+  end if;
+  if public.record_email_webhook_event('brevo', 'e1') then
+    raise exception 'event inserted twice';
+  end if;
+  if not public.email_webhook_event_seen('brevo', 'e1') then
+    raise exception 'event was not seen after insert';
+  end if;
+end $$;
+reset role;
+
+-- anon cannot call the quota function or read the table.
+do $$
+begin
+  begin
+    execute 'set role anon';
+    begin
+      perform public.reserve_email_provider_quota('brevo', 'nope', 1, 300, 0);
+      raise exception 'anon was allowed to reserve';
+    exception
+      when insufficient_privilege then
+        null;
+    end;
+    begin
+      perform 1 from public.email_provider_quota;
+      raise exception 'anon was allowed to read quota';
+    exception
+      when insufficient_privilege then
+        null;
+    end;
+    reset role;
+  end;
+end $$;
+SQL
+
+echo "email-cutover postgres proof ok"

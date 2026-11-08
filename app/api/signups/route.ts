@@ -199,6 +199,7 @@ export async function POST(request: Request) {
               cancelUrl,
               cancelToken: cancelToken ?? undefined,
               guestNames: guest_names.length > 0 ? guest_names : undefined,
+              operationId: signupId,
             });
             if (!r.ok) console.error("Participant confirmation send:", r.error);
           }

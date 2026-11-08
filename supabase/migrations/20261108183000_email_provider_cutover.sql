@@ -27,6 +27,8 @@ create table if not exists public.email_delivery_attempts (
   provider text check (provider in ('brevo', 'resend')),
   provider_message_id text,
   http_started boolean not null default false,
+  quota_held boolean not null default false,
+  operation_scope text,
   last_error text,
   delivery_status text check (delivery_status in (
     'accepted', 'deferred', 'delivered', 'bounced', 'complained', 'suppressed'
@@ -41,6 +43,10 @@ create index if not exists email_delivery_attempts_message_idx
 
 create index if not exists email_delivery_attempts_tag_idx
   on public.email_delivery_attempts (tag);
+
+create index if not exists email_delivery_attempts_scope_idx
+  on public.email_delivery_attempts (operation_scope, updated_at desc)
+  where operation_scope is not null;
 
 create table if not exists public.email_webhook_events (
   provider text not null,
@@ -86,7 +92,8 @@ create or replace function public.reserve_email_provider_quota(
   p_provider text,
   p_window_key text,
   p_recipients integer,
-  p_cap integer
+  p_cap integer,
+  p_seed integer
 ) returns jsonb
 language plpgsql
 security definer
@@ -116,7 +123,17 @@ begin
   end if;
 
   if not found then
-    row_reserved := 0;
+    -- No row is not "zero used". The seed is dashboard usage, including
+    -- marketing and other senders, written in this same transaction.
+    if p_seed is null or p_seed < 0 then
+      return jsonb_build_object('result', 'unknown');
+    end if;
+    row_reserved := p_seed;
+    if row_reserved + p_recipients > p_cap then
+      insert into public.email_provider_quota (provider, window_key, reserved_recipients, exhausted)
+      values (p_provider, p_window_key, row_reserved, false);
+      return jsonb_build_object('result', 'full', 'reserved', row_reserved, 'cap', p_cap);
+    end if;
   end if;
 
   if row_reserved + p_recipients > p_cap then
@@ -191,6 +208,7 @@ as $$
     'provider', provider,
     'messageId', provider_message_id,
     'httpStarted', http_started,
+    'quotaHeld', quota_held,
     'lastError', last_error,
     'updatedAt', floor(extract(epoch from updated_at) * 1000),
     'deliveryStatus', delivery_status
@@ -205,7 +223,8 @@ create or replace function public.email_delivery_claim(
   p_kind text,
   p_to_address text,
   p_recipient_count integer,
-  p_now timestamptz
+  p_now timestamptz,
+  p_scope text
 ) returns jsonb
 language plpgsql
 security definer
@@ -227,26 +246,42 @@ begin
 
   if not found then
     insert into public.email_delivery_attempts (
-      idempotency_key, brand_id, kind, to_address, recipient_count, tag, phase, updated_at
+      idempotency_key, brand_id, kind, to_address, recipient_count, tag, phase, operation_scope, updated_at
     ) values (
-      p_key, p_brand_id, p_kind, p_to_address, p_recipient_count, tag, 'primary_inflight', p_now
+      p_key, p_brand_id, p_kind, p_to_address, p_recipient_count, tag, 'primary_inflight', nullif(p_scope, ''), p_now
     );
     return jsonb_build_object('action', 'send_primary', 'row', public.email_delivery_row(p_key));
   end if;
 
   if rec.phase in ('primary_inflight', 'fallback_inflight') then
-    if rec.http_started or rec.updated_at <= p_now - interval '60 seconds' then
-      next_phase := case when rec.phase = 'primary_inflight' then 'primary_ambiguous' else 'fallback_ambiguous' end;
-      update public.email_delivery_attempts
-        set phase = next_phase,
-            last_error = coalesce(last_error, 'inflight closed as ambiguous'),
-            updated_at = p_now
-      where idempotency_key = p_key;
+    if rec.http_started then
+      if rec.updated_at <= p_now - interval '60 seconds' then
+        next_phase := case when rec.phase = 'primary_inflight' then 'primary_ambiguous' else 'fallback_ambiguous' end;
+        update public.email_delivery_attempts
+          set phase = next_phase,
+              last_error = coalesce(last_error, 'inflight closed as ambiguous'),
+              updated_at = p_now
+        where idempotency_key = p_key;
+      end if;
+      return jsonb_build_object('action', 'stop', 'row', public.email_delivery_row(p_key));
     end if;
-    return jsonb_build_object('action', 'stop', 'row', public.email_delivery_row(p_key));
+    update public.email_delivery_attempts
+      set updated_at = p_now
+    where idempotency_key = p_key;
+    return jsonb_build_object(
+      'action', case when rec.phase = 'fallback_inflight' then 'send_fallback' else 'send_primary' end,
+      'row', public.email_delivery_row(p_key)
+    );
   end if;
 
   if rec.phase = 'primary_rejected' and rec.rejection_class = 'rate_limited' then
+    update public.email_delivery_attempts
+      set phase = 'primary_inflight', http_started = false, updated_at = p_now
+    where idempotency_key = p_key;
+    return jsonb_build_object('action', 'send_primary', 'row', public.email_delivery_row(p_key));
+  end if;
+
+  if rec.phase = 'primary_rejected' and rec.rejection_class = 'unknown' and not rec.http_started then
     update public.email_delivery_attempts
       set phase = 'primary_inflight', http_started = false, updated_at = p_now
     where idempotency_key = p_key;
@@ -260,6 +295,13 @@ begin
     return jsonb_build_object('action', 'send_fallback', 'row', public.email_delivery_row(p_key));
   end if;
 
+  if rec.phase = 'fallback_rejected' and rec.rejection_class = 'unknown' and not rec.http_started then
+    update public.email_delivery_attempts
+      set phase = 'fallback_inflight', http_started = false, provider = 'resend', updated_at = p_now
+    where idempotency_key = p_key;
+    return jsonb_build_object('action', 'send_fallback', 'row', public.email_delivery_row(p_key));
+  end if;
+
   return jsonb_build_object('action', 'stop', 'row', public.email_delivery_row(p_key));
 end;
 $$;
@@ -267,15 +309,59 @@ $$;
 create or replace function public.email_delivery_mark_http_started(
   p_key text,
   p_now timestamptz
-) returns void
+) returns boolean
 language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  updated text;
 begin
   update public.email_delivery_attempts
     set http_started = true, updated_at = p_now
-  where idempotency_key = p_key;
+  where idempotency_key = p_key
+  returning idempotency_key into updated;
+  return updated is not null;
+end;
+$$;
+
+create or replace function public.email_delivery_mark_quota_held(
+  p_key text,
+  p_held boolean,
+  p_now timestamptz
+) returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated text;
+begin
+  update public.email_delivery_attempts
+    set quota_held = coalesce(p_held, false), updated_at = p_now
+  where idempotency_key = p_key
+  returning idempotency_key into updated;
+  return updated is not null;
+end;
+$$;
+
+create or replace function public.email_delivery_clear_http(
+  p_key text,
+  p_now timestamptz
+) returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated text;
+begin
+  update public.email_delivery_attempts
+    set http_started = false, updated_at = p_now
+  where idempotency_key = p_key
+    and phase in ('primary_inflight', 'fallback_inflight')
+  returning idempotency_key into updated;
+  return updated is not null;
 end;
 $$;
 
@@ -287,8 +373,9 @@ create or replace function public.email_delivery_finish(
   p_message_id text,
   p_error text,
   p_delivery_status text,
+  p_http_started boolean,
   p_now timestamptz
-) returns void
+) returns boolean
 language plpgsql
 security definer
 set search_path = public
@@ -296,11 +383,16 @@ as $$
 declare
   current_status text;
   keep_status text;
+  updated text;
 begin
   select delivery_status into current_status
   from public.email_delivery_attempts
   where idempotency_key = p_key
   for update;
+
+  if not found then
+    return false;
+  end if;
 
   keep_status := current_status;
   if p_delivery_status is not null then
@@ -315,12 +407,23 @@ begin
     set phase = p_phase,
         rejection_class = coalesce(p_rejection_class, rejection_class),
         provider = coalesce(p_provider, provider),
-        provider_message_id = coalesce(p_message_id, provider_message_id),
+        provider_message_id = coalesce(public.normalize_email_message_id(p_message_id), provider_message_id),
+        http_started = coalesce(p_http_started, http_started),
         last_error = p_error,
         delivery_status = keep_status,
         updated_at = p_now
-  where idempotency_key = p_key;
+  where idempotency_key = p_key
+  returning idempotency_key into updated;
+  return updated is not null;
 end;
+$$;
+
+create or replace function public.normalize_email_message_id(p_message_id text)
+returns text
+language sql
+immutable
+as $$
+  select nullif(lower(trim(both '<>' from btrim(coalesce(p_message_id, '')))), '');
 $$;
 
 create or replace function public.email_status_rank(p_status text)
@@ -389,9 +492,9 @@ begin
     return;
   end if;
 
-  if p_message_id is not null and length(trim(p_message_id)) > 0 then
+  if p_message_id is not null and public.normalize_email_message_id(p_message_id) is not null then
     select * into rec from public.email_delivery_attempts
-    where provider_message_id = p_message_id
+    where public.normalize_email_message_id(provider_message_id) = public.normalize_email_message_id(p_message_id)
     order by updated_at desc
     limit 1
     for update;
@@ -423,29 +526,74 @@ begin
 end;
 $$;
 
-revoke all on function public.reserve_email_provider_quota(text, text, integer, integer) from public, anon, authenticated;
+create or replace function public.email_webhook_event_seen(
+  p_provider text,
+  p_event_id text
+) returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.email_webhook_events
+    where provider = p_provider and event_id = p_event_id
+  );
+$$;
+
+create or replace function public.email_delivery_has_recent_uncertainty(
+  p_scope text,
+  p_within_seconds integer
+) returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from public.email_delivery_attempts
+    where operation_scope = p_scope
+      and updated_at > now() - make_interval(secs => greatest(coalesce(p_within_seconds, 0), 0))
+      and (
+        phase in ('primary_ambiguous', 'fallback_ambiguous')
+        or (phase in ('primary_inflight', 'fallback_inflight') and http_started)
+      )
+  );
+$$;
+
+revoke all on function public.reserve_email_provider_quota(text, text, integer, integer, integer) from public, anon, authenticated;
 revoke all on function public.release_email_provider_quota(text, text, integer) from public, anon, authenticated;
 revoke all on function public.exhaust_email_provider_quota(text, text) from public, anon, authenticated;
 revoke all on function public.email_delivery_row(text) from public, anon, authenticated;
-revoke all on function public.email_delivery_claim(text, text, text, text, integer, timestamptz) from public, anon, authenticated;
+revoke all on function public.email_delivery_claim(text, text, text, text, integer, timestamptz, text) from public, anon, authenticated;
 revoke all on function public.email_delivery_mark_http_started(text, timestamptz) from public, anon, authenticated;
-revoke all on function public.email_delivery_finish(text, text, text, text, text, text, text, timestamptz) from public, anon, authenticated;
+revoke all on function public.email_delivery_mark_quota_held(text, boolean, timestamptz) from public, anon, authenticated;
+revoke all on function public.email_delivery_clear_http(text, timestamptz) from public, anon, authenticated;
+revoke all on function public.email_delivery_finish(text, text, text, text, text, text, text, boolean, timestamptz) from public, anon, authenticated;
+revoke all on function public.normalize_email_message_id(text) from public, anon, authenticated;
 revoke all on function public.email_status_rank(text) from public, anon, authenticated;
 revoke all on function public.record_email_webhook_event(text, text) from public, anon, authenticated;
+revoke all on function public.email_webhook_event_seen(text, text) from public, anon, authenticated;
 revoke all on function public.forget_email_webhook_event(text, text) from public, anon, authenticated;
 revoke all on function public.apply_email_provider_event(text, text, text) from public, anon, authenticated;
+revoke all on function public.email_delivery_has_recent_uncertainty(text, integer) from public, anon, authenticated;
 
-grant execute on function public.reserve_email_provider_quota(text, text, integer, integer) to service_role;
+grant execute on function public.reserve_email_provider_quota(text, text, integer, integer, integer) to service_role;
 grant execute on function public.release_email_provider_quota(text, text, integer) to service_role;
 grant execute on function public.exhaust_email_provider_quota(text, text) to service_role;
 grant execute on function public.email_delivery_row(text) to service_role;
-grant execute on function public.email_delivery_claim(text, text, text, text, integer, timestamptz) to service_role;
+grant execute on function public.email_delivery_claim(text, text, text, text, integer, timestamptz, text) to service_role;
 grant execute on function public.email_delivery_mark_http_started(text, timestamptz) to service_role;
-grant execute on function public.email_delivery_finish(text, text, text, text, text, text, text, timestamptz) to service_role;
+grant execute on function public.email_delivery_mark_quota_held(text, boolean, timestamptz) to service_role;
+grant execute on function public.email_delivery_clear_http(text, timestamptz) to service_role;
+grant execute on function public.email_delivery_finish(text, text, text, text, text, text, text, boolean, timestamptz) to service_role;
+grant execute on function public.normalize_email_message_id(text) to service_role;
 grant execute on function public.email_status_rank(text) to service_role;
 grant execute on function public.record_email_webhook_event(text, text) to service_role;
+grant execute on function public.email_webhook_event_seen(text, text) to service_role;
 grant execute on function public.forget_email_webhook_event(text, text) to service_role;
 grant execute on function public.apply_email_provider_event(text, text, text) to service_role;
+grant execute on function public.email_delivery_has_recent_uncertainty(text, integer) to service_role;
 
 comment on table public.email_provider_quota is
   'App-side recipient reservations for the gated email cutover. A window does not reset on a timer; Brevo reset time is unconfirmed.';

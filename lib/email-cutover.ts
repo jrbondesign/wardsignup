@@ -1,4 +1,3 @@
-import { randomUUID } from "crypto";
 import type { DeliverParams, DeliverResult } from "@/lib/email-deliver";
 import {
   classifyBrevoHttp,
@@ -7,11 +6,15 @@ import {
 } from "@/lib/email-brevo-classify";
 import { postBrevoTransactional } from "@/lib/email-brevo-transport";
 import {
+  brevoQuotaSeed,
   brevoRecipientCap,
   brevoWindowKey,
   countEnvelopeRecipients,
+  isBrevoCutoverEnabled,
   wardsignupBrevoApiKey,
 } from "@/lib/email-cutover-config";
+import { consumeSharedResendBudget } from "@/lib/email-deliver";
+import { emailOutboundBlock } from "@/lib/email-outbound";
 import { WARD_SIGNUP_FROM_EMAIL, wardSignupFrom } from "@/lib/email-from-policy";
 import {
   applyClaim,
@@ -24,7 +27,7 @@ import {
   type RejectionClass,
   type ReserveOutcome,
 } from "@/lib/email-quota-state";
-import { utcDayStart, resendUtcDayCap } from "@/lib/email-deliver";
+import { resendDailySoftLimit, resendUtcDayCap, utcDayStart } from "@/lib/email-deliver";
 import { getResendForBrand } from "@/lib/resend-for-brand";
 
 type Env = Record<string, string | undefined>;
@@ -32,12 +35,26 @@ type Env = Record<string, string | undefined>;
 export type CutoverDeps = {
   env: Env;
   now: () => Date;
-  claim: (input: ClaimInput) => Promise<{ action: "send_primary" | "send_fallback" | "stop"; row: AttemptRow }>;
-  markHttpStarted: (key: string) => Promise<void>;
-  finish: (key: string, patch: Partial<AttemptRow> & { phase: AttemptRow["phase"] }) => Promise<void>;
-  reserve: (provider: "brevo" | "resend", windowKey: string, recipients: number, cap: number | null) => Promise<ReserveOutcome>;
+  claim: (input: ClaimInput) => Promise<
+    | { action: "send_primary" | "send_fallback" | "stop"; row: AttemptRow }
+    | { action: "unavailable" }
+  >;
+  markHttpStarted: (key: string) => Promise<boolean>;
+  markQuotaHeld: (key: string, held: boolean) => Promise<boolean>;
+  clearHttp: (key: string) => Promise<boolean>;
+  finish: (key: string, patch: Partial<AttemptRow> & { phase: AttemptRow["phase"] }) => Promise<boolean>;
+  reserve: (
+    provider: "brevo" | "resend",
+    windowKey: string,
+    recipients: number,
+    cap: number | null,
+    seed: number | null,
+  ) => Promise<ReserveOutcome>;
   release: (provider: "brevo" | "resend", windowKey: string, recipients: number) => Promise<void>;
   exhaust: (provider: "brevo" | "resend", windowKey: string) => Promise<void>;
+  consumeResend: (brandId: string, recipients: number) => Promise<"reserved" | "full" | "unknown">;
+  /** bounce/complaint block every kind. unsubscribe blocks notification kinds. unknown blocks notification kinds only. */
+  recipientBlock: (email: string, kind: string) => Promise<"allow" | "hard" | "unsubscribe" | "unknown">;
   sendBrevo: (input: {
     apiKey: string;
     to: string[];
@@ -62,6 +79,17 @@ export type CutoverDeps = {
   }) => Promise<ProviderHttpResult>;
 };
 
+const RESERVE_RESULTS = new Set(["reserved", "full", "exhausted", "unknown", "invalid"]);
+
+const TRANSACTIONAL_KINDS = new Set(["magic_link", "signup_confirmation", "org_invite_link", "welcome"]);
+
+function knownReserve(slot: ReserveOutcome | null | undefined): ReserveOutcome {
+  if (!slot || typeof slot.result !== "string" || !RESERVE_RESULTS.has(slot.result)) {
+    return { result: "unknown" };
+  }
+  return slot;
+}
+
 function stopResult(row: AttemptRow): DeliverResult {
   if (row.phase === "primary_accepted" || row.phase === "fallback_accepted") {
     return {
@@ -71,12 +99,15 @@ function stopResult(row: AttemptRow): DeliverResult {
       duplicateSuppressed: true,
     };
   }
-  if (
-    row.phase === "primary_ambiguous" ||
-    row.phase === "fallback_ambiguous" ||
-    row.phase === "primary_inflight" ||
-    row.phase === "fallback_inflight"
-  ) {
+  const inflight = row.phase === "primary_inflight" || row.phase === "fallback_inflight";
+  if (inflight && !row.httpStarted) {
+    return {
+      ok: false,
+      error: "Delivery has not reached a provider. It can be retried. No second provider was called.",
+      retryable: true,
+    };
+  }
+  if (inflight || row.phase === "primary_ambiguous" || row.phase === "fallback_ambiguous") {
     return {
       ok: false,
       error: "Delivery outcome is ambiguous or still in flight. No second provider was called.",
@@ -96,6 +127,19 @@ function logCutover(kind: string | undefined, provider: "brevo" | "resend", outc
   console.info(`[email] cutover provider=${provider} kind=${kind ?? "other"} outcome=${outcome}`);
 }
 
+async function finishRecorded(
+  deps: CutoverDeps,
+  key: string,
+  patch: Partial<AttemptRow> & { phase: AttemptRow["phase"] },
+  httpWasUncertain: boolean,
+): Promise<"ok" | "retry" | "ambiguous"> {
+  const wrote = await deps.finish(key, patch);
+  if (wrote) return "ok";
+  if (httpWasUncertain) return "ambiguous";
+  await deps.clearHttp(key);
+  return "retry";
+}
+
 async function sendFallback(
   params: DeliverParams,
   deps: CutoverDeps,
@@ -111,20 +155,35 @@ async function sendFallback(
       kind: params.kind ?? "other",
       toAddress: recipients[0] ?? params.to,
       recipientCount: count,
+      operationScope: params.operationScope ?? null,
     });
+    if (again.action === "unavailable") {
+      return { ok: false, error: "Delivery claim could not be recorded. No provider was called.", retryable: true };
+    }
     if (again.action !== "send_fallback") return stopResult(again.row);
   }
 
-  const windowKey = `utc:${utcDayStart(deps.now()).toISOString()}`;
-  const cap = resendUtcDayCap(deps.env);
-  const slot = await deps.reserve("resend", windowKey, count, cap);
-  if (slot.result !== "reserved") {
-    await deps.finish(idempotencyKey, {
-      phase: "fallback_rejected",
-      rejectionClass: "quota",
-      provider: "resend",
-      lastError: `resend budget ${slot.result}`,
-    });
+  // Same Resend counters the live path already increments. Not a fresh 100.
+  const slot = await deps.consumeResend(params.brand.id, count);
+  if (slot !== "reserved") {
+    const wrote = await finishRecorded(
+      deps,
+      idempotencyKey,
+      {
+        phase: "fallback_rejected",
+        rejectionClass: slot === "unknown" ? "unknown" : "quota",
+        provider: "resend",
+        httpStarted: false,
+        lastError: `resend budget ${slot}`,
+      },
+      false,
+    );
+    if (wrote === "ambiguous") {
+      return { ok: false, error: "Resend budget outcome could not be recorded.", ambiguous: true };
+    }
+    if (slot === "unknown" || wrote === "retry") {
+      return { ok: false, error: "Resend fallback budget could not be read. No email was sent.", retryable: true };
+    }
     return {
       ok: false,
       error: "Resend fallback budget is unavailable. No email was sent.",
@@ -132,7 +191,10 @@ async function sendFallback(
     };
   }
 
-  await deps.markHttpStarted(idempotencyKey);
+  const started = await deps.markHttpStarted(idempotencyKey);
+  if (!started) {
+    return { ok: false, error: "Could not record the Resend attempt. No request was sent.", retryable: true };
+  }
   let http: ProviderHttpResult;
   try {
     http = await deps.sendResend({
@@ -151,22 +213,31 @@ async function sendFallback(
   }
   const classified = classifyResendFallback(http);
   if (classified.kind === "accepted") {
-    await deps.finish(idempotencyKey, {
-      phase: "fallback_accepted",
-      provider: "resend",
-      messageId: classified.messageId,
-      deliveryStatus: "accepted",
-      lastError: null,
-    });
+    const wrote = await finishRecorded(
+      deps,
+      idempotencyKey,
+      {
+        phase: "fallback_accepted",
+        provider: "resend",
+        messageId: classified.messageId,
+        deliveryStatus: "accepted",
+        lastError: null,
+      },
+      true,
+    );
+    if (wrote !== "ok") {
+      return { ok: false, error: "Resend accepted the message and the receipt could not be stored.", ambiguous: true };
+    }
     logCutover(params.kind, "resend", "accepted");
     return { ok: true, provider: "resend", messageId: classified.messageId };
   }
   if (classified.kind === "ambiguous") {
-    await deps.finish(idempotencyKey, {
-      phase: "fallback_ambiguous",
-      provider: "resend",
-      lastError: classified.reason,
-    });
+    await finishRecorded(
+      deps,
+      idempotencyKey,
+      { phase: "fallback_ambiguous", provider: "resend", lastError: classified.reason },
+      true,
+    );
     logCutover(params.kind, "resend", "ambiguous");
     return {
       ok: false,
@@ -174,15 +245,21 @@ async function sendFallback(
       ambiguous: true,
     };
   }
-  await deps.release("resend", windowKey, count);
-  if (classified.kind === "quota") await deps.exhaust("resend", windowKey);
-  await deps.finish(idempotencyKey, {
-    phase: "fallback_rejected",
-    rejectionClass: classified.kind === "quota" ? "quota" : "permanent",
-    provider: "resend",
-    lastError: classified.detail,
-  });
+  const wrote = await finishRecorded(
+    deps,
+    idempotencyKey,
+    {
+      phase: "fallback_rejected",
+      rejectionClass: classified.kind === "quota" ? "quota" : "permanent",
+      provider: "resend",
+      lastError: classified.detail,
+    },
+    false,
+  );
   logCutover(params.kind, "resend", classified.kind);
+  if (wrote !== "ok") {
+    return { ok: false, error: "Resend rejected the message and the receipt could not be stored.", retryable: true };
+  }
   return {
     ok: false,
     error: classified.detail,
@@ -221,15 +298,44 @@ export async function runBrevoCutover(
     .split(/[,;]/)
     .map((part) => part.trim().toLowerCase())
     .filter((part) => part.includes("@"));
-  const idempotencyKey = params.idempotencyKey?.trim() || `ws/${randomUUID()}`;
+  const idempotencyKey = params.idempotencyKey?.trim() ?? "";
+  if (!idempotencyKey) {
+    return {
+      ok: false,
+      error: "Refusing a cutover send without a stable idempotency key. No provider was called.",
+      terminal: true,
+    };
+  }
+  const block = await deps.recipientBlock(recipients[0] ?? "", params.kind ?? "other");
+  if (block === "hard" || (block === "unsubscribe" && !TRANSACTIONAL_KINDS.has(params.kind ?? ""))) {
+    return {
+      ok: false,
+      error: block === "hard"
+        ? "Recipient is suppressed after a hard bounce or complaint. No email was sent."
+        : "Recipient is unsubscribed. No notification was sent.",
+      terminal: true,
+    };
+  }
+  if (block === "unknown" && !TRANSACTIONAL_KINDS.has(params.kind ?? "")) {
+    return {
+      ok: false,
+      error: "Suppression list could not be read. No notification was sent.",
+      retryable: true,
+    };
+  }
+
   const claimInput: ClaimInput = {
     key: idempotencyKey,
     brandId: params.brand.id,
     kind: params.kind ?? "other",
     toAddress: recipients[0] ?? params.to.trim().toLowerCase(),
     recipientCount: count,
+    operationScope: params.operationScope ?? null,
   };
   const claimed = await deps.claim(claimInput);
+  if (claimed.action === "unavailable") {
+    return { ok: false, error: "Delivery claim could not be recorded. No provider was called.", retryable: true };
+  }
   if (claimed.action === "stop") return stopResult(claimed.row);
   if (claimed.action === "send_fallback") {
     return sendFallback(params, deps, recipients, idempotencyKey, count, true);
@@ -237,29 +343,48 @@ export async function runBrevoCutover(
 
   const windowKey = brevoWindowKey(deps.env);
   const cap = brevoRecipientCap(deps.env);
-  const slot = await deps.reserve("brevo", windowKey, count, cap);
-  if (slot.result === "unknown" || slot.result === "invalid") {
-    await deps.finish(idempotencyKey, {
-      phase: "primary_rejected",
-      rejectionClass: "unknown",
-      lastError: `brevo quota ${slot.result}`,
-    });
-    return {
-      ok: false,
-      error: "Brevo quota state is unknown. The send was refused and Resend was not called.",
-      terminal: true,
-    };
-  }
-  if (slot.result === "full" || slot.result === "exhausted") {
-    await deps.finish(idempotencyKey, {
-      phase: "primary_rejected",
-      rejectionClass: "quota",
-      lastError: `brevo quota ${slot.result}`,
-    });
-    return sendFallback(params, deps, recipients, idempotencyKey, count, false);
+  const seed = brevoQuotaSeed(deps.env);
+  let held = claimed.row.quotaHeld;
+  if (!held) {
+    const slot = knownReserve(await deps.reserve("brevo", windowKey, count, cap, seed));
+    if (slot.result !== "reserved") {
+      const wrote = await finishRecorded(
+        deps,
+        idempotencyKey,
+        {
+          phase: "primary_rejected",
+          rejectionClass: slot.result === "full" || slot.result === "exhausted" ? "quota" : "unknown",
+          httpStarted: false,
+          lastError: `brevo quota ${slot.result}`,
+        },
+        false,
+      );
+      if (wrote !== "ok") {
+        return { ok: false, error: "Brevo quota state could not be recorded. No provider was called.", retryable: true };
+      }
+      if (slot.result === "full" || slot.result === "exhausted") {
+        return sendFallback(params, deps, recipients, idempotencyKey, count, false);
+      }
+      return {
+        ok: false,
+        error: "Brevo quota state is unknown. The send was refused and Resend was not called.",
+        retryable: true,
+      };
+    }
+    held = await deps.markQuotaHeld(idempotencyKey, true);
+    if (!held) {
+      return {
+        ok: false,
+        error: "Brevo reservation could not be recorded. No provider was called.",
+        retryable: true,
+      };
+    }
   }
 
-  await deps.markHttpStarted(idempotencyKey);
+  const started = await deps.markHttpStarted(idempotencyKey);
+  if (!started) {
+    return { ok: false, error: "Could not record that the Brevo call was starting. No request was sent.", retryable: true };
+  }
   let http: ProviderHttpResult;
   try {
     http = await deps.sendBrevo({
@@ -278,22 +403,31 @@ export async function runBrevoCutover(
   }
   const classified = classifyBrevoHttp(http);
   if (classified.kind === "accepted") {
-    await deps.finish(idempotencyKey, {
-      phase: "primary_accepted",
-      provider: "brevo",
-      messageId: classified.messageId,
-      deliveryStatus: "accepted",
-      lastError: null,
-    });
+    const wrote = await finishRecorded(
+      deps,
+      idempotencyKey,
+      {
+        phase: "primary_accepted",
+        provider: "brevo",
+        messageId: classified.messageId,
+        deliveryStatus: "accepted",
+        lastError: null,
+      },
+      true,
+    );
+    if (wrote !== "ok") {
+      return { ok: false, error: "Brevo accepted the message and the receipt could not be stored. Resend was not called.", ambiguous: true };
+    }
     logCutover(params.kind, "brevo", "accepted");
     return { ok: true, provider: "brevo", messageId: classified.messageId };
   }
   if (classified.kind === "ambiguous") {
-    await deps.finish(idempotencyKey, {
-      phase: "primary_ambiguous",
-      provider: "brevo",
-      lastError: classified.reason,
-    });
+    await finishRecorded(
+      deps,
+      idempotencyKey,
+      { phase: "primary_ambiguous", provider: "brevo", lastError: classified.reason },
+      true,
+    );
     logCutover(params.kind, "brevo", "ambiguous");
     return {
       ok: false,
@@ -301,14 +435,24 @@ export async function runBrevoCutover(
       ambiguous: true,
     };
   }
-  await deps.release("brevo", windowKey, count);
   if (classified.kind === "rate_limited") {
-    await deps.finish(idempotencyKey, {
-      phase: "primary_rejected",
-      rejectionClass: "rate_limited",
-      provider: "brevo",
-      lastError: "brevo 429 rate limit",
-    });
+    const wrote = await finishRecorded(
+      deps,
+      idempotencyKey,
+      {
+        phase: "primary_rejected",
+        rejectionClass: "rate_limited",
+        provider: "brevo",
+        httpStarted: false,
+        lastError: "brevo 429 rate limit",
+      },
+      false,
+    );
+    if (wrote !== "ok") {
+      return { ok: false, error: "Brevo rate limited the request and the receipt could not be stored.", retryable: true };
+    }
+    await deps.markQuotaHeld(idempotencyKey, false);
+    await deps.release("brevo", windowKey, count);
     logCutover(params.kind, "brevo", "rate_limited");
     return {
       ok: false,
@@ -317,23 +461,49 @@ export async function runBrevoCutover(
     };
   }
   if (classified.kind === "permanent") {
-    await deps.finish(idempotencyKey, {
-      phase: "primary_rejected",
-      rejectionClass: "permanent",
-      provider: "brevo",
-      lastError: classified.detail,
-    });
+    const wrote = await finishRecorded(
+      deps,
+      idempotencyKey,
+      {
+        phase: "primary_rejected",
+        rejectionClass: "permanent",
+        provider: "brevo",
+        lastError: classified.detail,
+      },
+      false,
+    );
+    if (wrote === "ok") {
+      await deps.markQuotaHeld(idempotencyKey, false);
+      await deps.release("brevo", windowKey, count);
+    }
     logCutover(params.kind, "brevo", "permanent");
-    return { ok: false, error: classified.detail, terminal: true, brevoFailed: true };
+    return wrote === "ok"
+      ? { ok: false, error: classified.detail, terminal: true, brevoFailed: true }
+      : { ok: false, error: "Brevo rejected the message and the receipt could not be stored.", retryable: true };
   }
   const rejectionClass: RejectionClass = classified.kind === "quota" ? "quota" : "auth";
+  const wrote = await finishRecorded(
+    deps,
+    idempotencyKey,
+    {
+      phase: "primary_rejected",
+      rejectionClass,
+      provider: "brevo",
+      lastError: classified.detail,
+    },
+    false,
+  );
+  if (wrote !== "ok") {
+    logCutover(params.kind, "brevo", "finish_failed");
+    return {
+      ok: false,
+      error: "Brevo rejected the message and the receipt could not be stored. Resend was not called.",
+      retryable: true,
+    };
+  }
+  await deps.markQuotaHeld(idempotencyKey, false);
+  await deps.release("brevo", windowKey, count);
   if (classified.kind === "quota") await deps.exhaust("brevo", windowKey);
-  await deps.finish(idempotencyKey, {
-    phase: "primary_rejected",
-    rejectionClass,
-    provider: "brevo",
-    lastError: classified.detail,
-  });
   logCutover(params.kind, "brevo", rejectionClass);
   return sendFallback(params, deps, recipients, idempotencyKey, count, false);
 }
@@ -346,6 +516,30 @@ type MemoryState = {
 
 function quotaKey(provider: string, windowKey: string): string {
   return `${provider}:${windowKey}`;
+}
+
+/** Test double of the shared Resend counters. `RESEND_ALREADY_USED` is not read in production. */
+function consumeMemoryResend(
+  state: MemoryState,
+  env: Env,
+  now: Date,
+  _brandId: string,
+  recipients: number,
+): "reserved" | "full" | "unknown" {
+  if (!Number.isInteger(recipients) || recipients < 1) return "unknown";
+  const cap = Math.min(resendUtcDayCap(env), resendDailySoftLimit(env));
+  if (!Number.isInteger(cap) || cap < 1) return "unknown";
+  const raw = env.RESEND_ALREADY_USED?.trim();
+  const seeded = raw === undefined || raw === "" ? 0 : Number(raw);
+  if (!Number.isInteger(seeded) || seeded < 0) return "unknown";
+  const key = `resend-shared:${utcDayStart(now).toISOString()}`;
+  const row = state.quotas.get(key) ?? { reserved: seeded, exhausted: false };
+  if (row.reserved + recipients > cap) {
+    state.quotas.set(key, row);
+    return "full";
+  }
+  state.quotas.set(key, { ...row, reserved: row.reserved + recipients });
+  return "reserved";
 }
 
 /** In-memory durable store. Mutations run one at a time, like the SQL row lock. */
@@ -383,19 +577,36 @@ export function createMemoryCutoverDeps(opts: {
     markHttpStarted: (key) =>
       serial(() => {
         const row = state.attempts.get(key);
-        if (!row) return;
+        if (!row) return false;
         state.attempts.set(key, { ...row, httpStarted: true, updatedAt: now().getTime() });
+        return true;
+      }),
+    markQuotaHeld: (key, held) =>
+      serial(() => {
+        const row = state.attempts.get(key);
+        if (!row) return false;
+        state.attempts.set(key, { ...row, quotaHeld: held, updatedAt: now().getTime() });
+        return true;
+      }),
+    clearHttp: (key) =>
+      serial(() => {
+        const row = state.attempts.get(key);
+        if (!row) return false;
+        if (row.phase !== "primary_inflight" && row.phase !== "fallback_inflight") return false;
+        state.attempts.set(key, { ...row, httpStarted: false, updatedAt: now().getTime() });
+        return true;
       }),
     finish: (key, patch) =>
       serial(() => {
         const row = state.attempts.get(key);
-        if (!row) return;
+        if (!row) return false;
         state.attempts.set(key, { ...row, ...patch, updatedAt: now().getTime() });
+        return true;
       }),
-    reserve: (provider, windowKey, recipients, cap) =>
+    reserve: (provider, windowKey, recipients, cap, seed) =>
       serial(() => {
         const key = quotaKey(provider, windowKey);
-        const applied = applyReserve(state.quotas.get(key) ?? null, recipients, cap);
+        const applied = applyReserve(state.quotas.get(key) ?? null, recipients, cap, seed);
         if (applied.row) state.quotas.set(key, applied.row);
         return applied.outcome;
       }),
@@ -410,6 +621,9 @@ export function createMemoryCutoverDeps(opts: {
         const key = quotaKey(provider, windowKey);
         state.quotas.set(key, applyExhaust(state.quotas.get(key) ?? null));
       }),
+    consumeResend: (brandId, recipients) =>
+      serial(() => consumeMemoryResend(state, opts.env, now(), brandId, recipients)),
+    recipientBlock: async () => "allow",
     sendBrevo: opts.sendBrevo,
     sendResend: opts.sendResend,
   };
@@ -422,10 +636,14 @@ export function productionCutoverDeps(env: Env = process.env): CutoverDeps {
     now: () => new Date(),
     claim: (input) => rpcClaim(input),
     markHttpStarted: (key) => rpcMark(key),
+    markQuotaHeld: (key, held) => rpcQuotaHeld(key, held),
+    clearHttp: (key) => rpcClearHttp(key),
     finish: (key, patch) => rpcFinish(key, patch),
-    reserve: (provider, windowKey, recipients, cap) => rpcReserve(provider, windowKey, recipients, cap),
+    reserve: (provider, windowKey, recipients, cap, seed) => rpcReserve(provider, windowKey, recipients, cap, seed),
     release: (provider, windowKey, recipients) => rpcRelease(provider, windowKey, recipients),
     exhaust: (provider, windowKey) => rpcExhaust(provider, windowKey),
+    consumeResend: (brandId, recipients) => consumeSharedResendBudget(brandId, recipients, new Date(), env),
+    recipientBlock: (email, kind) => rpcRecipientBlock(email, kind),
     sendBrevo: async (input) =>
       postBrevoTransactional({
         apiKey: input.apiKey,
@@ -479,7 +697,9 @@ async function admin() {
   return createServiceRoleClient();
 }
 
-async function rpcClaim(input: ClaimInput): Promise<{ action: "send_primary" | "send_fallback" | "stop"; row: AttemptRow }> {
+async function rpcClaim(
+  input: ClaimInput,
+): Promise<{ action: "send_primary" | "send_fallback" | "stop"; row: AttemptRow } | { action: "unavailable" }> {
   try {
     const client = await admin();
     const { data, error } = await client.rpc("email_delivery_claim", {
@@ -489,46 +709,70 @@ async function rpcClaim(input: ClaimInput): Promise<{ action: "send_primary" | "
       p_to_address: input.toAddress,
       p_recipient_count: input.recipientCount,
       p_now: new Date().toISOString(),
+      p_scope: input.operationScope ?? null,
     } as never);
-    if (error || !data) throw new Error(error?.message ?? "empty claim");
+    if (error || !data || typeof data !== "object") throw new Error(error?.message ?? "empty claim");
+    const action = (data as { action?: unknown }).action;
+    if (action !== "send_primary" && action !== "send_fallback" && action !== "stop") {
+      throw new Error("unexpected claim");
+    }
     return data as { action: "send_primary" | "send_fallback" | "stop"; row: AttemptRow };
   } catch (e) {
     console.error("email_delivery_claim failed closed:", e instanceof Error ? e.message : "error");
-    return {
-      action: "stop",
-      row: {
-        key: input.key,
-        brandId: input.brandId,
-        kind: input.kind,
-        toAddress: input.toAddress,
-        recipientCount: input.recipientCount,
-        tag: "",
-        phase: "primary_ambiguous",
-        rejectionClass: null,
-        provider: null,
-        messageId: null,
-        httpStarted: true,
-        lastError: "claim failed",
-        updatedAt: Date.now(),
-        deliveryStatus: null,
-      },
-    };
+    return { action: "unavailable" };
   }
 }
 
-async function rpcMark(key: string): Promise<void> {
+async function rpcMark(key: string): Promise<boolean> {
   try {
     const client = await admin();
-    await client.rpc("email_delivery_mark_http_started", { p_key: key, p_now: new Date().toISOString() } as never);
+    const { data, error } = await client.rpc("email_delivery_mark_http_started", {
+      p_key: key,
+      p_now: new Date().toISOString(),
+    } as never);
+    if (error) return false;
+    return data === true;
   } catch (e) {
     console.error("email_delivery_mark_http_started failed:", e instanceof Error ? e.message : "error");
+    return false;
   }
 }
 
-async function rpcFinish(key: string, patch: Partial<AttemptRow> & { phase: AttemptRow["phase"] }): Promise<void> {
+async function rpcQuotaHeld(key: string, held: boolean): Promise<boolean> {
   try {
     const client = await admin();
-    const { error } = await client.rpc("email_delivery_finish", {
+    const { data, error } = await client.rpc("email_delivery_mark_quota_held", {
+      p_key: key,
+      p_held: held,
+      p_now: new Date().toISOString(),
+    } as never);
+    if (error) return false;
+    return data === true;
+  } catch (e) {
+    console.error("email_delivery_mark_quota_held failed:", e instanceof Error ? e.message : "error");
+    return false;
+  }
+}
+
+async function rpcClearHttp(key: string): Promise<boolean> {
+  try {
+    const client = await admin();
+    const { data, error } = await client.rpc("email_delivery_clear_http", {
+      p_key: key,
+      p_now: new Date().toISOString(),
+    } as never);
+    if (error) return false;
+    return data === true;
+  } catch (e) {
+    console.error("email_delivery_clear_http failed:", e instanceof Error ? e.message : "error");
+    return false;
+  }
+}
+
+async function rpcFinish(key: string, patch: Partial<AttemptRow> & { phase: AttemptRow["phase"] }): Promise<boolean> {
+  try {
+    const client = await admin();
+    const { data, error } = await client.rpc("email_delivery_finish", {
       p_key: key,
       p_phase: patch.phase,
       p_rejection_class: patch.rejectionClass ?? null,
@@ -536,11 +780,17 @@ async function rpcFinish(key: string, patch: Partial<AttemptRow> & { phase: Atte
       p_message_id: patch.messageId ?? null,
       p_error: patch.lastError ?? null,
       p_delivery_status: patch.deliveryStatus ?? null,
+      p_http_started: patch.httpStarted ?? null,
       p_now: new Date().toISOString(),
     } as never);
-    if (error) console.error("email_delivery_finish failed:", error.message);
+    if (error) {
+      console.error("email_delivery_finish failed:", error.message);
+      return false;
+    }
+    return data === true;
   } catch (e) {
     console.error("email_delivery_finish failed:", e instanceof Error ? e.message : "error");
+    return false;
   }
 }
 
@@ -549,6 +799,7 @@ async function rpcReserve(
   windowKey: string,
   recipients: number,
   cap: number | null,
+  seed: number | null,
 ): Promise<ReserveOutcome> {
   try {
     const client = await admin();
@@ -557,11 +808,51 @@ async function rpcReserve(
       p_window_key: windowKey,
       p_recipients: recipients,
       p_cap: cap,
+      p_seed: seed,
     } as never);
-    if (error || !data) return { result: "unknown" };
-    return data as ReserveOutcome;
+    if (error || !data || typeof data !== "object") return { result: "unknown" };
+    return knownReserve(data as ReserveOutcome);
   } catch {
     return { result: "unknown" };
+  }
+}
+
+const HARD_SUPPRESS = new Set(["bounce", "complaint"]);
+const UNSUB_SUPPRESS = new Set(["unsubscribe", "manual"]);
+
+async function rpcRecipientBlock(
+  email: string,
+  kind: string,
+): Promise<"allow" | "hard" | "unsubscribe" | "unknown"> {
+  try {
+    const client = await admin();
+    const { data, error } = await client
+      .from("email_suppressions")
+      .select("reason")
+      .eq("email_lower", email.trim().toLowerCase())
+      .maybeSingle();
+    if (error) return "unknown";
+    const reason = (data as { reason?: string } | null)?.reason ?? null;
+    if (reason && HARD_SUPPRESS.has(reason)) return "hard";
+    if (reason && UNSUB_SUPPRESS.has(reason)) return TRANSACTIONAL_KINDS.has(kind) ? "allow" : "unsubscribe";
+    return "allow";
+  } catch {
+    return "unknown";
+  }
+}
+
+export async function cutoverBlocksNewLogin(scope: string, env: Env = process.env): Promise<boolean> {
+  if (!isBrevoCutoverEnabled(env) || emailOutboundBlock(env).blocked) return false;
+  try {
+    const client = await admin();
+    const { data, error } = await client.rpc("email_delivery_has_recent_uncertainty", {
+      p_scope: scope,
+      p_within_seconds: 600,
+    } as never);
+    if (error) return false;
+    return data === true;
+  } catch {
+    return false;
   }
 }
 

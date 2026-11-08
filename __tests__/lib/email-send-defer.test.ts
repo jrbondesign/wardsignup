@@ -143,6 +143,31 @@ describe("Brevo failure on near real time mail", () => {
     expect(enqueueEmail).not.toHaveBeenCalled();
   });
 
+  it("does not send a cutover notification when the suppression list cannot be read", async () => {
+    process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
+    maybeSingle.mockResolvedValueOnce({ data: null, error: { message: "down" } });
+    jest.setSystemTime(new Date("2026-10-11T15:11:00Z"));
+    const result = await sendGuardedEmail({ ...base, category: "notification", kind: "reminder", urgent: true });
+    expect(result).toMatchObject({ ok: false, retryable: true });
+    expect(deliverEmail).not.toHaveBeenCalled();
+    expect(enqueueEmail).not.toHaveBeenCalled();
+    delete process.env.EMAIL_PROVIDER_CUTOVER;
+    maybeSingle.mockResolvedValue({ data: null, error: null });
+  });
+
+  it("retries an urgent 429 on the same provider and does not queue it until tomorrow", async () => {
+    jest.setSystemTime(new Date("2026-10-11T15:11:00Z"));
+    deliverEmail
+      .mockResolvedValueOnce({ ok: false, error: "Brevo rate limited", retryable: true })
+      .mockResolvedValueOnce({ ok: false, error: "Brevo rate limited", retryable: true });
+    const result = await sendGuardedEmail({ ...base, urgent: true, kind: "signup_confirmation", idempotencyKey: "signup/1" });
+    expect(result).toEqual({ ok: false, error: "Brevo rate limited", retryable: true });
+    expect(deliverEmail).toHaveBeenCalledTimes(2);
+    expect(deliverEmail.mock.calls[0][0].idempotencyKey).toBe("signup/1");
+    expect(deliverEmail.mock.calls[1][0].idempotencyKey).toBe("signup/1");
+    expect(enqueueEmail).not.toHaveBeenCalled();
+  });
+
   it("urgent mail whose Brevo send fails still fails (not queued)", async () => {
     jest.setSystemTime(new Date("2026-10-12T16:00:00Z"));
     deliverEmail.mockResolvedValue({ ok: false, error: "Brevo 500: boom", brevoFailed: true });

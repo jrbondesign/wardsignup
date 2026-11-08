@@ -12,6 +12,8 @@ import { checkBotId } from "botid/server";
 import { verifyTurnstile } from "@/lib/turnstile";
 import { getClientIp } from "@/lib/request-ip";
 import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
+import { cutoverBlocksNewLogin } from "@/lib/email-cutover";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
 
 function messageFromResendError(err: unknown): string {
   if (
@@ -143,6 +145,10 @@ export async function POST(request: NextRequest) {
       callbackUrl += `?next=${encodeURIComponent(nextParam)}`;
     }
 
+    if (await cutoverBlocksNewLogin(`magic:${brand.id}:${email}`)) {
+      return NextResponse.json({ ok: true, delivery: "unconfirmed" });
+    }
+
     const admin = createServiceRoleClient();
     const { data, error } = await admin.auth.admin.generateLink({
       type: "magiclink",
@@ -201,6 +207,8 @@ export async function POST(request: NextRequest) {
       kind: "magic_link",
       from,
       to: email,
+      idempotencyKey: cutoverOperationKey("magic_link", [brand.id, email, hashedToken]),
+      operationScope: `magic:${brand.id}:${email}`,
       subject,
       text: `Sign in to ${brand.name}\n\n${actionLink}\n\n${brand.name} · ${brand.siteHost}\nMade with ❤️ in Arizona`,
       html: `
@@ -219,6 +227,9 @@ export async function POST(request: NextRequest) {
     }, { urgent: true });
     const sendErr = sendRes.ok ? null : { message: sendRes.error };
 
+    if (!sendRes.ok && sendRes.ambiguous) {
+      return NextResponse.json({ ok: true, delivery: "unconfirmed" });
+    }
     if (sendErr) {
       console.error("send-magic-link resend:", sendErr);
       return NextResponse.json(

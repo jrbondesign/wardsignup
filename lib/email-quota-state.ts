@@ -27,6 +27,7 @@ export function applyReserve(
   row: QuotaRow | null,
   recipients: number,
   cap: number | null,
+  seed: number | null,
 ): { row: QuotaRow | null; outcome: ReserveOutcome } {
   if (!Number.isInteger(recipients) || recipients < 1 || recipients > 20) {
     return { row, outcome: { result: "invalid" } };
@@ -37,7 +38,13 @@ export function applyReserve(
   if (cap === null || !Number.isInteger(cap) || cap < 1) {
     return { row, outcome: { result: "unknown" } };
   }
-  const current = row ?? { reserved: 0, exhausted: false };
+  // A missing row is not "zero used". The seed is the dashboard's already-used
+  // count and is written in the same step as the first reservation. An
+  // existing row keeps its counter; a later seed change does not rewind it.
+  if (!row && (seed === null || !Number.isInteger(seed) || seed < 0)) {
+    return { row, outcome: { result: "unknown" } };
+  }
+  const current = row ?? { reserved: seed ?? 0, exhausted: false };
   if (current.reserved + recipients > cap) {
     return { row: current, outcome: { result: "full", reserved: current.reserved, cap } };
   }
@@ -80,6 +87,8 @@ export type AttemptRow = {
   provider: "brevo" | "resend" | null;
   messageId: string | null;
   httpStarted: boolean;
+  /** True only after a reservation for this attempt committed. */
+  quotaHeld: boolean;
   lastError: string | null;
   updatedAt: number;
   deliveryStatus: DeliveryStatus | null;
@@ -91,11 +100,16 @@ export type ClaimInput = {
   kind: string;
   toAddress: string;
   recipientCount: number;
+  operationScope?: string | null;
 };
 
 export type ClaimAction = "send_primary" | "send_fallback" | "stop";
 
-/** An in-flight row older than this is closed as ambiguous. It is not resent. */
+/**
+ * An in-flight row that has already touched the provider and is older than
+ * this is closed as ambiguous. A row that never started HTTP stays retryable
+ * no matter how old it is.
+ */
 export const INFLIGHT_STALE_MS = 60_000;
 
 export function applyClaim(
@@ -118,6 +132,7 @@ export function applyClaim(
         provider: null,
         messageId: null,
         httpStarted: false,
+        quotaHeld: false,
         lastError: null,
         updatedAt: nowMs,
         deliveryStatus: null,
@@ -127,11 +142,16 @@ export function applyClaim(
 
   const stale = nowMs - row.updatedAt >= INFLIGHT_STALE_MS;
   if (row.phase === "primary_inflight" || row.phase === "fallback_inflight") {
-    if (row.httpStarted || stale) {
+    if (row.httpStarted) {
+      if (!stale) return { action: "stop", row };
       const phase = row.phase === "primary_inflight" ? "primary_ambiguous" : "fallback_ambiguous";
-      return { action: "stop", row: { ...row, phase, updatedAt: nowMs, lastError: row.lastError ?? "inflight closed as ambiguous" } };
+      return {
+        action: "stop",
+        row: { ...row, phase, updatedAt: nowMs, lastError: row.lastError ?? "inflight closed as ambiguous" },
+      };
     }
-    return { action: "stop", row };
+    const action = row.phase === "fallback_inflight" ? "send_fallback" : "send_primary";
+    return { action, row: { ...row, updatedAt: nowMs } };
   }
 
   if (row.phase === "primary_rejected" && row.rejectionClass === "rate_limited") {
@@ -140,7 +160,19 @@ export function applyClaim(
       row: { ...row, phase: "primary_inflight", httpStarted: false, updatedAt: nowMs },
     };
   }
+  if (row.phase === "primary_rejected" && row.rejectionClass === "unknown" && !row.httpStarted) {
+    return {
+      action: "send_primary",
+      row: { ...row, phase: "primary_inflight", httpStarted: false, updatedAt: nowMs },
+    };
+  }
   if (row.phase === "primary_rejected" && (row.rejectionClass === "quota" || row.rejectionClass === "auth")) {
+    return {
+      action: "send_fallback",
+      row: { ...row, phase: "fallback_inflight", httpStarted: false, provider: "resend", updatedAt: nowMs },
+    };
+  }
+  if (row.phase === "fallback_rejected" && row.rejectionClass === "unknown" && !row.httpStarted) {
     return {
       action: "send_fallback",
       row: { ...row, phase: "fallback_inflight", httpStarted: false, provider: "resend", updatedAt: nowMs },

@@ -19,6 +19,15 @@ function productionDeps(): BrevoWebhookDeps {
   return {
     env: process.env,
     now: () => new Date(),
+    alreadyRecorded: async (eventId) => {
+      const admin = createServiceRoleClient();
+      const { data, error } = await admin.rpc("email_webhook_event_seen", {
+        p_provider: "brevo",
+        p_event_id: eventId,
+      } as never);
+      if (error) throw new Error(error.message);
+      return data === true;
+    },
     recordEvent: async (eventId) => {
       const admin = createServiceRoleClient();
       const { data, error } = await admin.rpc("record_email_webhook_event", {

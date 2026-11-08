@@ -51,7 +51,15 @@ function looksLikeQuota(code: string, message: string): boolean {
   return /daily limit|quota|not enough credits|insufficient credits|message limit/i.test(`${code} ${message}`);
 }
 
+/** A 4xx that names the sender. Recipient validation ("email is not valid") is not this. */
+function looksLikeSenderFailure(code: string, message: string): boolean {
+  return /sender|from address|not verified|unverified|smtp account is not yet activated/i.test(`${code} ${message}`);
+}
+
 export function classifyBrevoHttp(result: ProviderHttpResult): BrevoClass {
+  if (result.localRefusal === "from") {
+    return { kind: "auth", detail: "local refusal: from" };
+  }
   if (result.localRefusal) {
     return { kind: "permanent", detail: `local refusal: ${result.localRefusal}` };
   }
@@ -72,6 +80,7 @@ export function classifyBrevoHttp(result: ProviderHttpResult): BrevoClass {
   if (result.status === 402 || looksLikeQuota(code, message)) return { kind: "quota", detail };
   if (code === "duplicate_request") return { kind: "ambiguous", reason: "duplicate_request" };
   if (result.status === 401 || result.status === 403) return { kind: "auth", detail };
+  if (looksLikeSenderFailure(code, message)) return { kind: "auth", detail };
   return { kind: "permanent", detail };
 }
 

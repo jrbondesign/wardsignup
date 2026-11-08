@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
+import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
 import { emailOutboundBlock } from "@/lib/email-outbound";
 import { enqueueEmail } from "@/lib/email-queue";
 import { deferEnabled, deferSendWindowHours, inPostResetWindow, nextResetSendAfter } from "@/lib/email-queue-time";
@@ -21,8 +22,10 @@ import type { PublicBrand } from "@/lib/brand/types";
  *      can exceed it.
  *
  * TRANSACTIONAL mail (magic links, signup confirmations, welcome) is exempt
- * from suppression/unsubscribe (users need those to function) but SHOULD still
- * be sent through here with category "transactional" to get the ceiling.
+ * from unsubscribe suppression. When the Brevo cutover gate is on, a hard
+ * bounce or complaint blocks those too. An unreadable list blocks
+ * notifications and still allows transactional mail. Gate-off behavior is
+ * unchanged. Direct deliverEmail callers are checked inside the cutover.
  */
 
 const GLOBAL_HOURLY_CEILING = Number(process.env.EMAIL_HOURLY_CEILING) || 100;
@@ -76,19 +79,24 @@ export function unsubscribeUrl(brand: PublicBrand, to: string): string | null {
   return `${brand.siteUrl.replace(/\/$/, "")}/api/unsubscribe?e=${e}&sig=${sig}`;
 }
 
-async function isSuppressed(emailLower: string): Promise<boolean | null> {
-  // null = could not determine (treated as suppressed by callers: fail closed)
+async function suppressionReason(
+  emailLower: string,
+): Promise<"unsubscribe" | "bounce" | "complaint" | "manual" | "none" | "unknown"> {
   try {
     const admin = createServiceRoleClient();
     const { data, error } = await admin
       .from("email_suppressions")
-      .select("email_lower")
+      .select("reason")
       .eq("email_lower", emailLower)
       .maybeSingle();
-    if (error) return null;
-    return Boolean(data);
+    if (error) return "unknown";
+    const reason = (data as { reason?: string } | null)?.reason;
+    if (reason === "unsubscribe" || reason === "bounce" || reason === "complaint" || reason === "manual") {
+      return reason;
+    }
+    return "none";
   } catch {
-    return null;
+    return "unknown";
   }
 }
 
@@ -212,12 +220,22 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
   }
 
   const headers: Record<string, string> = {};
+  const reason = category === "notification" || isBrevoCutoverEnabled()
+    ? await suppressionReason(emailLower)
+    : "none";
+  const hardInvalid = reason === "bounce" || reason === "complaint";
+  const optedOut = reason === "unsubscribe" || reason === "manual" || reason === "unknown";
+  // A lookup failure is not an unsubscribe. On the cutover it stays retryable
+  // for notifications. Gate-off still treats it as suppressed, as before.
+  if (reason === "unknown" && category === "notification" && isBrevoCutoverEnabled()) {
+    return { ok: false, error: "Suppression list could not be read. No notification was sent.", retryable: true };
+  }
+  if (hardInvalid || (category === "notification" && optedOut)) {
+    // Hard bounces and complaints block every category once the cutover is on.
+    // Unsubscribes still block notifications only, so a sign-in link can be sent.
+    return { ok: false, skipped: "suppressed" };
+  }
   if (category === "notification") {
-    const suppressed = await isSuppressed(emailLower);
-    if (suppressed !== false) {
-      // true = unsubscribed; null = couldn't check → fail closed.
-      return { ok: false, skipped: "suppressed" };
-    }
     const url = unsubscribeUrl(brand, emailLower);
     if (url) {
       headers["List-Unsubscribe"] = `<${url}>`;
@@ -233,22 +251,31 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     return { ok: false, skipped: "ceiling" };
   }
 
-  const sent = await deliverEmail(
-    {
-      brand,
-      from,
-      to: emailLower,
-      subject,
-      html,
-      text,
-      replyTo,
-      attachments,
-      headers,
-      kind: params.kind,
-      idempotencyKey: params.idempotencyKey,
-    },
-    { urgent, realtime },
-  );
+  const deliverParams = {
+    brand,
+    from,
+    to: emailLower,
+    subject,
+    html,
+    text,
+    replyTo,
+    attachments,
+    headers,
+    kind: params.kind,
+    idempotencyKey: params.idempotencyKey,
+  };
+  let sent = await deliverEmail(deliverParams, { urgent, realtime });
+  const promptKind =
+    urgent ||
+    params.kind === "reminder" ||
+    params.kind === "signup_confirmation" ||
+    params.kind === "magic_link" ||
+    params.kind === "org_invite_link";
+  // One same-provider retry in this request. A 429 is not accepted, so this
+  // is not a second provider and not the next-day queue.
+  if (!sent.ok && sent.retryable && promptKind && !params.fromQueue) {
+    sent = await deliverEmail(deliverParams, { urgent, realtime });
+  }
   if (sent.ok) return { ok: true, provider: sent.provider };
   if (sent.outboundDisabled) {
     return { ok: false, skipped: "outbound_disabled", error: sent.error };
@@ -256,6 +283,7 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
   if (sent.ambiguous) return { ok: false, error: sent.error, ambiguous: true };
   if (sent.terminal) return { ok: false, error: sent.error, terminal: true };
   if (sent.retryable) {
+    if (promptKind) return { ok: false, error: sent.error, retryable: true };
     if (!params.fromQueue) return queueIt();
     return { ok: false, error: sent.error, retryable: true };
   }

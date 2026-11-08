@@ -32,6 +32,7 @@ function deps(overrides: Partial<BrevoWebhookDeps> = {}): BrevoWebhookDeps & {
   return {
     env: { BREVO_WEBHOOK_TOKEN: "whsec-test", WARDSIGNUP_BREVO_API_KEY: "xkeysib-test-key" },
     now: () => new Date(NOW),
+    alreadyRecorded: async (id) => seen.has(id),
     recordEvent: async (id) => {
       if (seen.has(id)) return false;
       seen.add(id);
@@ -91,7 +92,7 @@ describe("brevo webhook effects", () => {
       email: "person@example.com",
       suppress: "bounce",
       deliveryStatus: "bounced",
-      messageId: "<abc@brevo>",
+      messageId: "abc@brevo",
       tag: "kemailqueue1",
     });
     expect(soft.ok && soft.events[0]).toMatchObject({ suppress: null, deliveryStatus: "deferred" });
@@ -122,13 +123,78 @@ describe("brevo webhook effects", () => {
     expect(store.statuses).toHaveLength(1);
   });
 
-  it("forgets the event id when suppression fails so Brevo can retry", async () => {
+  it("does not record the event when suppression fails, so a retry can apply it", async () => {
     const store = deps({
       suppress: async () => false,
     });
-    const response = await handleBrevoWebhook(request(event()), store);
-    expect(response.status).toBe(500);
+    const failed = await handleBrevoWebhook(request(event()), store);
+    expect(failed.status).toBe(500);
     expect(store.seen.size).toBe(0);
+    expect(store.suppressed).toHaveLength(0);
+    const recovered = deps();
+    recovered.seen = store.seen;
+    const again = await handleBrevoWebhook(request(event()), recovered);
+    expect(await again.json()).toMatchObject({ ok: true, applied: 1, duplicates: 0 });
+    expect(recovered.suppressed).toEqual([{ email: "person@example.com", reason: "bounce" }]);
+  });
+
+  it("parses Brevo's documented hard_bounce, invalid_email, and error payloads", () => {
+    const sentAt = 1_604_933_653;
+    const eventAt = Math.floor(NOW / 1000);
+    const hard = parseBrevoWebhookEvents(
+      {
+        event: "hard_bounce",
+        email: "example@domain.com",
+        id: 577,
+        ts: eventAt,
+        ts_event: eventAt,
+        "message-id": "<201798300811.5787683@relay.domain.com>",
+        tags: ["transac_messages", "kemailqueue1"],
+        ts_epoch: sentAt,
+        reason: "server is down",
+      },
+      NOW,
+    );
+    expect(hard.ok && hard.events[0]).toMatchObject({
+      suppress: "bounce",
+      deliveryStatus: "bounced",
+      messageId: "201798300811.5787683@relay.domain.com",
+      tag: "kemailqueue1",
+    });
+    const invalid = parseBrevoWebhookEvents(
+      {
+        event: "invalid_email",
+        email: "bad@domain.com",
+        id: 578,
+        ts_event: eventAt,
+        "message-id": "<bad@relay.domain.com>",
+        tags: ["kemailqueue1"],
+        ts_epoch: sentAt,
+      },
+      NOW,
+    );
+    expect(invalid.ok && invalid.events[0]).toMatchObject({
+      suppress: "bounce",
+      deliveryStatus: "bounced",
+      tag: "kemailqueue1",
+    });
+    const errored = parseBrevoWebhookEvents(
+      {
+        event: "error",
+        email: "example@domain.com",
+        id: 579,
+        ts: eventAt,
+        "message-id": "<err@relay.domain.com>",
+        tags: ["transac_messages"],
+        ts_epoch: sentAt,
+      },
+      NOW,
+    );
+    expect(errored.ok && errored.events[0]).toMatchObject({
+      suppress: null,
+      deliveryStatus: "bounced",
+    });
+    expect(parseBrevoWebhookEvents({ event: "hard_bounce", email: "a@b.com", id: 1, ts_epoch: sentAt }, NOW).ok).toBe(false);
   });
 
   it("does not write on a preview deployment", async () => {

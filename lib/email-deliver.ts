@@ -63,6 +63,11 @@ export type DeliverParams = {
    * twice. Defaults to a fresh key per call, which still covers the in-call retry.
    */
   idempotencyKey?: string;
+  /**
+   * Cutover-only grouping for "is a send of this login still unconfirmed?".
+   * Ignored on the production Resend path.
+   */
+  operationScope?: string | null;
 };
 
 export type DeliverResult =
@@ -176,6 +181,60 @@ async function consumeDailyCounter(action: string, key: string, bucket: Date, ma
  * Arizona budget. A send the Arizona budget refuses has already counted one
  * against the cap; that errs on the safe side (fewer sends, never a 429).
  */
+/**
+ * Fail-closed copy of the live Resend counters. A read error does not send.
+ * The production path above stays fail-open. Cutover fallback uses this so it
+ * sees mail already counted today instead of a second counter that starts at 0.
+ */
+async function consumeDailyCounterFailClosed(
+  action: string,
+  key: string,
+  bucket: Date,
+  max: number,
+): Promise<"reserved" | "full" | "unknown"> {
+  try {
+    const admin = createServiceRoleClient();
+    const { data, error } = await admin.rpc("try_consume_action_rate", {
+      p_action: action,
+      p_ip_hash: createHash("sha256").update(key).digest("hex"),
+      p_bucket: bucket.toISOString(),
+      p_max: max,
+    } as never);
+    if (error) return "unknown";
+    return data === true ? "reserved" : "full";
+  } catch {
+    return "unknown";
+  }
+}
+
+export async function consumeSharedResendBudget(
+  brandId: string,
+  recipients: number,
+  now: Date = new Date(),
+  env: Env = process.env,
+): Promise<"reserved" | "full" | "unknown"> {
+  if (!Number.isInteger(recipients) || recipients < 1 || recipients > 20) return "unknown";
+  const cap = resendUtcDayCap(env);
+  const soft = resendDailySoftLimit(env);
+  for (let i = 0; i < recipients; i += 1) {
+    const utc = await consumeDailyCounterFailClosed(
+      "email_resend_daily",
+      `resend-daily:${brandId}`,
+      utcDayStart(now),
+      cap,
+    );
+    if (utc !== "reserved") return utc;
+    const phx = await consumeDailyCounterFailClosed(
+      "email_resend_phx_day",
+      `resend-phx-day:${brandId}`,
+      phoenixDayStartUtc(now),
+      soft,
+    );
+    if (phx !== "reserved") return phx;
+  }
+  return "reserved";
+}
+
 async function consumeResendDailyBudget(brandId: string, now: Date = new Date()): Promise<boolean> {
   const underCap = await consumeDailyCounter(
     "email_resend_daily",

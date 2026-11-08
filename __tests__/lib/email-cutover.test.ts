@@ -14,8 +14,10 @@ jest.mock("@/lib/posthog-server", () => ({ getPostHogClient: () => ({ capture: j
 
 import { postBrevoTransactional } from "@/lib/email-brevo-transport";
 import { createMemoryCutoverDeps, runBrevoCutover } from "@/lib/email-cutover";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
 import {
   BREVO_FREE_PLAN_DAILY_RECIPIENTS,
+  brevoQuotaSeed,
   brevoRecipientCap,
   brevoWindowKey,
   countEnvelopeRecipients,
@@ -47,6 +49,7 @@ const baseEnv = {
   WARDSIGNUP_BREVO_API_KEY: "xkeysib-test-key",
   BREVO_API_KEY: "mcp-token-not-for-http",
   BREVO_DAILY_RECIPIENT_CAP: "5",
+  BREVO_QUOTA_USED_AT_OPEN: "0",
   RESEND_UTC_DAY_CAP: "2",
   RESEND_DAILY_SOFT_LIMIT: "2",
 };
@@ -96,15 +99,19 @@ describe("cutover config", () => {
     expect(isBrevoCutoverEnabled({ EMAIL_PROVIDER_CUTOVER: " brevo " })).toBe(true);
   });
 
-  it("uses the free-plan ceiling of 300, not a leftover snapshot", () => {
+  it("refuses until cap and seed are both explicit, and does not store 288", () => {
     expect(BREVO_FREE_PLAN_DAILY_RECIPIENTS).toBe(300);
-    expect(brevoRecipientCap({})).toBe(300);
+    expect(brevoRecipientCap({})).toBeNull();
     expect(brevoRecipientCap({ BREVO_DAILY_RECIPIENT_CAP: "288" })).toBe(288);
     expect(brevoRecipientCap({ BREVO_DAILY_RECIPIENT_CAP: "10000" })).toBe(300);
     expect(brevoRecipientCap({ BREVO_DAILY_RECIPIENT_CAP: "unknown" })).toBeNull();
     expect(brevoRecipientCap({ BREVO_DAILY_RECIPIENT_CAP: "0" })).toBeNull();
     expect(brevoRecipientCap({ BREVO_DAILY_RECIPIENT_CAP: "1.5" })).toBeNull();
     expect(brevoWindowKey({})).toBe("unconfirmed-reset");
+    expect(brevoQuotaSeed({})).toBeNull();
+    expect(brevoQuotaSeed({ BREVO_QUOTA_USED_AT_OPEN: "0" })).toBe(0);
+    expect(brevoQuotaSeed({ BREVO_QUOTA_USED_AT_OPEN: "12" })).toBe(12);
+    expect(brevoQuotaSeed({ BREVO_QUOTA_USED_AT_OPEN: "unknown" })).toBeNull();
   });
 
   it("counts every envelope recipient and refuses an empty list", () => {
@@ -224,7 +231,7 @@ describe("quota", () => {
     expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(2);
   });
 
-  it("does not refill a Brevo window when the clock moves, and a new window id does", async () => {
+  it("does not refill a Brevo window when the clock moves; a new window uses the same explicit seed", async () => {
     const { deps, brevo, resend, setClock } = harness({ ...baseEnv, BREVO_DAILY_RECIPIENT_CAP: "1" });
     expect(await send(deps, { idempotencyKey: "day-1" })).toMatchObject({ ok: true, provider: "brevo" });
     setClock(new Date("2026-11-10T18:00:00Z"));
@@ -248,16 +255,16 @@ describe("quota", () => {
   it("refuses an unknown cap without calling either provider", async () => {
     const { deps, brevo, resend } = harness({ ...baseEnv, BREVO_DAILY_RECIPIENT_CAP: "unknown" });
     const result = await send(deps);
-    expect(result).toMatchObject({ ok: false, terminal: true });
+    expect(result).toMatchObject({ ok: false, retryable: true });
     expect(String((result as { error?: string }).error)).toContain("unknown");
     expect(brevo).not.toHaveBeenCalled();
     expect(resend).not.toHaveBeenCalled();
   });
 
   it("keeps an exhausted latch across time on the same window", () => {
-    let row = applyReserve(null, 1, 1).row;
+    let row = applyReserve(null, 1, 1, 0).row;
     row = { ...row!, exhausted: true };
-    const later = applyReserve(row, 1, 300);
+    const later = applyReserve(row, 1, 300, 0);
     expect(later.outcome.result).toBe("exhausted");
     expect(later.row?.reserved).toBe(1);
   });
@@ -368,6 +375,139 @@ describe("provider outcomes", () => {
     expect(result).toMatchObject({ ok: false, ambiguous: true });
     expect(brevo).not.toHaveBeenCalled();
   });
+
+  it("retries a pre-HTTP row after it is stale and does not reserve twice", async () => {
+    const { deps, brevo, resend } = harness();
+    await deps.claim({
+      key: "email-queue/1",
+      brandId: "wardsignup",
+      kind: "magic_link",
+      toAddress: "person@example.com",
+      recipientCount: 1,
+    });
+    const row = deps.state.attempts.get("email-queue/1");
+    if (!row) throw new Error("missing attempt");
+    deps.state.attempts.set("email-queue/1", { ...row, httpStarted: false, quotaHeld: true, updatedAt: Date.now() - 120_000 });
+    deps.state.quotas.set("brevo:unconfirmed-reset", { reserved: 1, exhausted: false });
+    const result = await send(deps);
+    expect(result).toMatchObject({ ok: true, provider: "brevo" });
+    expect(brevo).toHaveBeenCalledTimes(1);
+    expect(resend).not.toHaveBeenCalled();
+    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(1);
+    expect(deps.state.attempts.get("email-queue/1")?.phase).toBe("primary_accepted");
+  });
+
+  it("seeds the first reservation with dashboard usage and refuses a missing seed", async () => {
+    const seeded = harness({ ...baseEnv, BREVO_DAILY_RECIPIENT_CAP: "300", BREVO_QUOTA_USED_AT_OPEN: "12" });
+    expect(await send(seeded.deps, { idempotencyKey: "seeded" })).toMatchObject({ ok: true, provider: "brevo" });
+    expect(seeded.deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(13);
+
+    const { BREVO_QUOTA_USED_AT_OPEN: _seed, ...noSeed } = baseEnv;
+    const missing = harness(noSeed);
+    const refused = await send(missing.deps, { idempotencyKey: "no-seed" });
+    expect(refused).toMatchObject({ ok: false, retryable: true });
+    expect(missing.brevo).not.toHaveBeenCalled();
+    expect(missing.resend).not.toHaveBeenCalled();
+    expect(missing.deps.state.quotas.has("brevo:unconfirmed-reset")).toBe(false);
+  });
+
+  it("does not give the Resend fallback a fresh budget when today's counter is already full", async () => {
+    const { deps, brevo, resend } = harness({
+      ...baseEnv,
+      BREVO_DAILY_RECIPIENT_CAP: "1",
+      RESEND_UTC_DAY_CAP: "2",
+      RESEND_DAILY_SOFT_LIMIT: "2",
+      RESEND_ALREADY_USED: "2",
+    });
+    expect(await send(deps, { idempotencyKey: "one" })).toMatchObject({ ok: true, provider: "brevo" });
+    const second = await send(deps, { idempotencyKey: "two", to: "two@example.com" });
+    expect(second).toMatchObject({ ok: false, overBudget: true });
+    expect(brevo).toHaveBeenCalledTimes(1);
+    expect(resend).not.toHaveBeenCalled();
+  });
+
+  it("falls back on a definitive sender failure and not on a recipient validation error", async () => {
+    const sender = harness();
+    sender.brevo.mockResolvedValue({
+      status: 400,
+      body: JSON.stringify({ code: "invalid_parameter", message: "Sender is not valid" }),
+    });
+    expect(await send(sender.deps, { idempotencyKey: "sender" })).toMatchObject({ ok: true, provider: "resend" });
+    expect(sender.resend).toHaveBeenCalledTimes(1);
+
+    const recipient = harness();
+    recipient.brevo.mockResolvedValue({
+      status: 400,
+      body: JSON.stringify({ code: "invalid_parameter", message: "email is not valid" }),
+    });
+    expect(await send(recipient.deps, { idempotencyKey: "recipient" })).toMatchObject({ ok: false, terminal: true });
+    expect(recipient.resend).not.toHaveBeenCalled();
+  });
+
+  it("does not fall back when the rejection receipt cannot be stored", async () => {
+    const { deps, brevo, resend } = harness();
+    brevo.mockResolvedValue({ status: 401, body: JSON.stringify({ code: "unauthorized", message: "Key not found" }) });
+    deps.finish = async () => false;
+    const result = await send(deps, { idempotencyKey: "finish-fail" });
+    expect(result).toMatchObject({ ok: false, retryable: true });
+    expect(result).not.toMatchObject({ ambiguous: true });
+    expect(resend).not.toHaveBeenCalled();
+  });
+
+  it("treats an unexpected reserve payload as unknown and does not send", async () => {
+    const { deps, brevo, resend } = harness();
+    deps.reserve = async () => ({ result: "surprise" }) as never;
+    const result = await send(deps, { idempotencyKey: "bad-payload" });
+    expect(result).toMatchObject({ ok: false, retryable: true });
+    expect(brevo).not.toHaveBeenCalled();
+    expect(resend).not.toHaveBeenCalled();
+  });
+
+  it("refuses a missing idempotency key instead of minting a new one", async () => {
+    const { deps, brevo, resend } = harness();
+    const result = await send(deps, { idempotencyKey: "  " });
+    expect(result).toMatchObject({ ok: false, terminal: true });
+    expect(brevo).not.toHaveBeenCalled();
+    expect(resend).not.toHaveBeenCalled();
+    expect(deps.state.attempts.size).toBe(0);
+  });
+
+  it("blocks a hard bounce for a magic link and still allows an unsubscribe", async () => {
+    const hard = harness();
+    hard.deps.recipientBlock = async () => "hard";
+    expect(await send(hard.deps, { idempotencyKey: "hard", kind: "magic_link" })).toMatchObject({ ok: false, terminal: true });
+    expect(hard.brevo).not.toHaveBeenCalled();
+
+    const unsub = harness();
+    unsub.deps.recipientBlock = async (_email, kind) => (kind === "reminder" ? "unsubscribe" : "allow");
+    expect(await send(unsub.deps, { idempotencyKey: "login", kind: "magic_link" })).toMatchObject({ ok: true, provider: "brevo" });
+    expect(await send(unsub.deps, { idempotencyKey: "remind", kind: "reminder", to: "other@example.com" })).toMatchObject({
+      ok: false,
+      terminal: true,
+    });
+  });
+});
+
+describe("operation keys", () => {
+  const on = { EMAIL_PROVIDER_CUTOVER: "brevo" };
+
+  it("reuses a signup or invite key and does not collapse a new login token", () => {
+    expect(cutoverOperationKey("signup_confirmation", ["signup-1"], on)).toBe(
+      cutoverOperationKey("signup_confirmation", ["signup-1"], on),
+    );
+    expect(cutoverOperationKey("signup_confirmation", ["signup-1"], on)).not.toBe(
+      cutoverOperationKey("signup_confirmation", ["signup-2"], on),
+    );
+    expect(cutoverOperationKey("org_invite", ["invite-a", "a@example.com"], on)).toBe(
+      cutoverOperationKey("org_invite", ["invite-a", "a@example.com"], on),
+    );
+    const firstLogin = cutoverOperationKey("magic_link", ["wardsignup", "a@example.com", "token-1"], on);
+    const retry = cutoverOperationKey("magic_link", ["wardsignup", "a@example.com", "token-1"], on);
+    const newLogin = cutoverOperationKey("magic_link", ["wardsignup", "a@example.com", "token-2"], on);
+    expect(retry).toBe(firstLogin);
+    expect(newLogin).not.toBe(firstLogin);
+    expect(cutoverOperationKey("magic_link", ["wardsignup", "a@example.com", "token-2"], {})).toBeUndefined();
+  });
 });
 
 describe("production gate", () => {
@@ -398,7 +538,8 @@ describe("production gate", () => {
     const fetchImpl = jest.fn();
     (global as { fetch?: unknown }).fetch = fetchImpl;
     const result = await deliverEmail(message({ idempotencyKey: "missing-rpc" }), { urgent: true });
-    expect(result).toMatchObject({ ok: false, ambiguous: true });
+    expect(result).toMatchObject({ ok: false, retryable: true });
+    expect(result).not.toMatchObject({ ambiguous: true });
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 

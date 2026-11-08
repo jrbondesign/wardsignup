@@ -210,8 +210,10 @@ export async function GET(request: NextRequest) {
     const cancelToken = r.cancel_token ?? undefined;
 
     // Mark BEFORE sending (at-most-once). The old send-then-mark order meant a
-    // failed mark re-emailed the same person every hour forever. A send
-    // failure after marking drops one reminder — the safe direction for email.
+    // failed mark re-emailed the same person every hour forever. An ordinary
+    // send failure after marking drops one reminder. A retryable result (the
+    // provider did not accept it) clears the mark below so a later run can
+    // send while the slot is still inside the 0–25h window.
     // The IS NULL filter makes the claim atomic against a concurrent run.
     const { data: claimed, error: upErr } = await admin
       .from("signups")
@@ -241,7 +243,19 @@ export async function GET(request: NextRequest) {
       },
       cancelUrl,
       cancelToken,
+      signupId: r.id,
     });
+
+    if (!sendResult.ok && sendResult.retryable) {
+      // Not sent. Clear the claim so the next run can retry while the slot
+      // is still inside the 0–25h window. A later run past the slot does not send.
+      const { error: clearErr } = await admin
+        .from("signups")
+        .update({ reminder_sent_at: null } as never)
+        .eq("id", r.id);
+      errors.push(`${r.id}: ${sendResult.error}${clearErr ? ` (clear failed: ${clearErr.message})` : ""}`);
+      continue;
+    }
 
     if (!sendResult.ok) {
       errors.push(`${r.id}: ${sendResult.error}`);

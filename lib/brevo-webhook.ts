@@ -53,6 +53,7 @@ const SUPPRESS: Record<string, BrevoWebhookEffect["suppress"]> = {
   hardbounce: "bounce",
   hard_bounce: "bounce",
   invalid: "bounce",
+  invalid_email: "bounce",
   blocked: "bounce",
   spam: "complaint",
   complaint: "complaint",
@@ -67,32 +68,67 @@ const STATUS: Record<string, DeliveryStatus> = {
   soft_bounce: "deferred",
   deferred: "deferred",
   hardbounce: "bounced",
+  hard_bounce: "bounced",
   invalid: "bounced",
+  invalid_email: "bounced",
   blocked: "bounced",
+  // Brevo's "error" event is a failed delivery of that message. The published
+  // sample is a copy of invalid_email and does not say the address itself is
+  // invalid, so the address is not suppressed.
+  error: "bounced",
   spam: "complained",
   unsubscribed: "suppressed",
 };
+
+/** Strip SMTP brackets so `<id@host>` and `id@host` are the same receipt. */
+export function normalizeProviderMessageId(raw: string | null | undefined): string | null {
+  if (typeof raw !== "string") return null;
+  const text = raw.trim().replace(/^<+/, "").replace(/>+$/, "").trim().toLowerCase();
+  return text ? text.slice(0, 500) : null;
+}
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
 }
 
+function asEpochMs(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  // Brevo's samples use 10-digit seconds for `ts` and `ts_event`. A 13-digit
+  // value is already milliseconds. `ts_epoch` in those samples is the send
+  // time and is often the same 10-digit seconds value, despite the field
+  // text saying milliseconds, so seconds-scale `ts_epoch` is not an event time.
+  if (value >= 1e12) return value;
+  if (value >= 1e9) return value * 1000;
+  return null;
+}
+
+/**
+ * Freshness uses when the event happened (`ts_event`, then `ts`).
+ * `ts_epoch` is when the message was sent. It is used only when it is
+ * millisecond-scale and no event timestamp is present.
+ */
 function eventTimeMs(event: Record<string, unknown>): number | null {
-  if (typeof event.ts_epoch === "number" && Number.isFinite(event.ts_epoch)) return event.ts_epoch;
-  if (typeof event.ts === "number" && Number.isFinite(event.ts)) return event.ts * 1000;
+  const eventAt = asEpochMs(event.ts_event) ?? asEpochMs(event.ts);
+  if (eventAt !== null) return eventAt;
+  if (typeof event.ts_epoch === "number" && event.ts_epoch >= 1e12) return event.ts_epoch;
   return null;
 }
 
 function messageIdOf(event: Record<string, unknown>): string | null {
   const raw = event["message-id"] ?? event.messageId;
-  return typeof raw === "string" && raw.trim() ? raw.trim().slice(0, 500) : null;
+  return normalizeProviderMessageId(typeof raw === "string" ? raw : null);
 }
 
 function tagOf(event: Record<string, unknown>): string | null {
-  const raw = event.tag;
-  const text = typeof raw === "string" ? raw : raw == null ? "" : JSON.stringify(raw);
-  const match = text.match(/k[A-Za-z0-9]{8,40}/);
+  const chunks: string[] = [];
+  if (typeof event.tag === "string") chunks.push(event.tag);
+  if (Array.isArray(event.tags)) {
+    for (const item of event.tags) {
+      if (typeof item === "string") chunks.push(item);
+    }
+  }
+  const match = chunks.join(" ").match(/k[A-Za-z0-9]{8,40}/);
   return match ? match[0] : null;
 }
 
@@ -142,6 +178,8 @@ export function parseBrevoWebhookEvents(
 export type BrevoWebhookDeps = {
   env: Env;
   now: () => Date;
+  /** True when this event id was already stored. Does not insert. */
+  alreadyRecorded: (eventId: string) => Promise<boolean>;
   recordEvent: (eventId: string) => Promise<boolean>;
   forgetEvent: (eventId: string) => Promise<void>;
   suppress: (email: string, reason: "bounce" | "complaint" | "unsubscribe", source: string) => Promise<boolean>;
@@ -168,17 +206,19 @@ export async function handleBrevoWebhook(request: Request, deps: BrevoWebhookDep
   let applied = 0;
   let duplicates = 0;
   for (const effect of parsed.events) {
-    let fresh = false;
+    let seen = false;
     try {
-      fresh = await deps.recordEvent(effect.eventId);
+      seen = await deps.alreadyRecorded(effect.eventId);
     } catch (e) {
-      console.error("brevo webhook record failed:", e instanceof Error ? e.message : "error");
-      return Response.json({ error: "record_failed" }, { status: 500 });
+      console.error("brevo webhook lookup failed:", e instanceof Error ? e.message : "error");
+      return Response.json({ error: "record_failed", applied }, { status: 500 });
     }
-    if (!fresh) {
+    if (seen) {
       duplicates += 1;
       continue;
     }
+    // Apply before the receipt. A crash here leaves no receipt, so Brevo's
+    // retry applies again. Suppress and status are idempotent.
     try {
       if (effect.suppress && effect.email) {
         const source = `brevo:${effect.event}:${effect.messageId ?? effect.eventId.slice(0, 12)}`;
@@ -186,11 +226,17 @@ export async function handleBrevoWebhook(request: Request, deps: BrevoWebhookDep
         if (!ok) throw new Error("suppress failed");
       }
       if (effect.deliveryStatus) await deps.applyStatus(effect);
-      applied += 1;
     } catch (e) {
       console.error("brevo webhook apply failed:", e instanceof Error ? e.message : "error");
-      await deps.forgetEvent(effect.eventId).catch(() => undefined);
       return Response.json({ error: "apply_failed", applied }, { status: 500 });
+    }
+    try {
+      const fresh = await deps.recordEvent(effect.eventId);
+      if (!fresh) duplicates += 1;
+      else applied += 1;
+    } catch (e) {
+      console.error("brevo webhook record failed:", e instanceof Error ? e.message : "error");
+      return Response.json({ error: "record_failed", applied }, { status: 500 });
     }
   }
   return Response.json({ ok: true, applied, duplicates });

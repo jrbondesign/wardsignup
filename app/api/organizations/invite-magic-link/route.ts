@@ -6,6 +6,7 @@ import { magicLinkDedupeBuckets, normalizeEmail } from "@/lib/email-throttle";
 import { getBrandFromHost } from "@/lib/brand";
 import { magicLinkEmailFrom } from "@/lib/brand/email-from";
 import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
 import { escapeHtml } from "@/lib/html-escape";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { createHash } from "crypto";
@@ -188,6 +189,8 @@ export async function POST(request: NextRequest) {
         kind: "org_invite_link",
         from,
         to: email,
+        idempotencyKey: cutoverOperationKey("org_invite", [tokenHash, email]),
+        operationScope: `invite:${tokenHash}`,
         subject,
         text: `Accept your invitation to ${organizationName}\n\n${actionLink}\n\n${brand.name} · ${brand.siteHost}\nMade with ❤️ in Arizona`,
         html: `
@@ -206,6 +209,9 @@ export async function POST(request: NextRequest) {
       { urgent: true },
     );
 
+    if (!sendRes.ok && sendRes.ambiguous) {
+      return NextResponse.json({ ok: true, delivery: "unconfirmed" });
+    }
     if (!sendRes.ok) {
       console.error("invite-magic-link send error:", sendRes.error);
       return NextResponse.json({ error: "Failed to send email" }, { status: 500 });
