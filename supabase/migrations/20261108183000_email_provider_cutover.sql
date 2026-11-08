@@ -934,10 +934,14 @@ $$;
 -- replace it.
 -- phase http: this holder has started the send. The token stays. A new token
 -- is not stored.
+-- phase queued: our queue has the copy. The provider has not accepted it.
+-- Acquire does not mint. The drain writes accepted, rejected, or ambiguous
+-- onto this same key. Accepted then allows the one-hour reissue. Ambiguous
+-- blocks a replacement. A pending row is not acceptance uncertainty.
 -- phase ambiguous: finish saw possible acceptance. block_reissue is set in
--- that same update. A later holder cannot mint. email_operation_reconcile is
--- the only clearer, and it refuses unless the operator names the attempt and
--- states the provider did not accept it. It never deletes the row.
+-- that same update. A later holder cannot mint. email_operation_reconcile
+-- does not treat an operator phrase or a missing receipt as proof the
+-- provider declined. It never deletes the row. No request handler calls it.
 -- phase settled: accepted and the token cleared. A later invite may mint.
 -- phase failed: retry keeps a stored token; a terminal rejection may mint.
 -- Stale is at least 90s, longer than the 60s pre-HTTP inflight window.
@@ -949,8 +953,9 @@ create table if not exists public.email_operation_lease (
   had_token boolean not null default false,
   block_reissue boolean not null default false,
   phase text not null default 'acquired' check (phase in (
-    'acquired', 'token', 'http', 'settled', 'ambiguous', 'failed'
+    'acquired', 'token', 'http', 'queued', 'settled', 'ambiguous', 'failed'
   )),
+  queue_key text,
   updated_at timestamptz not null default now()
 );
 
@@ -958,6 +963,7 @@ alter table public.email_operation_lease add column if not exists token text;
 alter table public.email_operation_lease add column if not exists had_token boolean not null default false;
 alter table public.email_operation_lease add column if not exists block_reissue boolean not null default false;
 alter table public.email_operation_lease add column if not exists phase text not null default 'acquired';
+alter table public.email_operation_lease add column if not exists queue_key text;
 
 do $$
 begin
@@ -966,7 +972,7 @@ begin
   ) then
     alter table public.email_operation_lease
       add constraint email_operation_lease_phase_check
-      check (phase in ('acquired', 'token', 'http', 'settled', 'ambiguous', 'failed'));
+      check (phase in ('acquired', 'token', 'http', 'queued', 'settled', 'ambiguous', 'failed'));
   end if;
 end $$;
 
@@ -985,6 +991,7 @@ as $$
 declare
   rec public.email_operation_lease%rowtype;
   stale_seconds integer;
+  queue_status text;
 begin
   if p_scope is null or length(trim(p_scope)) = 0
      or p_holder is null or length(trim(p_holder)) = 0 then
@@ -1008,14 +1015,50 @@ begin
   if rec.block_reissue or rec.phase = 'ambiguous' then
     return 'blocked';
   end if;
+  -- A parked copy is not acceptance uncertainty. Do not mint over it.
+  -- If the drain already finished and the process died before apply, resolve
+  -- that finished row here. This request still does not mint: accepted returns
+  -- settled, and a failed row falls through only after the token is cleared.
+  if rec.phase = 'queued' then
+    if rec.queue_key is not null then
+      select status into queue_status
+      from public.email_queue
+      where idempotency_key = rec.queue_key
+      limit 1;
+      if queue_status = 'sent' then
+        perform public.email_operation_apply_queue_result(rec.queue_key, 'accepted');
+        return 'settled';
+      elsif queue_status = 'ambiguous' then
+        perform public.email_operation_apply_queue_result(rec.queue_key, 'ambiguous');
+        return 'blocked';
+      elsif queue_status in ('failed', 'skipped') then
+        perform public.email_operation_apply_queue_result(rec.queue_key, 'rejected');
+        select * into rec from public.email_operation_lease where scope = p_scope;
+      else
+        return 'queued';
+      end if;
+    else
+      return 'queued';
+    end if;
+  end if;
   if rec.state = 'sending'
      and rec.holder <> p_holder
      and rec.updated_at > now() - make_interval(secs => stale_seconds) then
     return 'busy';
   end if;
+  -- The queue insert landed and this lease was not marked yet. Still do not mint.
+  if exists (
+    select 1
+    from public.email_queue q
+    join public.email_delivery_attempts a on a.idempotency_key = q.idempotency_key
+    where a.operation_scope = p_scope
+      and q.status in ('pending', 'sending')
+  ) then
+    return 'queued';
+  end if;
   -- A token was stored, or HTTP was marked, and the plaintext is gone.
   -- That is not the never-initialized lease. Do not mint.
-  if rec.token is null and (rec.had_token or rec.phase in ('token', 'http')) then
+  if rec.token is null and (rec.had_token or rec.phase in ('token', 'http', 'queued')) then
     return 'blocked';
   end if;
   -- phase acquired with a null token has not contacted the provider.
@@ -1030,6 +1073,11 @@ begin
           when token is not null then phase
           when phase in ('settled', 'failed') then 'acquired'
           else phase
+        end,
+        queue_key = case
+          when token is not null then queue_key
+          when phase in ('settled', 'failed') then null
+          else queue_key
         end
   where scope = p_scope;
   return 'go';
@@ -1141,14 +1189,161 @@ begin
 end;
 $$;
 
--- Operator reconciliation for an ambiguous lease. Not used by request handlers.
--- Refuses unless p_outcome is provider_not_accepted, the named attempt belongs
--- to this scope, and no attempt for the scope was accepted or delivered.
--- Does not delete the row. On success the block is cleared and one later
--- invite may store one new token.
+-- Parks the stored token. This is not an acceptance and not uncertainty.
+-- The token stays. A later apply on this key settles, rejects, or blocks it.
+create or replace function public.email_operation_mark_queued(
+  p_scope text,
+  p_holder text,
+  p_key text
+) returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated text;
+begin
+  if p_key is null or length(trim(p_key)) = 0 then
+    return false;
+  end if;
+  update public.email_operation_lease
+    set phase = 'queued',
+        state = 'settled',
+        block_reissue = false,
+        queue_key = trim(p_key),
+        updated_at = now()
+  where scope = p_scope
+    and holder = p_holder
+    and state = 'sending'
+    and token is not null
+    and phase in ('token', 'http')
+  returning scope into updated;
+  return updated is not null;
+end;
+$$;
+
+-- Writes the drain's result for one queue key onto the lease that parked it.
+-- Accepted wins over a later rejection. A rejection does not clear an
+-- ambiguous or settled row. Pending leaves the token in place.
+create or replace function public.email_operation_apply_queue_result(
+  p_idempotency_key text,
+  p_outcome text
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  rec public.email_operation_lease%rowtype;
+  attempt public.email_delivery_attempts%rowtype;
+  key text;
+  org_id text;
+  recipient text;
+begin
+  if p_idempotency_key is null or length(trim(p_idempotency_key)) = 0 then
+    return 'ignored';
+  end if;
+  if p_outcome is null or p_outcome not in ('accepted', 'rejected', 'ambiguous', 'pending') then
+    return 'ignored';
+  end if;
+  key := trim(p_idempotency_key);
+  perform pg_advisory_xact_lock(hashtext('email-op-key'), hashtext(key));
+  select * into attempt from public.email_delivery_attempts where idempotency_key = key;
+  select * into rec from public.email_operation_lease where queue_key = key for update;
+  if not found and attempt.operation_scope is not null then
+    select * into rec from public.email_operation_lease
+    where scope = attempt.operation_scope
+      and (queue_key is null or queue_key = key)
+      and phase in ('queued', 'token', 'http', 'failed', 'ambiguous')
+    for update;
+  end if;
+  if not found then
+    return 'ignored';
+  end if;
+  if rec.queue_key is not null and rec.queue_key <> key then
+    return 'ignored';
+  end if;
+  if rec.phase = 'settled' then
+    if p_outcome = 'accepted' then
+      return 'accepted';
+    end if;
+    return 'ignored';
+  end if;
+  if rec.phase = 'ambiguous' and p_outcome is distinct from 'accepted' then
+    return 'ignored';
+  end if;
+  if rec.phase = 'failed' and not (p_outcome = 'accepted' and rec.token is null) then
+    return 'ignored';
+  end if;
+  if p_outcome = 'pending' and rec.phase = 'queued' then
+    return 'pending';
+  end if;
+  if p_outcome = 'pending' then
+    update public.email_operation_lease
+      set phase = 'queued',
+          state = 'settled',
+          block_reissue = false,
+          queue_key = key,
+          updated_at = now()
+    where scope = rec.scope
+      and phase in ('token', 'http');
+    return 'pending';
+  end if;
+  if p_outcome = 'accepted' then
+    update public.email_operation_lease
+      set state = 'settled',
+          phase = 'settled',
+          block_reissue = false,
+          had_token = false,
+          token = null,
+          queue_key = key,
+          updated_at = now()
+    where scope = rec.scope;
+    if to_regclass('public.organization_members') is not null then
+      org_id := substring(rec.scope from '^org-member:([0-9a-fA-F-]{36}):');
+      recipient := lower(substring(rec.scope from '^org-member:[0-9a-fA-F-]{36}:(.+)$'));
+      if org_id is not null and recipient is not null then
+        execute
+          'update public.organization_members set invite_last_sent_at = now() where organization_id = $1::uuid and lower(invited_email) = $2'
+          using org_id, recipient;
+      end if;
+    end if;
+    return 'accepted';
+  end if;
+  if p_outcome = 'ambiguous' then
+    update public.email_operation_lease
+      set state = 'settled',
+          phase = 'ambiguous',
+          block_reissue = true,
+          had_token = false,
+          token = null,
+          queue_key = key,
+          updated_at = now()
+    where scope = rec.scope
+      and phase in ('queued', 'token', 'http');
+    return 'ambiguous';
+  end if;
+  update public.email_operation_lease
+    set state = 'failed',
+        phase = 'failed',
+        block_reissue = false,
+        had_token = false,
+        token = null,
+        queue_key = key,
+        updated_at = now()
+  where scope = rec.scope
+    and phase in ('queued', 'token', 'http');
+  return 'rejected';
+end;
+$$;
+
+-- Clears an ambiguous lease only when the named attempt is a pre-HTTP
+-- rejection for the same recipient. A missing row, an HTTP start, a message
+-- id, or an ambiguous phase is not proof the provider declined. No request
+-- handler calls this. It does not delete the row.
+drop function if exists public.email_operation_reconcile(text, text, text);
 create or replace function public.email_operation_reconcile(
   p_scope text,
-  p_outcome text,
   p_idempotency_key text
 ) returns text
 language plpgsql
@@ -1158,14 +1353,16 @@ as $$
 declare
   rec public.email_operation_lease%rowtype;
   attempt public.email_delivery_attempts%rowtype;
+  recipient text;
 begin
-  if p_outcome is distinct from 'provider_not_accepted' then
-    return 'refused';
-  end if;
   if p_scope is null or length(trim(p_scope)) = 0
      or p_idempotency_key is null or length(trim(p_idempotency_key)) = 0 then
     return 'refused';
   end if;
+  if substring(p_scope from '^org-member:[0-9a-fA-F-]{36}:(.+)$') is null then
+    return 'refused';
+  end if;
+  recipient := lower(substring(p_scope from '^org-member:[0-9a-fA-F-]{36}:(.+)$'));
   perform pg_advisory_xact_lock(hashtext('email-op'), hashtext(p_scope));
   select * into rec from public.email_operation_lease where scope = p_scope for update;
   if not found then
@@ -1183,15 +1380,31 @@ begin
   if attempt.operation_scope is distinct from p_scope then
     return 'refused';
   end if;
-  if attempt.phase in ('primary_accepted', 'fallback_accepted')
+  if lower(attempt.to_address) is distinct from recipient then
+    return 'refused';
+  end if;
+  if attempt.http_started
+     or attempt.provider_message_id is not null
+     or attempt.phase in (
+       'primary_accepted', 'fallback_accepted', 'primary_ambiguous', 'fallback_ambiguous',
+       'primary_inflight', 'fallback_inflight'
+     )
      or attempt.delivery_status in ('accepted', 'delivered') then
+    return 'refused';
+  end if;
+  if attempt.phase not in ('primary_rejected', 'fallback_rejected') then
     return 'refused';
   end if;
   if exists (
     select 1 from public.email_delivery_attempts
     where operation_scope = p_scope
       and (
-        phase in ('primary_accepted', 'fallback_accepted')
+        http_started
+        or provider_message_id is not null
+        or phase in (
+          'primary_accepted', 'fallback_accepted', 'primary_ambiguous', 'fallback_ambiguous',
+          'primary_inflight', 'fallback_inflight'
+        )
         or delivery_status in ('accepted', 'delivered')
       )
   ) then
@@ -1229,6 +1442,82 @@ end;
 $$;
 
 alter table public.email_queue add column if not exists idempotency_key text;
+alter table public.email_queue add column if not exists brand_id text;
+alter table public.email_queue add column if not exists category text;
+alter table public.email_queue add column if not exists kind text;
+alter table public.email_queue add column if not exists from_address text;
+alter table public.email_queue add column if not exists to_address text;
+alter table public.email_queue add column if not exists subject text;
+alter table public.email_queue add column if not exists html text;
+alter table public.email_queue add column if not exists text_body text;
+alter table public.email_queue add column if not exists reply_to text;
+alter table public.email_queue add column if not exists attachments jsonb;
+alter table public.email_queue add column if not exists send_after timestamptz;
+alter table public.email_queue add column if not exists attempts integer not null default 0;
+alter table public.email_queue add column if not exists last_error text;
+alter table public.email_queue add column if not exists created_at timestamptz not null default now();
+alter table public.email_queue add column if not exists sent_at timestamptz;
+alter table public.email_queue add column if not exists claimed_at timestamptz;
+
+create unique index if not exists email_queue_idempotency_key_uidx
+  on public.email_queue (idempotency_key)
+  where idempotency_key is not null;
+
+-- One row per business key. A replay returns the existing status and does
+-- not replace the body. Rows with no key keep the older subject dedupe.
+create or replace function public.email_queue_enqueue(
+  p_brand_id text,
+  p_category text,
+  p_kind text,
+  p_from_address text,
+  p_to_address text,
+  p_subject text,
+  p_html text,
+  p_text_body text,
+  p_reply_to text,
+  p_attachments jsonb,
+  p_send_after timestamptz,
+  p_idempotency_key text
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  existing_status text;
+  key text;
+begin
+  if p_idempotency_key is null or length(trim(p_idempotency_key)) = 0 then
+    return 'refused';
+  end if;
+  key := trim(p_idempotency_key);
+  perform pg_advisory_xact_lock(hashtext('email-queue-key'), hashtext(key));
+  select status into existing_status
+  from public.email_queue
+  where idempotency_key = key
+  limit 1;
+  if found then
+    return existing_status;
+  end if;
+  begin
+    insert into public.email_queue (
+      brand_id, category, kind, from_address, to_address, subject, html, text_body,
+      reply_to, attachments, send_after, status, attempts, idempotency_key
+    ) values (
+      p_brand_id, p_category, p_kind, p_from_address, p_to_address, p_subject, p_html, p_text_body,
+      p_reply_to, p_attachments, p_send_after, 'pending', 0, key
+    );
+  exception
+    when unique_violation then
+      select status into existing_status
+      from public.email_queue
+      where idempotency_key = key
+      limit 1;
+      return existing_status;
+  end;
+  return 'inserted';
+end;
+$$;
 
 revoke all on function public.email_delivery_release_held(text, text, text, integer, timestamptz) from public, anon, authenticated;
 revoke all on function public.try_consume_resend_pair(text, timestamptz, integer, text, timestamptz, integer, integer) from public, anon, authenticated;
@@ -1242,7 +1531,10 @@ revoke all on function public.email_operation_acquire(text, text, integer) from 
 revoke all on function public.email_operation_finish(text, text, text) from public, anon, authenticated;
 revoke all on function public.email_operation_remember(text, text, text) from public, anon, authenticated;
 revoke all on function public.email_operation_mark_http(text, text) from public, anon, authenticated;
-revoke all on function public.email_operation_reconcile(text, text, text) from public, anon, authenticated;
+revoke all on function public.email_operation_mark_queued(text, text, text) from public, anon, authenticated;
+revoke all on function public.email_operation_apply_queue_result(text, text) from public, anon, authenticated;
+revoke all on function public.email_operation_reconcile(text, text) from public, anon, authenticated;
+revoke all on function public.email_queue_enqueue(text, text, text, text, text, text, text, text, text, jsonb, timestamptz, text) from public, anon, authenticated;
 revoke all on function public.email_operation_recall(text) from public, anon, authenticated;
 
 grant execute on function public.reserve_email_provider_quota(text, text, integer, integer, integer) to service_role;
@@ -1273,7 +1565,10 @@ grant execute on function public.email_operation_acquire(text, text, integer) to
 grant execute on function public.email_operation_finish(text, text, text) to service_role;
 grant execute on function public.email_operation_remember(text, text, text) to service_role;
 grant execute on function public.email_operation_mark_http(text, text) to service_role;
-grant execute on function public.email_operation_reconcile(text, text, text) to service_role;
+grant execute on function public.email_operation_mark_queued(text, text, text) to service_role;
+grant execute on function public.email_operation_apply_queue_result(text, text) to service_role;
+grant execute on function public.email_operation_reconcile(text, text) to service_role;
+grant execute on function public.email_queue_enqueue(text, text, text, text, text, text, text, text, text, jsonb, timestamptz, text) to service_role;
 grant execute on function public.email_operation_recall(text) to service_role;
 
 comment on table public.email_provider_quota is

@@ -23,6 +23,31 @@ function drainLimit(): number {
   return Number.isInteger(n) && n > 0 ? n : 150;
 }
 
+/** A business key is one the cutover lease can match. A synthetic row id is not. */
+function businessQueueKey(key: string | null | undefined): string | null {
+  const trimmed = key?.trim();
+  if (!trimmed || trimmed.startsWith("email-queue/")) return null;
+  return trimmed;
+}
+
+async function noteQueueLease(
+  admin: { rpc?: (name: string, args: never) => PromiseLike<{ error: { message?: string } | null }> },
+  key: string | null | undefined,
+  outcome: "accepted" | "rejected" | "ambiguous" | "pending",
+): Promise<void> {
+  const trimmed = businessQueueKey(key);
+  if (!trimmed || typeof admin.rpc !== "function") return;
+  try {
+    const { error } = await admin.rpc("email_operation_apply_queue_result", {
+      p_idempotency_key: trimmed,
+      p_outcome: outcome,
+    } as never);
+    if (error) console.error("email_operation_apply_queue_result failed:", error);
+  } catch (e) {
+    console.error("email_operation_apply_queue_result threw:", e);
+  }
+}
+
 /**
  * Drains email_queue every hour at :07 (vercel.json "7 * * * *").
  *
@@ -131,6 +156,7 @@ export async function GET(request: NextRequest) {
     const def = getBrandDefinition(raw.brand_id as BrandId);
     if (!def) {
       await admin.from("email_queue").update({ status: "failed", last_error: "unknown brand" } as never).eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "rejected");
       failed += 1;
       continue;
     }
@@ -165,6 +191,7 @@ export async function GET(request: NextRequest) {
           last_error: ("error" in r ? r.error : undefined) ?? "queued",
         } as never)
         .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "pending");
       continue;
     }
     if (r.ok) {
@@ -172,11 +199,13 @@ export async function GET(request: NextRequest) {
         .from("email_queue")
         .update({ status: "sent", sent_at: new Date().toISOString(), last_error: null } as never)
         .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "accepted");
       sent += 1;
       continue;
     }
     if (r.skipped === "suppressed") {
       await admin.from("email_queue").update({ status: "skipped", last_error: "suppressed" } as never).eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "rejected");
       skipped += 1;
       continue;
     }
@@ -186,6 +215,7 @@ export async function GET(request: NextRequest) {
         .from("email_queue")
         .update({ status: "ambiguous", last_error: r.error ?? "ambiguous" } as never)
         .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "ambiguous");
       continue;
     }
     if (r.retryable) {
@@ -198,6 +228,7 @@ export async function GET(request: NextRequest) {
           last_error: r.error ?? "retry",
         } as never)
         .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "pending");
       continue;
     }
     if (r.terminal) {
@@ -205,6 +236,7 @@ export async function GET(request: NextRequest) {
         .from("email_queue")
         .update({ status: "failed", last_error: r.error ?? "terminal" } as never)
         .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "rejected");
       failed += 1;
       continue;
     }
@@ -214,6 +246,7 @@ export async function GET(request: NextRequest) {
         .from("email_queue")
         .update({ status: "pending", attempts: raw.attempts, last_error: r.error ?? r.skipped ?? null } as never)
         .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "pending");
       stoppedOverBudget = true;
       break;
     }
@@ -226,6 +259,7 @@ export async function GET(request: NextRequest) {
     }
     if (giveUp) console.error(`email_queue ${raw.id} (${raw.kind}) failed after ${attemptsMade} attempts: ${r.error ?? "send failed"}`);
     await admin.from("email_queue").update(patch as never).eq("id", raw.id);
+    await noteQueueLease(admin, raw.idempotency_key, giveUp ? "rejected" : "pending");
     failed += 1;
   }
 

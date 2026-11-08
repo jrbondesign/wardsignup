@@ -28,6 +28,7 @@ type Member = {
 
 let savedToken: string | null = null;
 let reissueBlocked = false;
+let parked = false;
 
 function harness() {
   const state: { member: Member | null; upserts: Array<Record<string, unknown>> } = {
@@ -89,7 +90,14 @@ function req() {
 const params = { params: Promise.resolve({ id: ORG }) };
 
 function leaseRpc(name: string, args?: { p_token?: string | null; p_state?: string }) {
-  if (name === "email_operation_acquire") return { data: reissueBlocked ? "blocked" : "go", error: null };
+  if (name === "email_operation_acquire") {
+    if (parked) return { data: "queued", error: null };
+    return { data: reissueBlocked ? "blocked" : "go", error: null };
+  }
+  if (name === "email_operation_mark_queued") {
+    parked = true;
+    return { data: true, error: null };
+  }
   if (name === "email_operation_recall") return { data: savedToken, error: null };
   if (name === "email_operation_remember") {
     if (!args?.p_token) return { data: false, error: null };
@@ -113,6 +121,7 @@ beforeEach(() => {
   process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
   savedToken = null;
   reissueBlocked = false;
+  parked = false;
   rpc.mockReset();
   rpc.mockImplementation(async (name: string, args?: { p_token?: string | null }) => leaseRpc(name, args));
   (createServiceRoleClient as jest.Mock).mockReturnValue({ rpc });
@@ -205,13 +214,49 @@ it("reports a queued invite as queued and does not mint a second link", async ()
   const res = await POST(req(), params);
   expect(res.status).toBe(202);
   expect(await res.json()).toMatchObject({ ok: true, delivery: "queued" });
-  expect(rpc.mock.calls.filter((call) => call[0] === "email_operation_finish").map((call) => (call[1] as { p_state: string }).p_state)).toEqual([
-    "ambiguous",
-  ]);
+  expect(rpc.mock.calls.filter((call) => call[0] === "email_operation_finish")).toHaveLength(0);
+  expect(rpc.mock.calls.filter((call) => call[0] === "email_operation_mark_queued")).toHaveLength(1);
+  expect(state.member?.invite_last_sent_at ?? null).toBeNull();
   expect(state.upserts).toHaveLength(1);
   const again = await POST(req(), params);
-  expect(again.status).toBe(429);
+  expect(again.status).toBe(202);
   expect(sendGuardedEmail).toHaveBeenCalledTimes(1);
+  expect(state.upserts).toHaveLength(1);
+});
+
+it("waits out the hour after the queued copy is accepted, then mints one new link", async () => {
+  const { state, supabase } = harness();
+  (getAuthFromRequest as jest.Mock).mockResolvedValue({
+    ok: true,
+    supabase,
+    user: { id: OWNER, email: "owner@example.com" },
+  });
+  (sendGuardedEmail as jest.Mock).mockResolvedValueOnce({
+    ok: false,
+    error: "Brevo rate limited",
+    retryable: true,
+    queued: true,
+  });
+  const queued = await POST(req(), params);
+  expect(queued.status).toBe(202);
+  const firstHash = state.upserts[0]?.accept_token_hash;
+  parked = false;
+  savedToken = null;
+  state.member = {
+    invite_last_sent_at: new Date().toISOString(),
+    accept_token: null,
+    accept_token_hash: firstHash as string,
+  };
+  const cooling = await POST(req(), params);
+  expect(cooling.status).toBe(429);
+  expect(sendGuardedEmail).toHaveBeenCalledTimes(1);
+  state.member.invite_last_sent_at = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+  (sendGuardedEmail as jest.Mock).mockResolvedValueOnce({ ok: true });
+  const reissue = await POST(req(), params);
+  expect(reissue.status).toBe(201);
+  expect(sendGuardedEmail).toHaveBeenCalledTimes(2);
+  expect(state.upserts).toHaveLength(2);
+  expect(state.upserts[1]?.accept_token_hash).not.toBe(firstHash);
 });
 
 it("reuses the same token when the send is retryable and mints a new one after a settled cooldown", async () => {

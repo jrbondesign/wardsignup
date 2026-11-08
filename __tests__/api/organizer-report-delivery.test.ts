@@ -15,6 +15,7 @@ import { NextRequest } from "next/server";
 import { POST } from "@/app/api/events/[id]/organizer-report/route";
 import { getAuthFromRequest } from "@/lib/auth";
 import { sendOrganizerMetricsEmail } from "@/lib/organizer-email";
+import { consumeEmailKeyRateCount } from "@/lib/email-send";
 import { organizerReportResultMessage } from "@/lib/organizer-report-ui";
 
 const EVENT = "11111111-2222-4333-8444-555555555555";
@@ -72,4 +73,21 @@ it("says queued when the report was parked, and sent only when a provider accept
   const sentBody = await sent.json();
   expect(sentBody.delivery).toBe("sent");
   expect(organizerReportResultMessage(sentBody)).toContain("Report sent to owner@example.com");
+});
+
+it("passes a new operation id for the next queued report click", async () => {
+  (consumeEmailKeyRateCount as jest.Mock).mockResolvedValueOnce(1).mockResolvedValueOnce(2);
+  (sendOrganizerMetricsEmail as jest.Mock).mockResolvedValue({
+    ok: false,
+    error: "Brevo rate limited",
+    retryable: true,
+    queued: true,
+    sentTo: "owner@example.com",
+  });
+  expect((await POST(req(), { params: Promise.resolve({ id: EVENT }) })).status).toBe(202);
+  expect((await POST(req(), { params: Promise.resolve({ id: EVENT }) })).status).toBe(202);
+  expect((sendOrganizerMetricsEmail as jest.Mock).mock.calls.map((call) => call[3])).toEqual([
+    { operationId: "1" },
+    { operationId: "2" },
+  ]);
 });

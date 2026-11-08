@@ -3,8 +3,24 @@
  */
 import { NextRequest } from "next/server";
 
-type Row = { id: string; kind: string; send_after: string; status: string; attempts: number; last_error?: string | null };
+type Row = {
+  id: string;
+  kind: string;
+  send_after: string;
+  status: string;
+  attempts: number;
+  last_error?: string | null;
+  idempotency_key?: string;
+  brand_id?: string;
+  category?: "notification" | "transactional";
+  from_address?: string;
+  to_address?: string;
+  subject?: string;
+  html?: string;
+};
 let rows: Row[] = [];
+let rpcThrows = false;
+const applied: Array<{ key: string; outcome: string }> = [];
 const listCalls: Array<{ in?: string[]; notIn?: string; lte?: string }> = [];
 
 // Minimal email_queue fake: select chains record the kind filter, update chains claim rows.
@@ -54,6 +70,13 @@ function makeAdmin() {
         return chain;
       },
     }),
+    rpc: async (name: string, args: { p_idempotency_key?: string; p_outcome?: string }) => {
+      if (rpcThrows) throw new Error("apply unavailable");
+      if (name === "email_operation_apply_queue_result" && args.p_idempotency_key) {
+        applied.push({ key: args.p_idempotency_key, outcome: args.p_outcome ?? "" });
+      }
+      return { data: args.p_outcome ?? null, error: null };
+    },
   };
 }
 jest.mock("@/lib/supabase-admin", () => ({ createServiceRoleClient: () => makeAdmin() }));
@@ -73,6 +96,8 @@ const run = () => GET(new NextRequest("https://wardsignup.com/api/cron/email-que
 beforeEach(() => {
   process.env = { ...saved, CRON_SECRET: "s" };
   listCalls.length = 0;
+  applied.length = 0;
+  rpcThrows = false;
   sendGuardedEmail.mockReset();
 });
 afterAll(() => {
@@ -174,6 +199,47 @@ describe("near real time retries after a Brevo failure", () => {
     sendGuardedEmail.mockResolvedValue({ ok: false, error: "send failed" });
     await run();
     expect(rows[0]).toMatchObject({ status: "pending", attempts: 1, send_after: "2026-10-12T07:05:00Z" });
+  });
+
+  it("drains two same-subject keys and still records a lease result when apply throws", async () => {
+    jest.spyOn(console, "error").mockImplementation(() => {});
+    const report = (id: string, key: string, html: string): Row => ({
+      ...row(id, "organizer_report", "2026-10-12T16:00:00Z"),
+      idempotency_key: key,
+      brand_id: "wardsignup",
+      category: "notification",
+      from_address: "Jonathan <jonathan@wardsignup.com>",
+      to_address: "organizer@example.com",
+      subject: "Dinner · Dinner — your report",
+      html,
+    });
+    rows = [report("r1", "organizer_report/1", "<p>click-1</p>"), report("r2", "organizer_report/2", "<p>click-2</p>")];
+    sendGuardedEmail.mockResolvedValue({ ok: true });
+    const body = await (await run()).json();
+    expect(body).toMatchObject({ sent: 2 });
+    expect(rows.map((r) => r.status)).toEqual(["sent", "sent"]);
+    expect(applied).toEqual([
+      { key: "organizer_report/1", outcome: "accepted" },
+      { key: "organizer_report/2", outcome: "accepted" },
+    ]);
+    rows = [report("r3", "organizer_report/3", "<p>click-3</p>")];
+    sendGuardedEmail.mockResolvedValue({ ok: false, ambiguous: true, error: "timeout" });
+    applied.length = 0;
+    await run();
+    expect(rows[0].status).toBe("ambiguous");
+    expect(applied).toEqual([{ key: "organizer_report/3", outcome: "ambiguous" }]);
+    rows = [report("r4", "organizer_faster/4", "<p>Ada</p>")];
+    rows[0].kind = "faster";
+    sendGuardedEmail.mockResolvedValue({ ok: false, retryable: true, queued: true, error: "later" });
+    applied.length = 0;
+    await run();
+    expect(rows[0].status).toBe("pending");
+    expect(applied).toEqual([{ key: "organizer_faster/4", outcome: "pending" }]);
+    rows = [report("r5", "organizer_report/5", "<p>click-5</p>")];
+    rpcThrows = true;
+    sendGuardedEmail.mockResolvedValue({ ok: true });
+    await run();
+    expect(rows[0].status).toBe("sent");
   });
 
   it("an overlapping run can't send a row another run already claimed", async () => {

@@ -167,6 +167,12 @@ export async function POST(
         if (lease === "blocked") {
           return NextResponse.json({ ok: true, delivery: "unconfirmed" });
         }
+        if (lease === "queued") {
+          return NextResponse.json({ ok: true, delivery: "queued" }, { status: 202 });
+        }
+        if (lease === "settled") {
+          return NextResponse.json({ ok: true, delivery: "sent" });
+        }
         console.error("email_operation_acquire failed:", leaseError);
         return NextResponse.json(
           { error: "The invite could not be started. Please try again later.", retryable: true },
@@ -301,6 +307,7 @@ export async function POST(
       : `As a co-admin you can edit and delete events, manage signups, and view analytics. Only the owner can invite or remove co-admins and manage the organization.`;
 
     try {
+      const inviteKey = cutoverOperationKey("org_member_invite", [org.id, rawEmail, tokenHash]);
       const send = await sendGuardedEmail({
         brand: hostBrand,
         urgent: true,
@@ -308,7 +315,7 @@ export async function POST(
         from: inviteEmailFrom(hostBrand),
         to: rawEmail,
         kind: "org_member_invite",
-        idempotencyKey: cutoverOperationKey("org_member_invite", [org.id, rawEmail, tokenHash]),
+        idempotencyKey: inviteKey,
         operationScope: opScope,
         subject,
         html: `
@@ -351,14 +358,23 @@ export async function POST(
       // One database call finishes the lease and clears the token. A separate
       // clear would leave a sending row with no token, and a later request
       // would mint a second link for an attempt that may already have been accepted.
+      // A queued copy is not that finish. The token stays, and the drain writes
+      // accepted, rejected, or ambiguous onto the same key.
       const disposition = send.ok && !queued
         ? "accepted"
-        : ambiguous || queued
+        : ambiguous
           ? "ambiguous"
           : retryable
             ? "retryable"
             : "terminal";
-      if (gateOn && leaseAdmin) {
+      if (gateOn && leaseAdmin && queued && inviteKey) {
+        const { error: queueError } = await leaseAdmin.rpc("email_operation_mark_queued", {
+          p_scope: opScope,
+          p_holder: holder,
+          p_key: inviteKey,
+        } as never);
+        if (queueError) console.error("email_operation_mark_queued failed:", queueError);
+      } else if (gateOn && leaseAdmin) {
         const { error: finishError } = await leaseAdmin.rpc("email_operation_finish", {
           p_scope: opScope,
           p_holder: holder,

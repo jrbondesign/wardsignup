@@ -133,6 +133,73 @@ it("restores the faster watermark when the send is retryable", async () => {
   expect(mockUpdates.some((u) => u.values.organizer_last_instant_notify_at === "2026-11-08T12:00:00.000Z")).toBe(true);
 });
 
+it("keeps the faster watermark when the alert is queued and keeps the next list", async () => {
+  sendGuardedEmail.mockResolvedValue({ ok: false, error: "Brevo rate limited", retryable: true, queued: true });
+  const state = {
+    since: "2026-11-01T12:00:00.000Z",
+    people: [{ member_name: "Ada", signed_up_at: "2026-11-02T12:00:00.000Z", sessions: null }],
+  };
+  const updates: string[] = [];
+  const admin = {
+    from(table: string) {
+      const chain: Record<string, unknown> = {};
+      const self = () => chain;
+      chain.select = self;
+      chain.eq = self;
+      chain.order = self;
+      chain.gt = (_column: string, since: string) => {
+        chain.since = since;
+        return chain;
+      };
+      chain.update = (values: { organizer_last_instant_notify_at?: string }) => {
+        if (values.organizer_last_instant_notify_at) {
+          updates.push(values.organizer_last_instant_notify_at);
+          state.since = values.organizer_last_instant_notify_at;
+        }
+        return chain;
+      };
+      chain.single = async () => ({
+        data: {
+          id: "c1",
+          brand_id: "wardsignup",
+          name: "Dinner",
+          user_email: "organizer@example.com",
+          organizer_instant_notify_enabled: true,
+          organizer_last_instant_notify_at: state.since,
+          event_end_date: "2099-01-01",
+        },
+        error: null,
+      });
+      chain.then = (resolve: (value: unknown) => unknown) =>
+        resolve({
+          data:
+            table === "signups"
+              ? state.people.filter((person) => person.signed_up_at > String(chain.since))
+              : [],
+          error: null,
+        });
+      return chain;
+    },
+  };
+  const first = await sendOrganizerFasterAlertEmail(admin as never, "c1");
+  expect(first).toMatchObject({ ok: false, queued: true });
+  expect(updates).toHaveLength(1);
+  expect(updates[0]).not.toBe("2026-11-01T12:00:00.000Z");
+  state.people.push({ member_name: "Bea", signed_up_at: "2026-11-04T12:00:00.000Z", sessions: null });
+  const ada = sendGuardedEmail.mock.calls.at(-1)?.[0] as { html?: string; subject?: string; idempotencyKey?: string };
+  expect(ada.html).toContain("Ada");
+  expect(ada.html).not.toContain("Bea");
+  state.since = "2026-11-03T12:00:00.000Z";
+  const second = await sendOrganizerFasterAlertEmail(admin as never, "c1");
+  expect(second).toMatchObject({ ok: false, queued: true });
+  const bea = sendGuardedEmail.mock.calls.at(-1)?.[0] as { html?: string; subject?: string; idempotencyKey?: string };
+  expect(bea.html).toContain("Bea");
+  expect(bea.html).not.toContain("Ada");
+  expect(bea.subject).toBe(ada.subject);
+  expect(bea.idempotencyKey).not.toBe(ada.idempotencyKey);
+  expect(ada.idempotencyKey?.startsWith("organizer_faster/")).toBe(true);
+});
+
 it("keys feedback ask, feedback response, and the new-creator notice", async () => {
   await sendFeedbackAskEmail({
     brand,

@@ -688,7 +688,7 @@ begin
     raise exception 'HTTP was marked before a token existed';
   end if;
   if public.email_operation_reconcile(
-    'org-member:org:pretoken@example.com', 'provider_not_accepted', 'no-such-key'
+    'org-member:org:pretoken@example.com', 'no-such-key'
   ) <> 'refused' then
     raise exception 'reconcile changed a lease that never contacted the provider';
   end if;
@@ -891,7 +891,7 @@ declare
   taken text;
 begin
   reconciled := public.email_operation_reconcile(
-    'org-member:org:http@example.com', 'delete', 'org_member_invite/http-one'
+    'org-member:org:http@example.com', 'org_member_invite/http-one'
   );
   if reconciled <> 'refused' then
     raise exception 'delete outcome cleared the block: %', reconciled;
@@ -910,7 +910,7 @@ declare
   taken text;
 begin
   reconciled := public.email_operation_reconcile(
-    'org-member:org:http@example.com', 'provider_not_accepted', 'org_member_invite/http-one'
+    'org-member:org:http@example.com', 'org_member_invite/http-one'
   );
   if reconciled <> 'refused' then
     raise exception 'accepted attempt was reconciled: %', reconciled;
@@ -947,26 +947,20 @@ declare
   taken text;
 begin
   reconciled := public.email_operation_reconcile(
-    'org-member:org:http@example.com', 'provider_not_accepted', 'org_member_invite/other'
+    'org-member:org:http@example.com', 'org_member_invite/other'
   );
   if reconciled <> 'refused' then
     raise exception 'missing attempt cleared the block: %', reconciled;
   end if;
   reconciled := public.email_operation_reconcile(
-    'org-member:org:http@example.com', 'provider_not_accepted', 'org_member_invite/http-one'
+    'org-member:org:http@example.com', 'org_member_invite/http-one'
   );
-  if reconciled <> 'cleared' then
-    raise exception 'checked not-accepted attempt stayed blocked: %', reconciled;
+  if reconciled <> 'refused' then
+    raise exception 'message id or HTTP start was treated as not accepted: %', reconciled;
   end if;
   taken := public.email_operation_acquire('org-member:org:http@example.com', 'holder-e', 180);
-  if taken <> 'go' then
-    raise exception 'reconciled lease did not allow one new token: %', taken;
-  end if;
-  if not public.email_operation_remember('org-member:org:http@example.com', 'holder-e', 'after-check') then
-    raise exception 'reconciled lease did not store one token';
-  end if;
-  if public.email_operation_recall('org-member:org:http@example.com') <> 'after-check' then
-    raise exception 'reconciled token changed';
+  if taken <> 'blocked' then
+    raise exception 'ambiguous message id was reissued: %', taken;
   end if;
 end $$;
 reset role;
@@ -976,13 +970,14 @@ declare
   blocked boolean;
   rows int;
   lease_phase text;
+  saved text;
 begin
-  select block_reissue, phase into blocked, lease_phase from public.email_operation_lease
+  select block_reissue, phase, token into blocked, lease_phase, saved from public.email_operation_lease
   where scope = 'org-member:org:http@example.com';
   select count(*) into rows from public.email_operation_lease
   where scope = 'org-member:org:http@example.com';
-  if blocked or lease_phase <> 'token' or rows <> 1 then
-    raise exception 'reconcile deleted or reblocked the lease: % % %', blocked, lease_phase, rows;
+  if blocked is not true or lease_phase <> 'ambiguous' or saved is not null or rows <> 1 then
+    raise exception 'refused reconcile changed the ambiguous lease: % % % %', blocked, lease_phase, saved, rows;
   end if;
 end $$;
 SQL
@@ -1188,8 +1183,29 @@ begin
       when insufficient_privilege then null;
     end;
     begin
-      perform public.email_operation_reconcile('org-member:org:bishop@example.com', 'provider_not_accepted', 'key');
+      perform public.email_operation_reconcile('org-member:org:bishop@example.com', 'key');
       raise exception 'anon reconciled an invite lease';
+    exception
+      when insufficient_privilege then null;
+    end;
+    begin
+      perform public.email_operation_mark_queued('org-member:org:bishop@example.com', 'anon', 'key');
+      raise exception 'anon marked an invite queued';
+    exception
+      when insufficient_privilege then null;
+    end;
+    begin
+      perform public.email_operation_apply_queue_result('key', 'accepted');
+      raise exception 'anon applied a queue result';
+    exception
+      when insufficient_privilege then null;
+    end;
+    begin
+      perform public.email_queue_enqueue(
+        'wardsignup', 'notification', 'organizer_report', 'from@example.com', 'to@example.com',
+        'subject', '<p>x</p>', null, null, null, now(), 'organizer_report/anon'
+      );
+      raise exception 'anon enqueued a keyed email';
     exception
       when insufficient_privilege then null;
     end;
@@ -1201,6 +1217,548 @@ begin
     end;
     reset role;
   end;
+end $$;
+SQL
+
+# Queued org invite, strict reconcile, and keyed queue dedupe.
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+create table public.organization_members (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid not null,
+  invited_email text not null,
+  invite_last_sent_at timestamptz
+);
+insert into public.organization_members (organization_id, invited_email)
+values ('11111111-1111-4111-8111-111111111111', 'bishop@example.com');
+
+insert into public.email_delivery_attempts (
+  idempotency_key, brand_id, kind, to_address, recipient_count, tag, phase,
+  http_started, provider_message_id, operation_scope, updated_at
+) values (
+  'org_member_invite/parked', 'wardsignup', 'org_member_invite', 'bishop@example.com', 1,
+  'kparked01', 'primary_rejected', false, null,
+  'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', now()
+);
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+  marked boolean;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-a', 180
+  );
+  if taken <> 'go' then
+    raise exception 'queued lease did not start: %', taken;
+  end if;
+  if not public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-a', 'token-parked'
+  ) then
+    raise exception 'queued lease did not store its token';
+  end if;
+  if not public.email_operation_mark_http(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-a'
+  ) then
+    raise exception 'queued lease did not mark HTTP';
+  end if;
+  marked := public.email_operation_mark_queued(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-b', 'org_member_invite/parked'
+  );
+  if marked then
+    raise exception 'wrong holder marked the lease queued';
+  end if;
+  if not public.email_operation_mark_queued(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-a', 'org_member_invite/parked'
+  ) then
+    raise exception 'holder did not mark the lease queued';
+  end if;
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-c', 180
+  );
+  if taken <> 'queued' then
+    raise exception 'pending queue minted: %', taken;
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  lease_phase text;
+  saved text;
+  blocked boolean;
+  stamped timestamptz;
+begin
+  select phase, token, block_reissue into lease_phase, saved, blocked
+  from public.email_operation_lease
+  where scope = 'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com';
+  if lease_phase <> 'queued' or saved <> 'token-parked' or blocked then
+    raise exception 'queued lease was finished as ambiguous: % % %', lease_phase, saved, blocked;
+  end if;
+  select invite_last_sent_at into stamped
+  from public.organization_members
+  where invited_email = 'bishop@example.com';
+  if stamped is not null then
+    raise exception 'queued invite started the cooldown';
+  end if;
+end $$;
+
+insert into public.email_queue (
+  brand_id, category, kind, from_address, to_address, subject, html, send_after, status, idempotency_key
+) values (
+  'wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>',
+  'bishop@example.com', 'Invite', '<p>parked</p>', now(), 'pending', 'org_member_invite/parked'
+);
+
+-- Crash after the queue insert and before mark_queued. The token stays and acquire does not mint.
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:crash@example.com', 'holder-a', 180
+  );
+  if taken <> 'go' then
+    raise exception 'crash lease did not start: %', taken;
+  end if;
+  if not public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:crash@example.com', 'holder-a', 'token-crash'
+  ) then
+    raise exception 'crash lease did not store its token';
+  end if;
+  if not public.email_operation_mark_http(
+    'org-member:11111111-1111-4111-8111-111111111111:crash@example.com', 'holder-a'
+  ) then
+    raise exception 'crash lease did not mark HTTP';
+  end if;
+end $$;
+reset role;
+insert into public.email_delivery_attempts (
+  idempotency_key, brand_id, kind, to_address, recipient_count, tag, phase,
+  http_started, operation_scope, updated_at
+) values (
+  'org_member_invite/crash', 'wardsignup', 'org_member_invite', 'crash@example.com', 1,
+  'kcrash001', 'primary_rejected', false, 'org-member:11111111-1111-4111-8111-111111111111:crash@example.com', now()
+);
+insert into public.email_queue (
+  brand_id, category, kind, from_address, to_address, subject, html, send_after, status, idempotency_key
+) values (
+  'wardsignup', 'notification', 'org_member_invite', 'Jonathan <jonathan@wardsignup.com>',
+  'crash@example.com', 'Invite', '<p>crash</p>', now(), 'pending', 'org_member_invite/crash'
+);
+update public.email_operation_lease
+  set updated_at = now() - interval '181 seconds'
+where scope = 'org-member:11111111-1111-4111-8111-111111111111:crash@example.com';
+set role cutover_tester;
+do $$
+declare
+  taken text;
+  saved text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:crash@example.com', 'holder-b', 180
+  );
+  if taken <> 'queued' then
+    raise exception 'crash before mark minted: %', taken;
+  end if;
+  saved := public.email_operation_recall('org-member:11111111-1111-4111-8111-111111111111:crash@example.com');
+  if saved <> 'token-crash' then
+    raise exception 'crash before mark dropped the token: %', saved;
+  end if;
+end $$;
+reset role;
+
+-- Out of order and replay on the parked key.
+set role cutover_tester;
+do $$
+declare
+  outcome text;
+  taken text;
+begin
+  outcome := public.email_operation_apply_queue_result('org_member_invite/parked', 'rejected');
+  if outcome <> 'rejected' then
+    raise exception 'queue rejection was not applied: %', outcome;
+  end if;
+  outcome := public.email_operation_apply_queue_result('org_member_invite/parked', 'accepted');
+  if outcome <> 'accepted' then
+    raise exception 'later acceptance did not win: %', outcome;
+  end if;
+  outcome := public.email_operation_apply_queue_result('org_member_invite/parked', 'rejected');
+  if outcome <> 'ignored' then
+    raise exception 'late rejection downgraded an acceptance: %', outcome;
+  end if;
+  outcome := public.email_operation_apply_queue_result('org_member_invite/parked', 'ambiguous');
+  if outcome <> 'ignored' then
+    raise exception 'late ambiguity downgraded an acceptance: %', outcome;
+  end if;
+  outcome := public.email_operation_apply_queue_result('org_member_invite/other', 'rejected');
+  if outcome <> 'ignored' then
+    raise exception 'wrong key changed the lease: %', outcome;
+  end if;
+end $$;
+reset role;
+update public.email_queue set status = 'sent' where idempotency_key = 'org_member_invite/parked';
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-d', 180
+  );
+  if taken <> 'go' then
+    raise exception 'accepted queue did not open one reissue: %', taken;
+  end if;
+  if not public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-d', 'token-reissue'
+  ) then
+    raise exception 'accepted queue did not store the reissue token';
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  stamped timestamptz;
+  saved text;
+begin
+  select invite_last_sent_at into stamped
+  from public.organization_members
+  where invited_email = 'bishop@example.com';
+  if stamped is null or stamped < now() - interval '5 minutes' then
+    raise exception 'accepted queue did not start the cooldown';
+  end if;
+  select token into saved from public.email_operation_lease
+  where scope = 'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com';
+  if saved <> 'token-reissue' then
+    raise exception 'reissue token changed: %', saved;
+  end if;
+end $$;
+
+-- Ambiguous queue stays blocked, including when a missing receipt is offered.
+set role cutover_tester;
+do $$
+declare
+  taken text;
+  outcome text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', 'holder-a', 180
+  );
+  if taken <> 'go' then
+    raise exception 'ambiguous queue lease did not start: %', taken;
+  end if;
+  if not public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', 'holder-a', 'token-maybe'
+  ) then
+    raise exception 'ambiguous queue lease did not store its token';
+  end if;
+  if not public.email_operation_mark_queued(
+    'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', 'holder-a', 'org_member_invite/maybe'
+  ) then
+    raise exception 'ambiguous queue was not marked';
+  end if;
+  outcome := public.email_operation_apply_queue_result('org_member_invite/maybe', 'ambiguous');
+  if outcome <> 'ambiguous' then
+    raise exception 'ambiguous queue result was not applied: %', outcome;
+  end if;
+  outcome := public.email_operation_apply_queue_result('org_member_invite/maybe', 'rejected');
+  if outcome <> 'ignored' then
+    raise exception 'rejection cleared an ambiguous queue: %', outcome;
+  end if;
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', 'holder-b', 180
+  );
+  if taken <> 'blocked' then
+    raise exception 'ambiguous queue minted: %', taken;
+  end if;
+end $$;
+reset role;
+
+insert into public.email_delivery_attempts (
+  idempotency_key, brand_id, kind, to_address, recipient_count, tag, phase,
+  http_started, provider_message_id, operation_scope, updated_at
+) values
+  (
+    'org_member_invite/maybe', 'wardsignup', 'org_member_invite', 'maybe@example.com', 1,
+    'kmaybe001', 'primary_ambiguous', true, 'msg-maybe-accepted',
+    'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', now()
+  ),
+  (
+    'org_member_invite/httpstart', 'wardsignup', 'org_member_invite', 'bishop@example.com', 1,
+    'khttpsta1', 'primary_inflight', true, null,
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', now()
+  ),
+  (
+    'org_member_invite/wrong', 'wardsignup', 'org_member_invite', 'other@example.com', 1,
+    'kwrong001', 'primary_rejected', false, null,
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', now()
+  ),
+  (
+    'org_member_invite/prehttp', 'wardsignup', 'org_member_invite', 'prehttp@example.com', 1,
+    'kprehttp1', 'primary_rejected', false, null,
+    'org-member:11111111-1111-4111-8111-111111111111:prehttp@example.com', now()
+  );
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+  reconciled text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'holder-http', 180
+  );
+  if taken <> 'busy' and taken <> 'go' then
+    raise exception 'http fixture lease unexpected: %', taken;
+  end if;
+end $$;
+reset role;
+
+-- The bishop lease is the reissue, phase token. Build separate ambiguous leases for the refused cases.
+update public.email_operation_lease
+  set phase = 'ambiguous', state = 'settled', block_reissue = true, token = null, had_token = false
+where scope = 'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com';
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+  reconciled text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:prehttp@example.com', 'holder-a', 180
+  );
+  if taken <> 'go' then
+    raise exception 'pre-http lease did not start: %', taken;
+  end if;
+  if not public.email_operation_finish(
+    'org-member:11111111-1111-4111-8111-111111111111:prehttp@example.com', 'holder-a', 'ambiguous'
+  ) then
+    raise exception 'pre-http lease did not finish ambiguous';
+  end if;
+  reconciled := public.email_operation_reconcile(
+    'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', 'org_member_invite/maybe'
+  );
+  if reconciled <> 'refused' then
+    raise exception 'message id was cleared: %', reconciled;
+  end if;
+  reconciled := public.email_operation_reconcile(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'org_member_invite/httpstart'
+  );
+  if reconciled <> 'refused' then
+    raise exception 'HTTP start was cleared: %', reconciled;
+  end if;
+  reconciled := public.email_operation_reconcile(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'org_member_invite/wrong'
+  );
+  if reconciled <> 'refused' then
+    raise exception 'wrong recipient was cleared: %', reconciled;
+  end if;
+  reconciled := public.email_operation_reconcile(
+    'org-member:11111111-1111-4111-8111-111111111111:bishop@example.com', 'org_member_invite/missing'
+  );
+  if reconciled <> 'refused' then
+    raise exception 'missing receipt was cleared: %', reconciled;
+  end if;
+  reconciled := public.email_operation_reconcile(
+    'org-member:11111111-1111-4111-8111-111111111111:prehttp@example.com', 'org_member_invite/prehttp'
+  );
+  if reconciled <> 'cleared' then
+    raise exception 'pre-HTTP rejection stayed blocked: %', reconciled;
+  end if;
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:prehttp@example.com', 'holder-b', 180
+  );
+  if taken <> 'go' then
+    raise exception 'pre-HTTP rejection did not allow one new token: %', taken;
+  end if;
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', 'holder-c', 180
+  );
+  if taken <> 'blocked' then
+    raise exception 'message id was reissued after reconcile: %', taken;
+  end if;
+end $$;
+reset role;
+
+-- Accepted after ambiguous upgrades that one key and opens the reissue.
+set role cutover_tester;
+do $$
+declare
+  outcome text;
+  taken text;
+begin
+  outcome := public.email_operation_apply_queue_result('org_member_invite/maybe', 'accepted');
+  if outcome <> 'accepted' then
+    raise exception 'accepted did not upgrade ambiguous: %', outcome;
+  end if;
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:maybe@example.com', 'holder-d', 180
+  );
+  if taken <> 'go' then
+    raise exception 'upgraded acceptance stayed blocked: %', taken;
+  end if;
+end $$;
+reset role;
+
+-- Five accepts of one key leave one settled row. Five same-key enqueues leave one body.
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:race@example.com', 'holder-a', 180
+  );
+  if taken <> 'go' then
+    raise exception 'race lease did not start: %', taken;
+  end if;
+  if not public.email_operation_remember(
+    'org-member:11111111-1111-4111-8111-111111111111:race@example.com', 'holder-a', 'token-race'
+  ) then
+    raise exception 'race lease did not store its token';
+  end if;
+  if not public.email_operation_mark_queued(
+    'org-member:11111111-1111-4111-8111-111111111111:race@example.com', 'holder-a', 'org_member_invite/race'
+  ) then
+    raise exception 'race lease was not queued';
+  end if;
+end $$;
+reset role;
+SQL
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+set role cutover_tester;
+do $$
+declare
+  i int;
+  outcome text;
+begin
+  for i in 1..5 loop
+    outcome := public.email_operation_apply_queue_result('org_member_invite/race', 'accepted');
+    if outcome <> 'accepted' then
+      raise exception 'concurrent accept % returned %', i, outcome;
+    end if;
+  end loop;
+end $$;
+reset role;
+do $$
+declare
+  rows int;
+  lease_phase text;
+  blocked boolean;
+begin
+  select count(*), max(phase), bool_or(block_reissue) into rows, lease_phase, blocked
+  from public.email_operation_lease
+  where scope = 'org-member:11111111-1111-4111-8111-111111111111:race@example.com';
+  if rows <> 1 or lease_phase <> 'settled' or blocked then
+    raise exception 'concurrent accepts changed the lease: % % %', rows, lease_phase, blocked;
+  end if;
+end $$;
+SQL
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+create table public.cutover_enqueue_result (slot int, status text);
+grant insert on public.cutover_enqueue_result to cutover_tester;
+SQL
+
+for i in 1 2 3 4 5; do
+  "${PSQL[@]}" -d "${DB}" <<SQL &
+set role cutover_tester;
+insert into public.cutover_enqueue_result (slot, status)
+select ${i}, public.email_queue_enqueue(
+  'wardsignup', 'notification', 'organizer_faster', 'Jonathan <jonathan@wardsignup.com>',
+  'organizer@example.com', 'Dinner · Dinner — 1 new signup', '<p>Ada</p>', null, null, null, now(),
+  'organizer_faster/same'
+);
+SQL
+done
+wait
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+do $$
+declare
+  rows int;
+  inserted int;
+  body text;
+begin
+  select count(*) into rows from public.email_queue where idempotency_key = 'organizer_faster/same';
+  select count(*) into inserted from public.cutover_enqueue_result where status = 'inserted';
+  select html into body from public.email_queue where idempotency_key = 'organizer_faster/same';
+  if rows <> 1 or inserted <> 1 or body <> '<p>Ada</p>' then
+    raise exception 'same key was stored more than once: rows % inserted % body %', rows, inserted, body;
+  end if;
+end $$;
+
+set role cutover_tester;
+do $$
+declare
+  first text;
+  second text;
+begin
+  first := public.email_queue_enqueue(
+    'wardsignup', 'notification', 'organizer_report', 'Jonathan <jonathan@wardsignup.com>',
+    'organizer@example.com', 'Dinner · Dinner — your report', '<p>click-1</p>', null, null, null, now(),
+    'organizer_report/1'
+  );
+  second := public.email_queue_enqueue(
+    'wardsignup', 'notification', 'organizer_report', 'Jonathan <jonathan@wardsignup.com>',
+    'organizer@example.com', 'Dinner · Dinner — your report', '<p>click-2</p>', null, null, null, now(),
+    'organizer_report/2'
+  );
+  if first <> 'inserted' or second <> 'inserted' then
+    raise exception 'different keys with one subject were collapsed: % %', first, second;
+  end if;
+end $$;
+reset role;
+do $$
+declare
+  rows int;
+begin
+  select count(*) into rows from public.email_queue
+  where subject = 'Dinner · Dinner — your report';
+  if rows <> 2 then
+    raise exception 'same subject kept % rows', rows;
+  end if;
+end $$;
+
+-- The drain wrote sent and died before apply. This request settles and does not mint.
+set role cutover_tester;
+do $$
+begin
+  if not public.email_operation_mark_queued(
+    'org-member:11111111-1111-4111-8111-111111111111:crash@example.com', 'holder-a', 'org_member_invite/crash'
+  ) then
+    raise exception 'crash lease could not be marked queued before the heal';
+  end if;
+end $$;
+reset role;
+update public.email_queue set status = 'sent' where idempotency_key = 'org_member_invite/crash';
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire(
+    'org-member:11111111-1111-4111-8111-111111111111:crash@example.com', 'holder-c', 180
+  );
+  if taken <> 'settled' then
+    raise exception 'sent queue row did not settle without minting: %', taken;
+  end if;
+end $$;
+reset role;
+do $$
+declare
+  lease_phase text;
+  saved text;
+begin
+  select phase, token into lease_phase, saved from public.email_operation_lease
+  where scope = 'org-member:11111111-1111-4111-8111-111111111111:crash@example.com';
+  if lease_phase <> 'settled' or saved is not null then
+    raise exception 'healed lease minted or stayed queued: % %', lease_phase, saved;
+  end if;
 end $$;
 SQL
 

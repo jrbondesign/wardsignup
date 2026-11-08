@@ -214,7 +214,15 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     const businessKey = params.idempotencyKey?.trim();
     if (businessKey) row.idempotency_key = businessKey;
     const q = await enqueueEmail(row, { dedupe: realtime || Boolean(sendAfter) });
-    return q.ok ? { ok: true, queued: true } : { ok: false, error: q.error };
+    if (!q.ok) return { ok: false, error: q.error };
+    if (q.status === "sent") return { ok: true };
+    if (q.status === "ambiguous") {
+      return { ok: false, ambiguous: true, error: "An earlier copy of this email may already have been accepted." };
+    }
+    if (q.status === "failed" || q.status === "skipped") {
+      return { ok: false, error: q.status, terminal: true };
+    }
+    return { ok: true, queued: true };
   };
   // A live credential or a reminder is retried by the waiting request or the
   // reminder cron. Parking it would send a link the next request invalidates,
@@ -229,7 +237,9 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     if (parked.ok && parked.queued) {
       return { ok: false, error: reason, retryable: true, queued: true };
     }
-    return { ok: false, error: parked.ok ? reason : parked.error, retryable: true };
+    if (parked.ok) return parked;
+    if (parked.ambiguous || parked.terminal) return parked;
+    return { ok: false, error: parked.error ?? reason, retryable: true };
   };
 
   const now = new Date();
