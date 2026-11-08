@@ -258,6 +258,54 @@ it("does not write a second token while another request holds the lease", async 
   expect(sendGuardedEmail).not.toHaveBeenCalled();
 });
 
+it("does not email when the stored token cannot be marked for HTTP", async () => {
+  const { state, supabase } = harness();
+  (getAuthFromRequest as jest.Mock).mockResolvedValue({
+    ok: true,
+    supabase,
+    user: { id: OWNER, email: "owner@example.com" },
+  });
+  const events: string[] = [];
+  rpc.mockImplementation(async (name: string, args?: { p_token?: string | null; p_state?: string }) => {
+    events.push(name);
+    if (name === "email_operation_mark_http") return { data: false, error: null };
+    return leaseRpc(name, args);
+  });
+  const res = await POST(req(), params);
+  expect(res.status).toBe(503);
+  expect(await res.json()).toMatchObject({ error: expect.any(String), retryable: true });
+  expect(sendGuardedEmail).not.toHaveBeenCalled();
+  expect(savedToken).toEqual(expect.any(String));
+  expect(events).toContain("email_operation_mark_http");
+  expect(events.indexOf("email_operation_remember")).toBeLessThan(events.indexOf("email_operation_mark_http"));
+  expect(rpc.mock.calls.filter((call) => call[0] === "email_operation_finish").map((call) => (call[1] as { p_state: string }).p_state)).toEqual([
+    "failed",
+  ]);
+  expect(state.upserts).toHaveLength(1);
+});
+
+it("marks HTTP only after the token is stored and before the provider call", async () => {
+  const { supabase } = harness();
+  (getAuthFromRequest as jest.Mock).mockResolvedValue({
+    ok: true,
+    supabase,
+    user: { id: OWNER, email: "owner@example.com" },
+  });
+  const events: string[] = [];
+  rpc.mockImplementation(async (name: string, args?: { p_token?: string | null; p_state?: string }) => {
+    events.push(name);
+    return leaseRpc(name, args);
+  });
+  (sendGuardedEmail as jest.Mock).mockImplementation(async () => {
+    events.push("send");
+    return { ok: true };
+  });
+  const res = await POST(req(), params);
+  expect(res.status).toBe(201);
+  expect(events.indexOf("email_operation_remember")).toBeLessThan(events.indexOf("email_operation_mark_http"));
+  expect(events.indexOf("email_operation_mark_http")).toBeLessThan(events.indexOf("send"));
+});
+
 it("does not write when the lease function is missing", async () => {
   const { state, supabase } = harness();
   (getAuthFromRequest as jest.Mock).mockResolvedValue({

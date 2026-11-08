@@ -672,6 +672,399 @@ end $$;
 reset role;
 SQL
 
+# Crash after acquire and before any token: recoverable after the stale bound.
+# The row stays. One takeover stores one token. The old holder cannot replace it.
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire('org-member:org:pretoken@example.com', 'holder-a', 180);
+  if taken <> 'go' then
+    raise exception 'pre-token lease did not start: %', taken;
+  end if;
+  if public.email_operation_mark_http('org-member:org:pretoken@example.com', 'holder-a') then
+    raise exception 'HTTP was marked before a token existed';
+  end if;
+  if public.email_operation_reconcile(
+    'org-member:org:pretoken@example.com', 'provider_not_accepted', 'no-such-key'
+  ) <> 'refused' then
+    raise exception 'reconcile changed a lease that never contacted the provider';
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  lease_phase text;
+  rows int;
+begin
+  select phase into lease_phase from public.email_operation_lease
+  where scope = 'org-member:org:pretoken@example.com';
+  select count(*) into rows from public.email_operation_lease
+  where scope = 'org-member:org:pretoken@example.com';
+  if lease_phase <> 'acquired' or rows <> 1 then
+    raise exception 'pre-token phase % rows %', lease_phase, rows;
+  end if;
+end $$;
+
+update public.email_operation_lease
+  set updated_at = now() - interval '179 seconds'
+where scope = 'org-member:org:pretoken@example.com';
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire('org-member:org:pretoken@example.com', 'holder-b', 180);
+  if taken <> 'busy' then
+    raise exception '179s pre-token lease was not busy: %', taken;
+  end if;
+  if public.email_operation_recall('org-member:org:pretoken@example.com') is not null then
+    raise exception '179s pre-token lease stored a token';
+  end if;
+end $$;
+reset role;
+
+update public.email_operation_lease
+  set updated_at = now() - interval '181 seconds'
+where scope = 'org-member:org:pretoken@example.com';
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire('org-member:org:pretoken@example.com', 'holder-b', 180);
+  if taken <> 'go' then
+    raise exception '181s pre-token takeover failed: %', taken;
+  end if;
+  if not public.email_operation_remember('org-member:org:pretoken@example.com', 'holder-b', 'only-token') then
+    raise exception 'pre-token takeover could not store the one token';
+  end if;
+  if public.email_operation_remember('org-member:org:pretoken@example.com', 'holder-b', 'replacement') then
+    raise exception 'holder replaced the stored token';
+  end if;
+  if public.email_operation_remember('org-member:org:pretoken@example.com', 'holder-a', 'old-token') then
+    raise exception 'old holder stored a token after takeover';
+  end if;
+  if public.email_operation_finish('org-member:org:pretoken@example.com', 'holder-a', 'failed') then
+    raise exception 'old holder finished the lease after takeover';
+  end if;
+  if public.email_operation_recall('org-member:org:pretoken@example.com') <> 'only-token' then
+    raise exception 'pre-token recovery did not keep the one token';
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  lease_holder text;
+  rows int;
+  lease_phase text;
+begin
+  select holder, phase into lease_holder, lease_phase from public.email_operation_lease
+  where scope = 'org-member:org:pretoken@example.com';
+  select count(*) into rows from public.email_operation_lease
+  where scope = 'org-member:org:pretoken@example.com';
+  if lease_holder <> 'holder-b' or lease_phase <> 'token' or rows <> 1 then
+    raise exception 'pre-token lease was deleted or retaken: % % %', lease_holder, lease_phase, rows;
+  end if;
+end $$;
+SQL
+
+# Token stored, then HTTP marked, then a failed finish from the wrong holder.
+# The token stays. Ambiguous finish is one update. Reconciliation checks the attempt.
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire('org-member:org:http@example.com', 'holder-a', 180);
+  if taken <> 'go' then
+    raise exception 'http lease did not start: %', taken;
+  end if;
+  if not public.email_operation_remember('org-member:org:http@example.com', 'holder-a', 'before-http') then
+    raise exception 'token was not stored before HTTP';
+  end if;
+  if not public.email_operation_mark_http('org-member:org:http@example.com', 'holder-a') then
+    raise exception 'HTTP was not marked';
+  end if;
+  if public.email_operation_finish('org-member:org:http@example.com', 'holder-b', 'ambiguous') then
+    raise exception 'wrong holder finished an HTTP lease';
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  lease_phase text;
+  saved text;
+  blocked boolean;
+begin
+  select phase, token, block_reissue into lease_phase, saved, blocked
+  from public.email_operation_lease
+  where scope = 'org-member:org:http@example.com';
+  if lease_phase <> 'http' or saved <> 'before-http' or blocked then
+    raise exception 'failed finish changed the HTTP lease: % % %', lease_phase, saved, blocked;
+  end if;
+end $$;
+
+update public.email_operation_lease
+  set updated_at = now() - interval '181 seconds'
+where scope = 'org-member:org:http@example.com';
+
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire('org-member:org:http@example.com', 'holder-c', 180);
+  if taken <> 'go' then
+    raise exception 'stale HTTP lease was not resumable: %', taken;
+  end if;
+  if public.email_operation_recall('org-member:org:http@example.com') <> 'before-http' then
+    raise exception 'HTTP takeover replaced the token';
+  end if;
+  if public.email_operation_remember('org-member:org:http@example.com', 'holder-c', 'second-token') then
+    raise exception 'HTTP takeover stored a second token';
+  end if;
+  if public.email_operation_remember('org-member:org:http@example.com', 'holder-a', 'resumed-token') then
+    raise exception 'old HTTP holder replaced the token';
+  end if;
+end $$;
+reset role;
+
+insert into public.email_delivery_attempts (
+  idempotency_key, brand_id, kind, to_address, recipient_count, tag, phase,
+  http_started, operation_scope, updated_at
+) values (
+  'org_member_invite/http-one', 'wardsignup', 'org_member_invite', 'http@example.com', 1,
+  'khttpones', 'primary_inflight', true, 'org-member:org:http@example.com', now()
+);
+
+set role cutover_tester;
+do $$
+begin
+  if public.email_delivery_claim(
+    'org_member_invite/http-one', 'wardsignup', 'org_member_invite', 'http@example.com',
+    1, now(), 'org-member:org:http@example.com'
+  )->>'action' <> 'stop' then
+    raise exception 'HTTP-started attempt was sent again';
+  end if;
+  if public.email_operation_recall('org-member:org:http@example.com') <> 'before-http' then
+    raise exception 'claim changed the invite token';
+  end if;
+  if not public.email_operation_finish('org-member:org:http@example.com', 'holder-c', 'ambiguous') then
+    raise exception 'HTTP holder could not finish ambiguous';
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  lease_phase text;
+  saved text;
+  blocked boolean;
+  rows int;
+begin
+  select phase, token, block_reissue into lease_phase, saved, blocked
+  from public.email_operation_lease
+  where scope = 'org-member:org:http@example.com';
+  if lease_phase <> 'ambiguous' or saved is not null or blocked is not true then
+    raise exception 'ambiguous HTTP finish was not atomic: % % %', lease_phase, saved, blocked;
+  end if;
+  select count(*) into rows from public.email_operation_lease
+  where scope = 'org-member:org:http@example.com';
+  if rows <> 1 then
+    raise exception 'ambiguous lease row count %', rows;
+  end if;
+end $$;
+
+set role cutover_tester;
+do $$
+declare
+  reconciled text;
+  taken text;
+begin
+  reconciled := public.email_operation_reconcile(
+    'org-member:org:http@example.com', 'delete', 'org_member_invite/http-one'
+  );
+  if reconciled <> 'refused' then
+    raise exception 'delete outcome cleared the block: %', reconciled;
+  end if;
+end $$;
+reset role;
+
+update public.email_delivery_attempts
+  set phase = 'primary_accepted', delivery_status = 'accepted', provider_message_id = 'msg-accepted'
+where idempotency_key = 'org_member_invite/http-one';
+
+set role cutover_tester;
+do $$
+declare
+  reconciled text;
+  taken text;
+begin
+  reconciled := public.email_operation_reconcile(
+    'org-member:org:http@example.com', 'provider_not_accepted', 'org_member_invite/http-one'
+  );
+  if reconciled <> 'refused' then
+    raise exception 'accepted attempt was reconciled: %', reconciled;
+  end if;
+  taken := public.email_operation_acquire('org-member:org:http@example.com', 'holder-d', 180);
+  if taken <> 'blocked' then
+    raise exception 'accepted uncertainty was reissued: %', taken;
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  blocked boolean;
+  rows int;
+begin
+  select block_reissue into blocked from public.email_operation_lease
+  where scope = 'org-member:org:http@example.com';
+  select count(*) into rows from public.email_operation_lease
+  where scope = 'org-member:org:http@example.com';
+  if blocked is not true or rows <> 1 then
+    raise exception 'refused reconcile changed the lease: blocked % rows %', blocked, rows;
+  end if;
+end $$;
+
+update public.email_delivery_attempts
+  set phase = 'primary_ambiguous', delivery_status = null, provider_message_id = 'msg-unknown'
+where idempotency_key = 'org_member_invite/http-one';
+
+set role cutover_tester;
+do $$
+declare
+  reconciled text;
+  taken text;
+begin
+  reconciled := public.email_operation_reconcile(
+    'org-member:org:http@example.com', 'provider_not_accepted', 'org_member_invite/other'
+  );
+  if reconciled <> 'refused' then
+    raise exception 'missing attempt cleared the block: %', reconciled;
+  end if;
+  reconciled := public.email_operation_reconcile(
+    'org-member:org:http@example.com', 'provider_not_accepted', 'org_member_invite/http-one'
+  );
+  if reconciled <> 'cleared' then
+    raise exception 'checked not-accepted attempt stayed blocked: %', reconciled;
+  end if;
+  taken := public.email_operation_acquire('org-member:org:http@example.com', 'holder-e', 180);
+  if taken <> 'go' then
+    raise exception 'reconciled lease did not allow one new token: %', taken;
+  end if;
+  if not public.email_operation_remember('org-member:org:http@example.com', 'holder-e', 'after-check') then
+    raise exception 'reconciled lease did not store one token';
+  end if;
+  if public.email_operation_recall('org-member:org:http@example.com') <> 'after-check' then
+    raise exception 'reconciled token changed';
+  end if;
+end $$;
+reset role;
+
+do $$
+declare
+  blocked boolean;
+  rows int;
+  lease_phase text;
+begin
+  select block_reissue, phase into blocked, lease_phase from public.email_operation_lease
+  where scope = 'org-member:org:http@example.com';
+  select count(*) into rows from public.email_operation_lease
+  where scope = 'org-member:org:http@example.com';
+  if blocked or lease_phase <> 'token' or rows <> 1 then
+    raise exception 'reconcile deleted or reblocked the lease: % % %', blocked, lease_phase, rows;
+  end if;
+end $$;
+SQL
+
+# Five stale takeovers of a never-initialized lease. Exactly one may store a token.
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+set role cutover_tester;
+do $$
+declare
+  taken text;
+begin
+  taken := public.email_operation_acquire('org-member:org:stale-race@example.com', 'holder-a', 180);
+  if taken <> 'go' then
+    raise exception 'stale race lease did not start: %', taken;
+  end if;
+end $$;
+reset role;
+update public.email_operation_lease
+  set updated_at = now() - interval '181 seconds'
+where scope = 'org-member:org:stale-race@example.com';
+create table if not exists public.cutover_proof_result (label text, result text);
+grant insert on public.cutover_proof_result to cutover_tester;
+SQL
+
+status=0
+pids=()
+for i in 1 2 3 4 5; do
+  "${PSQL[@]}" -d "${DB}" -c "set role cutover_tester; insert into public.cutover_proof_result (label, result) select 'stale-race', public.email_operation_acquire('org-member:org:stale-race@example.com', 'take-$i', 180);" >/dev/null &
+  pids+=("$!")
+done
+for pid in "${pids[@]}"; do
+  wait "$pid" || status=1
+done
+if [[ "$status" -ne 0 ]]; then
+  echo "stale pre-token takeover race failed"
+  exit 1
+fi
+
+"${PSQL[@]}" -d "${DB}" <<'SQL'
+do $$
+declare
+  gos int;
+  busies int;
+  winner text;
+  i int;
+  rows int;
+begin
+  select count(*) into gos from public.cutover_proof_result
+  where label = 'stale-race' and result = 'go';
+  select count(*) into busies from public.cutover_proof_result
+  where label = 'stale-race' and result = 'busy';
+  if gos <> 1 or busies <> 4 then
+    raise exception 'stale takeover go % busy %', gos, busies;
+  end if;
+  select holder into winner from public.email_operation_lease
+  where scope = 'org-member:org:stale-race@example.com';
+  if winner is null or winner = 'holder-a' or winner not like 'take-%' then
+    raise exception 'stale race winner %', winner;
+  end if;
+  if not public.email_operation_remember('org-member:org:stale-race@example.com', winner, 'race-token') then
+    raise exception 'stale race winner could not store the token';
+  end if;
+  if public.email_operation_remember('org-member:org:stale-race@example.com', 'holder-a', 'old-token') then
+    raise exception 'old holder stored a token after the stale race';
+  end if;
+  for i in 1..5 loop
+    if 'take-' || i is distinct from winner
+       and public.email_operation_remember('org-member:org:stale-race@example.com', 'take-' || i, 'other-' || i) then
+      raise exception 'stale race loser stored a token';
+    end if;
+  end loop;
+  if public.email_operation_recall('org-member:org:stale-race@example.com') <> 'race-token' then
+    raise exception 'stale race did not keep one token';
+  end if;
+  select count(*) into rows from public.email_operation_lease
+  where scope = 'org-member:org:stale-race@example.com';
+  if rows <> 1 then
+    raise exception 'stale race lease rows %', rows;
+  end if;
+end $$;
+SQL
+
 status=0
 pids=()
 for i in 1 2 3 4 5; do
@@ -785,6 +1178,18 @@ begin
     begin
       perform public.email_operation_recall('org-member:org:bishop@example.com');
       raise exception 'anon recalled an invite link';
+    exception
+      when insufficient_privilege then null;
+    end;
+    begin
+      perform public.email_operation_mark_http('org-member:org:bishop@example.com', 'anon');
+      raise exception 'anon marked an invite HTTP start';
+    exception
+      when insufficient_privilege then null;
+    end;
+    begin
+      perform public.email_operation_reconcile('org-member:org:bishop@example.com', 'provider_not_accepted', 'key');
+      raise exception 'anon reconciled an invite lease';
     exception
       when insufficient_privilege then null;
     end;

@@ -260,6 +260,31 @@ export async function POST(
       );
     }
 
+    if (gateOn && leaseAdmin) {
+      // The token is already stored. Marking HTTP does not replace it. If this
+      // returns false, no provider call is made.
+      const { data: marked, error: markError } = await leaseAdmin.rpc("email_operation_mark_http", {
+        p_scope: opScope,
+        p_holder: holder,
+      } as never);
+      if (markError || marked !== true) {
+        console.error("email_operation_mark_http failed:", markError);
+        await leaseAdmin.rpc("email_operation_finish", {
+          p_scope: opScope,
+          p_holder: holder,
+          p_state: "failed",
+        } as never);
+        return NextResponse.json(
+          {
+            error: "Invite saved but email failed to send.",
+            retryable: true,
+            member: memberRow,
+          },
+          { status: 503 },
+        );
+      }
+    }
+
     const siteOrigin = publicSiteOriginFromRequest(request);
     const acceptUrl = `${siteOrigin}/orgs/accept?token=${encodeURIComponent(token)}`;
     const orgNameEsc = escapeHtml(org.name);

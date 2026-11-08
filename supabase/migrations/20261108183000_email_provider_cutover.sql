@@ -927,11 +927,20 @@ begin
 end;
 $$;
 
--- One in-flight org invite per address. A settled or failed lease can be
--- taken again. A fresh sending lease held by someone else is busy.
--- Stale is at least 90s, longer than the 60s pre-HTTP inflight window, so a
--- takeover cannot start a second provider call for an attempt that already
--- reached HTTP.
+-- One in-flight org invite per address.
+-- phase acquired: lease taken, no token, provider not contacted. After the
+-- stale bound another holder may store exactly one token. The row is not deleted.
+-- phase token: token stored, HTTP not marked. A takeover reuses it and cannot
+-- replace it.
+-- phase http: this holder has started the send. The token stays. A new token
+-- is not stored.
+-- phase ambiguous: finish saw possible acceptance. block_reissue is set in
+-- that same update. A later holder cannot mint. email_operation_reconcile is
+-- the only clearer, and it refuses unless the operator names the attempt and
+-- states the provider did not accept it. It never deletes the row.
+-- phase settled: accepted and the token cleared. A later invite may mint.
+-- phase failed: retry keeps a stored token; a terminal rejection may mint.
+-- Stale is at least 90s, longer than the 60s pre-HTTP inflight window.
 create table if not exists public.email_operation_lease (
   scope text primary key,
   holder text not null,
@@ -939,12 +948,27 @@ create table if not exists public.email_operation_lease (
   token text,
   had_token boolean not null default false,
   block_reissue boolean not null default false,
+  phase text not null default 'acquired' check (phase in (
+    'acquired', 'token', 'http', 'settled', 'ambiguous', 'failed'
+  )),
   updated_at timestamptz not null default now()
 );
 
 alter table public.email_operation_lease add column if not exists token text;
 alter table public.email_operation_lease add column if not exists had_token boolean not null default false;
 alter table public.email_operation_lease add column if not exists block_reissue boolean not null default false;
+alter table public.email_operation_lease add column if not exists phase text not null default 'acquired';
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_constraint where conname = 'email_operation_lease_phase_check'
+  ) then
+    alter table public.email_operation_lease
+      add constraint email_operation_lease_phase_check
+      check (phase in ('acquired', 'token', 'http', 'settled', 'ambiguous', 'failed'));
+  end if;
+end $$;
 
 alter table public.email_operation_lease enable row level security;
 revoke all on public.email_operation_lease from public, anon, authenticated;
@@ -973,13 +997,15 @@ begin
   perform pg_advisory_xact_lock(hashtext('email-op'), hashtext(p_scope));
   select * into rec from public.email_operation_lease where scope = p_scope for update;
   if not found then
-    insert into public.email_operation_lease (scope, holder, state, token, had_token, block_reissue, updated_at)
-    values (p_scope, p_holder, 'sending', null, false, false, now());
+    insert into public.email_operation_lease (
+      scope, holder, state, token, had_token, block_reissue, phase, updated_at
+    ) values (
+      p_scope, p_holder, 'sending', null, false, false, 'acquired', now()
+    );
     return 'go';
   end if;
-  -- An ambiguous finish sets this in the same update that clears the token.
-  -- A later holder must not mint a replacement link.
-  if rec.block_reissue then
+  -- Ambiguous finish sets the block in the same update that clears the token.
+  if rec.block_reissue or rec.phase = 'ambiguous' then
     return 'blocked';
   end if;
   if rec.state = 'sending'
@@ -987,13 +1013,24 @@ begin
      and rec.updated_at > now() - make_interval(secs => stale_seconds) then
     return 'busy';
   end if;
-  -- Token was stored, then removed, while the lease is still sending. That is
-  -- the crash gap between a clear and a finish. Do not hand it out as "mint".
-  if rec.state = 'sending' and rec.token is null and rec.had_token then
+  -- A token was stored, or HTTP was marked, and the plaintext is gone.
+  -- That is not the never-initialized lease. Do not mint.
+  if rec.token is null and (rec.had_token or rec.phase in ('token', 'http')) then
     return 'blocked';
   end if;
+  -- phase acquired with a null token has not contacted the provider.
+  -- A stale holder may take it and store one token. Settled and terminal
+  -- rows become acquired again so an intentional later invite can mint.
+  -- A stored token is left in place for the new holder to reuse.
   update public.email_operation_lease
-    set holder = p_holder, state = 'sending', updated_at = now()
+    set holder = p_holder,
+        state = 'sending',
+        updated_at = now(),
+        phase = case
+          when token is not null then phase
+          when phase in ('settled', 'failed') then 'acquired'
+          else phase
+        end
   where scope = p_scope;
   return 'go';
 end;
@@ -1024,6 +1061,12 @@ begin
         block_reissue = (p_state = 'ambiguous'),
         had_token = case when p_state in ('failed', 'retryable') then had_token else false end,
         token = case when p_state in ('failed', 'retryable') then token else null end,
+        phase = case
+          when p_state in ('settled', 'accepted') then 'settled'
+          when p_state = 'ambiguous' then 'ambiguous'
+          when p_state = 'terminal' then 'failed'
+          else phase
+        end,
         updated_at = now()
   where scope = p_scope
     and holder = p_holder
@@ -1043,16 +1086,131 @@ language plpgsql
 security definer
 set search_path = public
 as $$
+declare
+  rec public.email_operation_lease%rowtype;
 begin
-  -- Clearing is finish's job, in the same update as the new state. A separate
-  -- clear leaves a sending row with no token, which a stale takeover would mint.
+  -- One plaintext per lease. A second different value is refused, including
+  -- from the holder who stored the first. Clearing is finish's job.
   if p_token is null or length(trim(p_token)) = 0 then
     return false;
   end if;
+  perform pg_advisory_xact_lock(hashtext('email-op'), hashtext(p_scope));
+  select * into rec from public.email_operation_lease where scope = p_scope for update;
+  if not found or rec.holder <> p_holder or rec.state <> 'sending' or rec.block_reissue then
+    return false;
+  end if;
+  if rec.token is not null then
+    return rec.token = trim(p_token);
+  end if;
+  if rec.had_token or rec.phase <> 'acquired' then
+    return false;
+  end if;
   update public.email_operation_lease
-    set token = trim(p_token), had_token = true
-  where scope = p_scope and holder = p_holder and state = 'sending';
+    set token = trim(p_token), had_token = true, phase = 'token', updated_at = now()
+  where scope = p_scope
+    and holder = p_holder
+    and state = 'sending'
+    and token is null
+    and phase = 'acquired';
   return found;
+end;
+$$;
+
+-- Records that this holder is about to contact the provider. The token is
+-- unchanged. A crash after this still reuses that token.
+create or replace function public.email_operation_mark_http(
+  p_scope text,
+  p_holder text
+) returns boolean
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  updated text;
+begin
+  update public.email_operation_lease
+    set phase = 'http', updated_at = now()
+  where scope = p_scope
+    and holder = p_holder
+    and state = 'sending'
+    and token is not null
+    and phase in ('token', 'http')
+  returning scope into updated;
+  return updated is not null;
+end;
+$$;
+
+-- Operator reconciliation for an ambiguous lease. Not used by request handlers.
+-- Refuses unless p_outcome is provider_not_accepted, the named attempt belongs
+-- to this scope, and no attempt for the scope was accepted or delivered.
+-- Does not delete the row. On success the block is cleared and one later
+-- invite may store one new token.
+create or replace function public.email_operation_reconcile(
+  p_scope text,
+  p_outcome text,
+  p_idempotency_key text
+) returns text
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  rec public.email_operation_lease%rowtype;
+  attempt public.email_delivery_attempts%rowtype;
+begin
+  if p_outcome is distinct from 'provider_not_accepted' then
+    return 'refused';
+  end if;
+  if p_scope is null or length(trim(p_scope)) = 0
+     or p_idempotency_key is null or length(trim(p_idempotency_key)) = 0 then
+    return 'refused';
+  end if;
+  perform pg_advisory_xact_lock(hashtext('email-op'), hashtext(p_scope));
+  select * into rec from public.email_operation_lease where scope = p_scope for update;
+  if not found then
+    return 'absent';
+  end if;
+  if not rec.block_reissue or rec.phase <> 'ambiguous' then
+    return 'refused';
+  end if;
+  select * into attempt
+  from public.email_delivery_attempts
+  where idempotency_key = trim(p_idempotency_key);
+  if not found then
+    return 'refused';
+  end if;
+  if attempt.operation_scope is distinct from p_scope then
+    return 'refused';
+  end if;
+  if attempt.phase in ('primary_accepted', 'fallback_accepted')
+     or attempt.delivery_status in ('accepted', 'delivered') then
+    return 'refused';
+  end if;
+  if exists (
+    select 1 from public.email_delivery_attempts
+    where operation_scope = p_scope
+      and (
+        phase in ('primary_accepted', 'fallback_accepted')
+        or delivery_status in ('accepted', 'delivered')
+      )
+  ) then
+    return 'refused';
+  end if;
+  update public.email_operation_lease
+    set state = 'failed',
+        phase = 'failed',
+        block_reissue = false,
+        had_token = false,
+        token = null,
+        updated_at = now()
+  where scope = p_scope
+    and block_reissue
+    and phase = 'ambiguous';
+  if not found then
+    return 'refused';
+  end if;
+  return 'cleared';
 end;
 $$;
 
@@ -1083,6 +1241,8 @@ revoke all on function public.finish_event_invite(uuid, text, text) from public,
 revoke all on function public.email_operation_acquire(text, text, integer) from public, anon, authenticated;
 revoke all on function public.email_operation_finish(text, text, text) from public, anon, authenticated;
 revoke all on function public.email_operation_remember(text, text, text) from public, anon, authenticated;
+revoke all on function public.email_operation_mark_http(text, text) from public, anon, authenticated;
+revoke all on function public.email_operation_reconcile(text, text, text) from public, anon, authenticated;
 revoke all on function public.email_operation_recall(text) from public, anon, authenticated;
 
 grant execute on function public.reserve_email_provider_quota(text, text, integer, integer, integer) to service_role;
@@ -1112,6 +1272,8 @@ grant execute on function public.finish_event_invite(uuid, text, text) to servic
 grant execute on function public.email_operation_acquire(text, text, integer) to service_role;
 grant execute on function public.email_operation_finish(text, text, text) to service_role;
 grant execute on function public.email_operation_remember(text, text, text) to service_role;
+grant execute on function public.email_operation_mark_http(text, text) to service_role;
+grant execute on function public.email_operation_reconcile(text, text, text) to service_role;
 grant execute on function public.email_operation_recall(text) to service_role;
 
 comment on table public.email_provider_quota is
