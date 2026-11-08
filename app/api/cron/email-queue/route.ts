@@ -5,6 +5,7 @@ import { getBrandDefinition, toPublicBrand } from "@/lib/brand/brands";
 import type { BrandId } from "@/lib/brand/types";
 import type { QueuedEmailRow } from "@/lib/email-queue";
 import { MAX_QUEUE_ATTEMPTS, REALTIME_KINDS, isRealtimeKind, realtimeRetrySendAfter } from "@/lib/email-queue-time";
+import { emailCronDisabledBody } from "@/lib/email-outbound";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -48,6 +49,9 @@ function drainLimit(): number {
  * Secured with Authorization: Bearer CRON_SECRET.
  */
 export async function GET(request: NextRequest) {
+  const disabled = emailCronDisabledBody();
+  if (disabled) return NextResponse.json(disabled);
+
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {
     return NextResponse.json({ error: "CRON_SECRET is not configured" }, { status: 500 });
@@ -159,6 +163,34 @@ export async function GET(request: NextRequest) {
     if (r.skipped === "suppressed") {
       await admin.from("email_queue").update({ status: "skipped", last_error: "suppressed" } as never).eq("id", raw.id);
       skipped += 1;
+      continue;
+    }
+    if (r.ambiguous) {
+      // The provider may already have accepted this row. Do not send it again.
+      await admin
+        .from("email_queue")
+        .update({ status: "ambiguous", last_error: r.error ?? "ambiguous" } as never)
+        .eq("id", raw.id);
+      continue;
+    }
+    if (r.retryable) {
+      await admin
+        .from("email_queue")
+        .update({
+          status: "pending",
+          attempts: raw.attempts,
+          send_after: new Date(Date.now() + 60_000).toISOString(),
+          last_error: r.error ?? "retry",
+        } as never)
+        .eq("id", raw.id);
+      continue;
+    }
+    if (r.terminal) {
+      await admin
+        .from("email_queue")
+        .update({ status: "failed", last_error: r.error ?? "terminal" } as never)
+        .eq("id", raw.id);
+      failed += 1;
       continue;
     }
     if (r.overBudget || r.skipped === "ceiling") {

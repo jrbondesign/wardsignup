@@ -1,5 +1,7 @@
 # Email failover (Resend, then Brevo) and routing by type
 
+The gated Brevo-primary cutover is a separate switch, `EMAIL_PROVIDER_CUTOVER=brevo`, documented in [EMAIL_CUTOVER.md](./EMAIL_CUTOVER.md). Until that is set, the behavior on this page stays the production path. Preview deployments do not send.
+
 Every app email goes through `deliverEmail` in `lib/email-deliver.ts`, either directly (sign in links, org invite links) or through `sendGuardedEmail` (everything else, including the hourly queue drain). Supabase Auth does not send any of our mail: sign in and invite links are made with `auth.admin.generateLink` and sent by the app, so this failover covers them too.
 
 ## Routing by type (bulk mail goes to Brevo first)

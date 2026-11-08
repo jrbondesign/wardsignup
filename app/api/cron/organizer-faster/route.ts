@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { sendOrganizerFasterAlertEmail } from "@/lib/organizer-email";
 import { claimCronRun, hourBucketDate } from "@/lib/rate-limit";
 import { resolveCronBrandId } from "@/lib/cron-brand";
+import { emailCronDisabledBody } from "@/lib/email-outbound";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -18,6 +19,9 @@ export const maxDuration = 120;
  * offset).
  */
 export async function GET(request: NextRequest) {
+  const disabled = emailCronDisabledBody();
+  if (disabled) return NextResponse.json(disabled);
+
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {
     return NextResponse.json(

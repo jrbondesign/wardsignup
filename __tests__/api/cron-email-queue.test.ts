@@ -239,6 +239,50 @@ describe("/api/cron/email-queue", () => {
     expect(updatesFor(queries, "b")).toHaveLength(0);
   });
 
+  it("returns disabled on preview before auth or the database", async () => {
+    process.env.VERCEL_ENV = "preview";
+    try {
+      const res = await GET(cronRequest(PATH));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, disabled: true, reason: "preview", sent: 0 });
+      expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.VERCEL_ENV;
+    }
+  });
+
+  it("marks an ambiguous provider result and does not treat it as a failed retry", async () => {
+    mockSend.mockResolvedValue({ ok: false, ambiguous: true, error: "timeout" });
+    const { queries } = setup({ rows: [queued("a"), queued("b")] });
+    const body = await (await GET(cronRequest(PATH, SECRET))).json();
+    expect(body).toMatchObject({ sent: 0, failed: 0 });
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    expect(updatesFor(queries, "a")[1].payload).toEqual({ status: "ambiguous", last_error: "timeout" });
+    expect(updatesFor(queries, "b")[1].payload).toEqual({ status: "ambiguous", last_error: "timeout" });
+  });
+
+  it("requeues a rate-limited row without using up an attempt", async () => {
+    mockSend.mockResolvedValue({ ok: false, retryable: true, error: "429" });
+    const { queries } = setup({ rows: [queued("a", { attempts: 1 })] });
+    const body = await (await GET(cronRequest(PATH, SECRET))).json();
+    expect(body).toMatchObject({ sent: 0, failed: 0, stoppedOverBudget: false });
+    expect(updatesFor(queries, "a")[1].payload).toMatchObject({
+      status: "pending",
+      attempts: 1,
+      last_error: "429",
+    });
+    expect(updatesFor(queries, "a")[1].payload.send_after).toEqual(expect.any(String));
+  });
+
+  it("fails a terminal rejection without further attempts", async () => {
+    mockSend.mockResolvedValue({ ok: false, terminal: true, error: "bad address" });
+    const { queries } = setup({ rows: [queued("a", { attempts: 0 })] });
+    const body = await (await GET(cronRequest(PATH, SECRET))).json();
+    expect(body.failed).toBe(1);
+    expect(updatesFor(queries, "a")[1].payload).toEqual({ status: "failed", last_error: "bad address" });
+  });
+
   it("retries failures as pending until the third attempt, then fails", async () => {
     mockSend.mockResolvedValue({ ok: false, error: "500 from resend" });
     const { queries } = setup({ rows: [queued("retry", { attempts: 1 }), queued("dead", { attempts: 2 })] });

@@ -6,6 +6,7 @@ import type { ParticipantCampaignEmailFields } from "@/lib/participant-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { claimCronRun, hourBucketDate } from "@/lib/rate-limit";
 import { resolveCronBrandId } from "@/lib/cron-brand";
+import { emailCronDisabledBody } from "@/lib/email-outbound";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -23,6 +24,9 @@ const MAX_PER_RUN = 300;
  * 48 hours before their slot (they just got a confirmation email).
  */
 export async function GET(request: NextRequest) {
+  const disabled = emailCronDisabledBody();
+  if (disabled) return NextResponse.json(disabled);
+
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {
     return NextResponse.json(

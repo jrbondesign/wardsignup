@@ -4,6 +4,8 @@ import { getResendForBrand } from "@/lib/resend-for-brand";
 import type { PublicBrand } from "@/lib/brand/types";
 import { phoenixDayStartUtc } from "@/lib/phoenix-time";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
+import { emailOutboundBlock } from "@/lib/email-outbound";
 
 /**
  * Low level delivery: Resend first, Brevo as a free fallback.
@@ -64,13 +66,22 @@ export type DeliverParams = {
 };
 
 export type DeliverResult =
-  | { ok: true; provider: "resend" | "brevo" }
+  | { ok: true; provider: "resend" | "brevo"; messageId?: string; duplicateSuppressed?: boolean }
   | {
       ok: false;
       error: string;
       overBudget?: boolean;
       /** Brevo was tried (Resend out of budget or 429) and refused or errored. */
       brevoFailed?: boolean;
+      /** Provider may have accepted the message. Do not send it anywhere else. */
+      ambiguous?: boolean;
+      outboundDisabled?: boolean;
+      /** Same idempotency key already finished. Nothing was sent on this call. */
+      duplicateSuppressed?: boolean;
+      /** Safe to try the same provider later. The other provider was not called. */
+      retryable?: boolean;
+      /** Do not retry this key. */
+      terminal?: boolean;
     };
 
 type Env = Record<string, string | undefined>;
@@ -348,6 +359,18 @@ export async function deliverEmail(
   params: DeliverParams,
   opts: { urgent: boolean; realtime?: boolean; bulk?: boolean },
 ): Promise<DeliverResult> {
+  const blocked = emailOutboundBlock();
+  if (blocked.blocked) {
+    return {
+      ok: false,
+      error: `Email outbound is disabled (${blocked.reason})`,
+      outboundDisabled: true,
+    };
+  }
+  if (isBrevoCutoverEnabled()) {
+    const { productionCutoverDeps, runBrevoCutover } = await import("@/lib/email-cutover");
+    return runBrevoCutover(params, opts, productionCutoverDeps());
+  }
   const p: DeliverParams = { ...params, idempotencyKey: params.idempotencyKey ?? `ws/${randomUUID()}` };
   const brevoOk = opts.urgent || Boolean(opts.realtime);
   let brevo = brevoConfig();

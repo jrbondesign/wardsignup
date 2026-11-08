@@ -7,6 +7,7 @@ import { claimCronRun } from "@/lib/rate-limit";
 import { phoenixDayStartUtc } from "@/lib/phoenix-time";
 import { runFeedbackAskPass } from "@/lib/feedback-ask";
 import { resolveCronBrandId } from "@/lib/cron-brand";
+import { emailCronDisabledBody } from "@/lib/email-outbound";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -28,6 +29,9 @@ export const maxDuration = 120;
  * own brand-scoped claimCronRun.
  */
 export async function GET(request: NextRequest) {
+  const disabled = emailCronDisabledBody();
+  if (disabled) return NextResponse.json(disabled);
+
   // Trim so accidental spaces in Vercel env don’t break Bearer matching (Vercel also rejects whitespace-only secrets at deploy).
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {

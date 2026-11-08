@@ -1,6 +1,7 @@
 import { createHash, createHmac, timingSafeEqual } from "crypto";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
+import { emailOutboundBlock } from "@/lib/email-outbound";
 import { enqueueEmail } from "@/lib/email-queue";
 import { deferEnabled, deferSendWindowHours, inPostResetWindow, nextResetSendAfter } from "@/lib/email-queue-time";
 import type { PublicBrand } from "@/lib/brand/types";
@@ -30,12 +31,18 @@ export type GuardedSendResult =
   | { ok: true; queued?: boolean; provider?: "resend" | "brevo" }
   | {
       ok: false;
-      skipped?: "suppressed" | "ceiling" | "no_resend_key";
+      skipped?: "suppressed" | "ceiling" | "no_resend_key" | "outbound_disabled";
       error?: string;
       /** Resend is out of daily budget; queue callers leave the row pending. */
       overBudget?: boolean;
       /** Brevo refused or errored; the drain counts this as a failed attempt. */
       brevoFailed?: boolean;
+      /** Provider may have accepted the message. Leave it; do not send again. */
+      ambiguous?: boolean;
+      /** Try this same message later. No other provider was called. */
+      retryable?: boolean;
+      /** The idempotency key is finished. Do not keep retrying it. */
+      terminal?: boolean;
     };
 
 function unsubSecret(): string | null {
@@ -156,6 +163,14 @@ export type GuardedSendParams = {
 };
 
 export async function sendGuardedEmail(params: GuardedSendParams): Promise<GuardedSendResult> {
+  const blocked = emailOutboundBlock();
+  if (blocked.blocked) {
+    return {
+      ok: false,
+      skipped: "outbound_disabled",
+      error: `Email outbound is disabled (${blocked.reason})`,
+    };
+  }
   const { brand, category, from, to, subject, html, text, replyTo, attachments } =
     params;
   const emailLower = to.trim().toLowerCase();
@@ -235,6 +250,15 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
     { urgent, realtime },
   );
   if (sent.ok) return { ok: true, provider: sent.provider };
+  if (sent.outboundDisabled) {
+    return { ok: false, skipped: "outbound_disabled", error: sent.error };
+  }
+  if (sent.ambiguous) return { ok: false, error: sent.error, ambiguous: true };
+  if (sent.terminal) return { ok: false, error: sent.error, terminal: true };
+  if (sent.retryable) {
+    if (!params.fromQueue) return queueIt();
+    return { ok: false, error: sent.error, retryable: true };
+  }
   if (sent.overBudget) {
     // Out of Resend budget and Brevo couldn't take it: near real time mail is
     // queued due now for the hourly drain; batch mail waits for 12:05 AM Arizona.
