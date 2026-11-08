@@ -856,7 +856,7 @@ export default function MetricsPage({ preview }: { preview?: MetricsData } = {})
               {/* Creators + Recent Signups */}
               <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2 gap-6">
 
-                {/* Creators (full width: Ward/Unit, Organization and Calling columns) */}
+                {/* Creators: Email, Ward/Unit, Organization. Calling and counts are in Details. */}
                 <div className="sm:col-span-2 min-w-0 bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6">
                   <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-5">Creators</div>
                   <CreatorsTable

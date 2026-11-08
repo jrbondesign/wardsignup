@@ -18,7 +18,7 @@ const counts = {
 
 export const founderMetricsFixture: MetricsData = {
   growthCountsSource: "database",
-  totalCreators: 2,
+  totalCreators: 3,
   nonCreatorAccounts: {
     ownersNoEvent: { total: 3, thisWeek: 1 },
     coAdmins: { total: 1, thisWeek: 0 },
@@ -53,6 +53,15 @@ export const founderMetricsFixture: MetricsData = {
       events: 2,
       sessions: 6,
       signups: 4,
+    },
+    {
+      email: "very-long-example-organizer@example.com",
+      wardName: "Maple Ridge Ward of the Example Stake with an extra long unit name",
+      organization: "Elders Quorum with a deliberately long organization label",
+      calling: "A long example calling that should stay inside the card when details are open",
+      events: 1,
+      sessions: 2,
+      signups: 3,
     },
   ],
   callingsAvailable: true,
