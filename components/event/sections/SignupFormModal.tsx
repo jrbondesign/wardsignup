@@ -1,6 +1,8 @@
 "use client";
 
 import SignupCaptcha from "@/components/event/SignupCaptcha";
+import { useRef } from "react";
+import { beginSubmit, finishSubmit } from "@/lib/one-submit";
 import { DAYS } from "@/components/event/event-page-shared";
 import { formatTime, nextDaySuffix, spansMultipleDays } from "@/lib/utils";
 import EmailTypoHint from "@/components/EmailTypoHint";
@@ -35,6 +37,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
     trackEmailEntered,
     trackFormStarted,
   } = ctx;
+  const submitLock = useRef(false);
 
   return (
     showSignupForm && (
@@ -68,7 +71,14 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
           </div>
         </div>
 
-        <form onSubmit={handleSignup} onFocusCapture={() => trackFormStarted("slots")} className="space-y-4">
+        <form
+          onSubmit={(e) => {
+            if (!beginSubmit(submitLock, e)) return;
+            void Promise.resolve(handleSignup(e)).finally(() => finishSubmit(submitLock));
+          }}
+          onFocusCapture={() => trackFormStarted("slots")}
+          className="space-y-4"
+        >
           <div>
             <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
               Your Name <span className="text-red-400">*</span>

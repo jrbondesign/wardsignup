@@ -14,6 +14,11 @@ describe("admin metrics Creators table", () => {
     expect(screen.getByTestId("creator-organization").textContent).toBe("Elders Quorum");
     expect(screen.getByTestId("creator-calling").textContent).toBe("Bishop");
     expect(screen.queryByTestId("identity-unavailable")).toBeNull();
+    const scroll = screen.getByTestId("metrics-hscroll");
+    expect(scroll.getAttribute("data-metrics-scroll")).toBe("creators");
+    expect(scroll.className).toContain("overflow-x-auto");
+    expect(scroll.className).toContain("min-w-0");
+    expect(scroll.querySelector("table")?.className).toContain("min-w-[720px]");
   });
 
   it("shows Not set before the migration is applied", () => {

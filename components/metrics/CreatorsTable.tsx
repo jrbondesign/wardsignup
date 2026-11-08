@@ -41,7 +41,11 @@ export function CreatorsTable({
           Ward/Unit and Calling will fill in once the database update for them is applied.
         </p>
       )}
-      <div className="overflow-x-auto">
+      <div
+        data-testid="metrics-hscroll"
+        data-metrics-scroll="creators"
+        className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain"
+      >
         <table className="w-full min-w-[720px] table-fixed">
           <thead>
             <tr className="text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] border-b border-[rgba(14,150,176,0.10)]">

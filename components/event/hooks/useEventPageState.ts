@@ -3,7 +3,7 @@
 import { useBrand } from "@/components/BrandProvider";
 import { usePostHog } from "posthog-js/react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { usePublicCover, type PublicCover } from "@/lib/use-public-cover";
 import type { PublicEventPageData } from "@/lib/public-event-page";
 import { SessionWithSignups } from "@/components/event/event-page-shared";
@@ -127,6 +127,9 @@ export function useEventPageState(eventId: string, init: EventPageInit = {}) {
     setCalendarMonth,
     selectedCalendarDate,
     setSelectedCalendarDate,
+    signupLock: useRef(false),
+    itemSignupLock: useRef(false),
+    customSignupLock: useRef(false),
   };
 }
 

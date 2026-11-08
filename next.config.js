@@ -61,10 +61,16 @@ const nextConfig = {
     dangerouslyAllowLocalIP: process.env.NODE_ENV === "development",
   },
   async headers() {
+    // Preview deployments are review-only. Production keeps the existing
+    // per-route robots tags and does not get this blanket marker.
+    const globalHeaders = [...securityHeaders];
+    if (process.env.VERCEL_ENV === "preview") {
+      globalHeaders.push({ key: "X-Robots-Tag", value: "noindex, nofollow" });
+    }
     return [
       {
         source: "/:path*",
-        headers: securityHeaders,
+        headers: globalHeaders,
       },
       {
         // Public event pages show members' names. Keep them out of search
