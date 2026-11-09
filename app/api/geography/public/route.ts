@@ -8,8 +8,9 @@ export const maxDuration = 60;
 /**
  * Do not prerender. A build-time read of geography_snapshot_cache queries
  * production Supabase with no timeout and fails the Vercel build. CDN
- * freshness stays on GEOGRAPHY_PUBLIC_CACHE_CONTROL (s-maxage 3600, then
- * stale-while-revalidate). Empty and error bodies are not cached.
+ * freshness for a cache row stays on GEOGRAPHY_PUBLIC_CACHE_CONTROL
+ * (s-maxage 3600, then stale-while-revalidate). The baked snapshot, an empty
+ * city list, and a thrown error stay private, no-store.
  */
 export const dynamic = "force-dynamic";
 
@@ -28,7 +29,9 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const payload = await resolveGeographyPayload();
-    const cacheable = payload.cities.length > 0;
+    // A snapshot fallback means the cache read missed or timed out. Do not
+    // pin that body at the CDN; the next request should try the database again.
+    const cacheable = payload.source === "cache" && payload.cities.length > 0;
     return NextResponse.json(payload, {
       headers: {
         "Cache-Control": cacheable
