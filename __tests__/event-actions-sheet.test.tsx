@@ -10,6 +10,7 @@ import DeleteEventConfirm from "@/components/event-actions/DeleteEventConfirm";
 import { useDuplicateEvent } from "@/components/event-actions/DuplicateEventModal";
 import AdminEventActions from "@/components/admin/sections/AdminEventActions";
 import type { AdminEventView } from "@/components/admin/hooks/deriveAdminEventView";
+import { COPY_LINK_LINE_HINT, QR_DOWNLOAD_HINT } from "@/lib/public-event-copy";
 
 jest.mock("@/lib/download-qr", () => ({ downloadEventQr: jest.fn(() => Promise.resolve()) }));
 jest.mock("@/lib/auth", () => ({
@@ -181,6 +182,17 @@ describe("AdminEventActions phone row", () => {
 
   beforeEach(() => {
     Object.assign(navigator, { clipboard: { writeText: jest.fn(() => Promise.resolve()) } });
+  });
+
+  it("tells organizers to insert the QR as a picture and to paste the link as one line", () => {
+    const { ctx } = makeCtx({ moreMenuOpen: true });
+    render(<AdminEventActions ctx={ctx} />);
+    expect(screen.getAllByText(QR_DOWNLOAD_HINT).length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Download QR" })).toHaveAccessibleDescription(QR_DOWNLOAD_HINT);
+    const dialog = screen.getByRole("dialog", { name: "Ward Potluck" });
+    expect(within(dialog).getByRole("button", { name: /Download QR code/ })).toHaveTextContent(QR_DOWNLOAD_HINT);
+    expect(within(dialog).getByRole("button", { name: /Copy link/ })).toHaveTextContent(COPY_LINK_LINE_HINT);
+    expect(screen.getAllByRole("button", { name: "Copy link" })[0]).toHaveAttribute("title", COPY_LINK_LINE_HINT);
   });
 
   it("shows Copy link, Edit and a labelled 44px More button", () => {

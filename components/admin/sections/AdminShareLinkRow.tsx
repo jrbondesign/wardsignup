@@ -1,6 +1,7 @@
 "use client";
 
 import { type AdminEventView } from "@/components/admin/hooks/deriveAdminEventView";
+import { COPY_LINK_LINE_HINT } from "@/lib/public-event-copy";
 
 /** Shareable link with copy button. */
 export default function AdminShareLinkRow({ ctx }: { ctx: AdminEventView }) {
@@ -22,6 +23,8 @@ export default function AdminShareLinkRow({ ctx }: { ctx: AdminEventView }) {
           {isWardBrand
             ? "Copy and share with ward members. No account required to sign up"
             : "Copy and share with your group. No account required to sign up"}
+          {" "}
+          {COPY_LINK_LINE_HINT}
         </div>
       </div>
       <div className="flex gap-2 sm:flex-shrink-0">
