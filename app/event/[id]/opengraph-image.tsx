@@ -2,17 +2,23 @@ import { ImageResponse } from "next/og";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { headers } from "next/headers";
+import { permanentRedirect } from "next/navigation";
 import { getBrandFromHost } from "@/lib/brand";
 import { getPublicCampaignById } from "@/lib/supabase";
 import { publicCoverForCampaign } from "@/lib/event-media";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
+import { canonicalPublicEventRedirect, cleanEventId, isPublicEventUuid } from "@/lib/public-event-id";
 
 export const runtime = "nodejs";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 export default async function EventOGImage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  const { id: rawId } = await params;
+  const target = canonicalPublicEventRedirect(`/event/${rawId}/opengraph-image`);
+  if (target) permanentRedirect(target);
+  const cleaned = cleanEventId(rawId);
+  const id = isPublicEventUuid(cleaned) ? cleaned : "";
 
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
@@ -22,7 +28,7 @@ export default async function EventOGImage({ params }: { params: Promise<{ id: s
   const logoPath = join(process.cwd(), "public", brand.logoSrc.replace(/^\//, ""));
   const logoBuffer = readFileSync(logoPath);
 
-  const { data: pubRows } = await getPublicCampaignById(id);
+  const { data: pubRows } = id ? await getPublicCampaignById(id) : { data: null };
   const rows = Array.isArray(pubRows) ? pubRows : pubRows ? [pubRows] : [];
   const event = rows[0] as {
     name?: string;
