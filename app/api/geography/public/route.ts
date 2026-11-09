@@ -6,11 +6,12 @@ import {
 
 export const maxDuration = 60;
 /**
- * Hourly ISR window. The snapshot row refreshes once a day; the writer also
- * calls revalidatePath on this route so both maps update without waiting.
- * Keep in sync with GEOGRAPHY_PUBLIC_CACHE_CONTROL (must be a literal here).
+ * Do not prerender. A build-time read of geography_snapshot_cache queries
+ * production Supabase with no timeout and fails the Vercel build. CDN
+ * freshness stays on GEOGRAPHY_PUBLIC_CACHE_CONTROL (s-maxage 3600, then
+ * stale-while-revalidate). Empty and error bodies are not cached.
  */
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
 
 /**
  * Public geography endpoint for the homepage and founder metrics maps.
@@ -27,20 +28,26 @@ export const revalidate = 3600;
 export async function GET() {
   try {
     const payload = await resolveGeographyPayload();
+    const cacheable = payload.cities.length > 0;
     return NextResponse.json(payload, {
       headers: {
-        "Cache-Control": GEOGRAPHY_PUBLIC_CACHE_CONTROL,
+        "Cache-Control": cacheable
+          ? GEOGRAPHY_PUBLIC_CACHE_CONTROL
+          : "private, no-store",
       },
     });
   } catch (error) {
     console.error("Geography public API error:", error);
-    // Fallback to baked snapshot on any error
+    // Fallback to baked snapshot on any error. Do not cache the error body.
     const { toGeographyResponse, GEOGRAPHY_SNAPSHOT } = await import(
       "@/lib/geography-snapshot"
     );
-    return NextResponse.json({
-      ...toGeographyResponse(GEOGRAPHY_SNAPSHOT, "snapshot"),
-      source: "snapshot",
-    });
+    return NextResponse.json(
+      {
+        ...toGeographyResponse(GEOGRAPHY_SNAPSHOT, "snapshot"),
+        source: "snapshot",
+      },
+      { headers: { "Cache-Control": "private, no-store" } },
+    );
   }
 }
