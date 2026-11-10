@@ -210,7 +210,7 @@ export async function POST(request: Request) {
           const { data: campaign, error: cErr } = await withSupabaseTimeout(
             admin!
               .from("campaigns")
-              .select("id, name, brand_id, public_host, event_timezone, event_end_date, leader_name, leader_email, user_email, organizer_instant_notify_enabled, leader_signup_email_enabled")
+              .select("id, name, brand_id, public_host, event_timezone, event_end_date, event_type, leader_name, leader_email, user_email, organizer_instant_notify_enabled, leader_signup_email_enabled")
               .eq("id", campaign_id)
               .single(),
             "campaigns confirmation fetch",

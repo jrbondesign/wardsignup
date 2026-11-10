@@ -162,7 +162,7 @@ export default function WardDirectoryPage({ params }: { params: Promise<{ slug: 
                         {event.event_start_time && (
                           <div className="text-[11px] text-[#5A8399] leading-tight mt-0.5">
                             {formatTime(event.event_start_time)}
-                            {event.event_end_time && ` to ${formatTime(event.event_end_time)}${event.event_end_date && event.event_date && event.event_end_date > event.event_date ? "" : nextDaySuffix(event.event_start_time, event.event_end_time)}`}
+                            {event.event_end_time && ` to ${formatTime(event.event_end_time)}${event.event_type === "rsvp" && event.event_end_date && event.event_date && event.event_end_date > event.event_date ? "" : nextDaySuffix(event.event_start_time, event.event_end_time)}`}
                           </div>
                         )}
                       </div>

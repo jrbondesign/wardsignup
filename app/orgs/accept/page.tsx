@@ -12,6 +12,7 @@ import { resetPostHogOnSignOut } from "@/lib/posthog-client";
 import CallingField from "@/components/CallingField";
 import { joinCalling, splitCalling } from "@/lib/callings";
 import { acceptInviteWithCalling } from "@/lib/invite-accept";
+import { classifyInviteInfoFailure, type InviteInfoErrorType } from "@/lib/invite-info-error";
 
 type Status =
   | "loading_invite"
@@ -30,15 +31,7 @@ type InviteInfo = {
   inviterDisplayName?: string;
 };
 
-type ErrorType =
-  | "missing_token"
-  | "invite_not_found"
-  | "invite_expired"
-  | "invite_revoked"
-  | "invite_already_used"
-  | "ward_deleted"
-  | "email_mismatch"
-  | "generic";
+type ErrorType = InviteInfoErrorType | "missing_token" | "ward_deleted" | "email_mismatch";
 
 function AcceptInner() {
   const router = useRouter();
@@ -89,32 +82,11 @@ function AcceptInner() {
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
+          const failure = classifyInviteInfoFailure(res.status, data?.error);
           setStatus("error");
-          let type: ErrorType = "generic";
-          if (res.status === 404) {
-            type = "invite_not_found";
-            setErrorMessage("This invitation was not found.");
-          } else if (res.status === 410) {
-            const msg = data?.error ?? "";
-            if (msg.includes("expired")) {
-              type = "invite_expired";
-              setErrorMessage("This invitation has expired.");
-            } else if (msg.includes("revoked")) {
-              type = "invite_revoked";
-              setErrorMessage("This invitation has been revoked.");
-            } else if (msg.includes("already")) {
-              type = "invite_already_used";
-              setErrorMessage("This invitation has already been used.");
-            } else {
-              type = "generic";
-              setErrorMessage(data?.error ?? "Failed to load invitation.");
-            }
-          } else {
-            type = "generic";
-            setErrorMessage(data?.error ?? "Failed to load invitation.");
-          }
-          setErrorType(type);
-          posthog?.capture("invite_error", { type });
+          setErrorType(failure.type);
+          setErrorMessage(failure.message);
+          posthog?.capture("invite_error", { type: failure.type });
           return;
         }
 
@@ -141,10 +113,11 @@ function AcceptInner() {
 
       if (!infoRes.ok) {
         const data = await infoRes.json().catch(() => ({}));
+        const failure = classifyInviteInfoFailure(infoRes.status, data?.error);
         setStatus("error");
-        setErrorType("generic");
-        setErrorMessage(data?.error ?? "Failed to load invitation.");
-        posthog?.capture("invite_error", { type: "generic" });
+        setErrorType(failure.type);
+        setErrorMessage(failure.message);
+        posthog?.capture("invite_error", { type: failure.type });
         return;
       }
 
@@ -244,8 +217,10 @@ function AcceptInner() {
 
   const handleSignOut = async () => {
     const supabase = createClientComponentClient();
-    await supabase.auth.signOut();
-    resetPostHogOnSignOut();
+    const { error } = await supabase.auth.signOut();
+    // Only unlink PostHog once the session is really gone.
+    if (error) console.error("Sign out failed:", error.message);
+    else resetPostHogOnSignOut();
     router.refresh();
   };
 

@@ -1,6 +1,8 @@
 "use client";
 
 import SignupCaptcha from "@/components/event/SignupCaptcha";
+import { useRef } from "react";
+import { beginSubmit, finishSubmit } from "@/lib/one-submit";
 import { DAYS } from "@/components/event/event-page-shared";
 import { formatTime, nextDaySuffix, spansMultipleDays } from "@/lib/utils";
 import EmailTypoHint from "@/components/EmailTypoHint";
@@ -38,6 +40,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
     trackEmailEntered,
     trackFormStarted,
   } = ctx;
+  const submitLock = useRef(false);
 
   return (
     isSingleSession && (eventType === "spots" || eventType === "rsvp") && !success && (
@@ -85,7 +88,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
                   ? (() => { const [y,m,d] = singleSession.session_date!.split("-").map(Number); return new Date(y, m-1, d).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }); })()
                   : DAYS[singleSession.day_of_week]}
                 {" · "}{formatTime(singleSession.time)}
-                {singleSession.end_time && ` to ${formatTime(singleSession.end_time)}${nextDaySuffix(singleSession.time, singleSession.end_time, { multiDay: spansMultipleDays(singleSession.session_date, event.event_end_date) })}`}
+                {singleSession.end_time && ` to ${formatTime(singleSession.end_time)}${nextDaySuffix(singleSession.time, singleSession.end_time, { multiDay: spansMultipleDays(singleSession.session_date, event.event_end_date, eventType) })}`}
                 {singleSession.location && ` · ${singleSession.location}`}
               </span>
               {showCapacityPublicly && singleSession.capacity < 999 && (
@@ -119,7 +122,14 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
 
           <h2 className="font-serif text-2xl text-[#0D2B35] mb-5">Register for this event</h2>
 
-          <form onSubmit={handleSignup} onFocusCapture={() => trackFormStarted("slots")} className="space-y-4">
+          <form
+            onSubmit={(e) => {
+              if (!beginSubmit(submitLock, e)) return;
+              void Promise.resolve(handleSignup(e)).finally(() => finishSubmit(submitLock));
+            }}
+            onFocusCapture={() => trackFormStarted("slots")}
+            className="space-y-4"
+          >
             <div>
               <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
                 Your Name <span className="text-red-400">*</span>

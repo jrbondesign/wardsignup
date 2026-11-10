@@ -262,7 +262,9 @@ export async function PATCH(
 
     if (body.event_end_date !== undefined) {
       const raw = body.event_end_date;
-      if (raw === null || raw === "") {
+      if ((event as Campaign).event_type !== "rsvp") {
+        updates.event_end_date = null;
+      } else if (raw === null || raw === "") {
         updates.event_end_date = null;
       } else if (typeof raw === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.trim())) {
         updates.event_end_date = raw.trim();

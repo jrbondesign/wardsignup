@@ -22,6 +22,7 @@ export type LeaderCampaignEmailFields = Pick<
   | "public_host"
   | "event_timezone"
   | "event_end_date"
+  | "event_type"
   | "leader_name"
   | "leader_email"
 > &

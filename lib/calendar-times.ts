@@ -58,13 +58,32 @@ export function addDaysIso(date: string, days: number): string {
 }
 
 /**
+ * event_end_date only describes a multi-day RSVP. Other types can keep a leftover
+ * date after switching away from RSVP; ignore it so overnight slots still show
+ * "(next day)" and calendar/sync ends stay on the slot. When the type is
+ * omitted (older callers), the date is used as before.
+ */
+export function rsvpEventEndDate(
+  eventType: string | null | undefined,
+  eventEndDate: string | null | undefined,
+): string | null {
+  if (eventType != null && eventType !== "rsvp") return null;
+  return eventEndDate ?? null;
+}
+
+/**
  * True when a dated session belongs to an event that runs past its own date
  * (a multi-day RSVP: event_end_date after session_date). Such a range spans
  * the whole event, so "(next day)" is not shown for it.
  */
-export function spansMultipleDays(date: string | null | undefined, eventEndDate: string | null | undefined): boolean {
+export function spansMultipleDays(
+  date: string | null | undefined,
+  eventEndDate: string | null | undefined,
+  eventType?: string | null,
+): boolean {
+  const end = rsvpEventEndDate(eventType, eventEndDate);
   const iso = /^\d{4}-\d{2}-\d{2}$/;
-  return !!date && !!eventEndDate && iso.test(date) && iso.test(eventEndDate) && eventEndDate > date;
+  return !!date && !!end && iso.test(date) && iso.test(end) && end > date;
 }
 
 /**
@@ -97,13 +116,15 @@ export function calendarSpan(args: {
   start: string;
   end: string | null | undefined;
   eventEndDate?: string | null;
+  eventType?: string | null;
 }): CalendarSpan | null {
   const startTime = normalizeHHMM(args.start);
   if (!startTime || !/^\d{4}-\d{2}-\d{2}$/.test(args.date)) return null;
   const startMin = timeToMinutes(startTime)!;
   const endNorm = normalizeHHMM(args.end);
+  const eventEndDate = rsvpEventEndDate(args.eventType, args.eventEndDate);
   const multiDay =
-    !!args.eventEndDate && /^\d{4}-\d{2}-\d{2}$/.test(args.eventEndDate) && args.eventEndDate > args.date;
+    !!eventEndDate && /^\d{4}-\d{2}-\d{2}$/.test(eventEndDate) && eventEndDate > args.date;
 
   let endTime: string;
   let overnight: boolean;
@@ -115,10 +136,10 @@ export function calendarSpan(args: {
     overnight = startMin + 60 >= 1440;
   }
   if (multiDay && overnight && endNorm) {
-    return { startDate: args.date, startTime, endDate: args.eventEndDate!, endTime, repeatUntil: null };
+    return { startDate: args.date, startTime, endDate: eventEndDate!, endTime, repeatUntil: null };
   }
   const endDate = overnight ? addDaysIso(args.date, 1) : args.date;
-  return { startDate: args.date, startTime, endDate, endTime, repeatUntil: multiDay ? args.eventEndDate! : null };
+  return { startDate: args.date, startTime, endDate, endTime, repeatUntil: multiDay ? eventEndDate! : null };
 }
 
 /** "2026-04-18" + "17:00" (or "17:00:00") → "20260418T170000" */
@@ -136,6 +157,7 @@ export function googleTemplateDates(args: {
   start: string;
   end: string | null | undefined;
   eventEndDate?: string | null;
+  eventType?: string | null;
 }): { dates: string; recur: string | null } | null {
   const span = calendarSpan(args);
   if (!span) return null;

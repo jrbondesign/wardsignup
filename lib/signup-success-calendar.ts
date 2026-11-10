@@ -5,7 +5,7 @@
  * added as an all-day event on its date(s). Without a date there is nothing
  * to add, and the page hides the buttons (see hasSignupCalendar).
  */
-import { addDaysIso, calendarSpan, googleTemplateDates, toCalDate } from "@/lib/calendar-times";
+import { addDaysIso, calendarSpan, googleTemplateDates, rsvpEventEndDate, toCalDate } from "@/lib/calendar-times";
 import type { SignupSuccessInfo } from "@/lib/signup-success-handoff";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -15,7 +15,8 @@ function allDayRange(info: SignupSuccessInfo): { start: string; endExclusive: st
   const date = info.session_date;
   if (!date || !ISO_DATE.test(date)) return null;
   if (calendarSpan({ date, start: info.session_time ?? "", end: null })) return null;
-  const last = info.event_end_date && ISO_DATE.test(info.event_end_date) && info.event_end_date > date ? info.event_end_date : date;
+  const eventEndDate = rsvpEventEndDate(info.event_type, info.event_end_date);
+  const last = eventEndDate && ISO_DATE.test(eventEndDate) && eventEndDate > date ? eventEndDate : date;
   return { start: date, endExclusive: addDaysIso(last, 1) };
 }
 
@@ -36,7 +37,7 @@ export function signupGoogleCalendarUrl(info: SignupSuccessInfo): string {
       date: info.session_date,
       start: info.session_time ?? "",
       end: info.session_end_time,
-      eventEndDate: info.event_end_date,
+      eventEndDate: rsvpEventEndDate(info.event_type, info.event_end_date),
     });
     if (!g) return "";
     dates = g.dates;
@@ -67,7 +68,7 @@ export function signupIcs(info: SignupSuccessInfo): string | null {
       date: info.session_date,
       start: info.session_time ?? "",
       end: info.session_end_time,
-      eventEndDate: info.event_end_date,
+      eventEndDate: rsvpEventEndDate(info.event_type, info.event_end_date),
     });
     if (!span) return null;
     const tz = info.event_timezone;

@@ -106,7 +106,8 @@ export async function GET(request: NextRequest) {
         brand_id,
         public_host,
         event_timezone,
-        event_end_date
+        event_end_date,
+        event_type
       )
     `,
     )

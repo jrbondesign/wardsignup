@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { getServerEventPage } from "@/lib/public-event-page-server";
+import { cleanEventId, isPublicEventUuid } from "@/lib/public-event-id";
 
 async function eventTitleAndDescription(id: string) {
   // Shared with the page through React cache(), so this is the same read.
@@ -20,12 +21,16 @@ async function eventTitleAndDescription(id: string) {
 }
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = await params;
+  const { id: rawId } = await params;
+  const cleaned = cleanEventId(rawId);
+  const id = isPublicEventUuid(cleaned) ? cleaned : rawId;
   const row = await eventTitleAndDescription(id);
   const title = row.name ?? "Ward Signup";
   const description = row.description ?? "Sign up for an available time slot.";
 
   const fbAppId = process.env.NEXT_PUBLIC_FB_APP_ID;
+  // Never put a raw line break into the canonical URL. Whitespace is already gone.
+  const metaId = isPublicEventUuid(cleaned) ? cleaned : cleaned || "unknown";
 
   return {
     title,
@@ -35,7 +40,7 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
     openGraph: {
       title,
       description,
-      url: `/event/${id}`,
+      url: `/event/${metaId}`,
       type: "website",
       // images intentionally omitted — Next.js auto-uses opengraph-image.tsx in this directory
     },

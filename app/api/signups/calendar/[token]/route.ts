@@ -39,7 +39,7 @@ export async function GET(
   // Pull the campaign once (for name/timezone/end_date/url).
   const { data: campaignRaw, error: campErr } = await admin
     .from("campaigns")
-    .select("id, name, brand_id, public_host, event_timezone, event_end_date")
+    .select("id, name, brand_id, public_host, event_timezone, event_end_date, event_type")
     .eq("id", anchorRow.campaign_id)
     .single();
   if (campErr || !campaignRaw) {
@@ -53,6 +53,7 @@ export async function GET(
     public_host: string | null;
     event_timezone: string | null;
     event_end_date: string | null;
+    event_type: string | null;
   };
 
   // Pull every slot this member has in this campaign (joined to sessions).
@@ -87,7 +88,7 @@ export async function GET(
     campaignName: campaign.name,
     eventUrl,
     timezone: campaign.event_timezone,
-    campaignEventEndDate: campaign.event_end_date,
+    campaignEventEndDate: campaign.event_type === "rsvp" ? campaign.event_end_date : null,
     campaignId: campaign.id,
   });
   if (!ics) {

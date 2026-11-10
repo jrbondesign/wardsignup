@@ -11,7 +11,7 @@ import { sendGuardedEmail } from "@/lib/email-send";
 import { cutoverOperationKey } from "@/lib/email-operation-key";
 import type { Campaign } from "@/lib/types";
 import { withUtm } from "@/lib/utm";
-import { googleTemplateDates } from "@/lib/calendar-times";
+import { googleTemplateDates, rsvpEventEndDate } from "@/lib/calendar-times";
 
 function runYourOwnCtaHtml(siteOrigin: string): string {
   const createPageUrl = withUtm(`${siteOrigin}/create`, {
@@ -37,7 +37,7 @@ type SessionFields = {
 
 export type ParticipantCampaignEmailFields = Pick<
   Campaign,
-  "id" | "name" | "brand_id" | "public_host" | "event_timezone" | "event_end_date"
+  "id" | "name" | "brand_id" | "public_host" | "event_timezone" | "event_end_date" | "event_type"
 >;
 
 function eventLink(siteOrigin: string, campaignId: string): string {
@@ -98,7 +98,8 @@ export async function sendParticipantSignupConfirmation(params: {
 
   const slotLabel = formatSessionSlotLabel(params.session, {
     eventTimezone: params.campaign.event_timezone,
-    eventEndDate: params.campaign.event_end_date ?? null,
+    eventEndDate: rsvpEventEndDate(params.campaign.event_type, params.campaign.event_end_date),
+    eventType: params.campaign.event_type ?? null,
   });
   const eventTitle = escapeHtml(params.campaign.name);
   const name = escapeHtml(params.memberName.trim());
@@ -118,7 +119,7 @@ export async function sendParticipantSignupConfirmation(params: {
     params.campaign.name,
     link,
     params.campaign.event_timezone,
-    params.campaign.event_end_date ?? null,
+    rsvpEventEndDate(params.campaign.event_type, params.campaign.event_end_date),
   );
   const successPageUrl = params.cancelToken
     ? `${siteOrigin}/signup-success/${params.cancelToken}`
@@ -195,7 +196,8 @@ export async function sendParticipantReminderEmail(params: {
 
   const slotLabel = formatSessionSlotLabel(params.session, {
     eventTimezone: params.campaign.event_timezone,
-    eventEndDate: params.campaign.event_end_date ?? null,
+    eventEndDate: rsvpEventEndDate(params.campaign.event_type, params.campaign.event_end_date),
+    eventType: params.campaign.event_type ?? null,
   });
   const eventTitle = escapeHtml(params.campaign.name);
   const name = escapeHtml(params.memberName.trim());
@@ -217,7 +219,7 @@ export async function sendParticipantReminderEmail(params: {
     params.campaign.name,
     link,
     params.campaign.event_timezone,
-    params.campaign.event_end_date ?? null,
+    rsvpEventEndDate(params.campaign.event_type, params.campaign.event_end_date),
   );
   const successPageUrl = params.cancelToken
     ? `${siteOrigin}/signup-success/${params.cancelToken}`
@@ -339,7 +341,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
         ? `&nbsp;·&nbsp;<a href="${escapeHtml(slotCancelUrl)}" style="color:#5A8399;font-size:13px;">Cancel</a>`
         : "";
       return `<li style="margin:0 0 4px;font-size:15px;">${escapeHtml(
-        formatSessionSlotLabel(s, { eventTimezone: params.campaign.event_timezone, eventEndDate: params.campaign.event_end_date ?? null }),
+        formatSessionSlotLabel(s, { eventTimezone: params.campaign.event_timezone, eventEndDate: rsvpEventEndDate(params.campaign.event_type, params.campaign.event_end_date) }),
       )}${slotCancel}</li>`;
     })
     .join("");
@@ -353,7 +355,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
         params.campaign.name,
         link,
         params.campaign.event_timezone,
-        params.campaign.event_end_date ?? null,
+        rsvpEventEndDate(params.campaign.event_type, params.campaign.event_end_date),
       ),
     )
     .filter((u): u is string => Boolean(u));
@@ -369,7 +371,8 @@ export async function sendParticipantBatchSignupConfirmation(params: {
     .map((url, i) => {
       const label = formatSessionSlotLabel(params.sessions[i], {
         eventTimezone: params.campaign.event_timezone,
-        eventEndDate: params.campaign.event_end_date ?? null,
+        eventEndDate: rsvpEventEndDate(params.campaign.event_type, params.campaign.event_end_date),
+    eventType: params.campaign.event_type ?? null,
       });
       return `<a href="${escapeHtml(url)}" style="display:inline-block;margin:0 8px 8px 0;padding:8px 16px;border-radius:8px;border:1.5px solid rgba(14,150,176,0.30);font-size:13px;font-weight:600;color:#0E96B0;text-decoration:none;">Google: ${escapeHtml(label)}</a>`;
     })
