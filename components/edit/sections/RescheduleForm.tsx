@@ -2,11 +2,15 @@
 
 import { DAYS_SHORT, DURATION_PRESETS, DateRangePicker, countDaysInRange, countTithingSlotsPerDay, keepSpotsSelectionOnMouseUp, resolveSpotsDraft, selectAllSpotsOnFocus } from "@/components/edit/edit-page-shared";
 import TimeInput, { TimeRangeRow } from "@/components/TimeInput";
+import { inferTimeUnitWord } from "@/lib/time-unit-word";
 import { formatTimeRange, endTimeNote, tithingWindowError } from "@/lib/utils";
 import { type EditEventCtx } from "@/components/edit/hooks/useEditEvent";
 
 /** Replace-schedule panel. */
 export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
+  const unit = inferTimeUnitWord({ name: ctx.eventName, isAppointmentWindow: ctx.isTithingReschedule });
+  // "appointments", "shifts", "sessions", or "times": the event's own word, never "slot".
+  const units = (n: number) => `${n} ${unit}${n === 1 ? "" : "s"}`;
   const {
     error,
     applyReschedule,
@@ -302,8 +306,8 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
 
       <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-sm text-amber-800">
         {isTithingReschedule
-          ? "This will replace all existing slots with new ones across the new range."
-          : `This will replace all ${sessions.length} existing slot${sessions.length !== 1 ? "s" : ""} with new slots based on the settings above.`}
+          ? `This will replace all existing ${unit}s with new ones across the new range.`
+          : `This will replace all ${sessions.length} existing ${unit}${sessions.length !== 1 ? "s" : ""} with new ones based on the settings above.`}
       </div>
 
       <div className="bg-[#E6F7FB] border border-[rgba(14,150,176,0.18)] rounded-xl px-[18px] py-[14px] text-sm leading-relaxed text-[#2E5566]">
@@ -311,20 +315,20 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
         {rescheduleStart && rescheduleEnd
           ? (() => {
               if (isTithingReschedule) {
-                if (tithingDays.length === 0) return "Choose days of week to generate slots.";
+                if (tithingDays.length === 0) return `Choose days of week to generate ${unit}s.`;
                 const total = tithingTotal;
-                if (!rescheduleTime) return "Choose a start time to generate slots.";
-                if (tithingError) return "Fix the end time above to generate slots.";
+                if (!rescheduleTime) return `Choose a start time to generate ${unit}s.`;
+                if (tithingError) return `Fix the end time above to generate ${unit}s.`;
                 return total > 0
-                  ? `${total} slot${total !== 1 ? "s" : ""} will be created: ${tithingDuration}-min appointments, ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
-                  : "Configure the schedule above to auto-generate slots.";
+                  ? `${units(total)} will be created: ${tithingDuration} min each, ${formatTimeRange(rescheduleTime, rescheduleEndTime, { clock: "12h" })}.`
+                  : `Configure the schedule above to generate ${unit}s.`;
               }
 
-              if (rescheduleDays.length === 0) return "Choose days of week to generate slots.";
+              if (rescheduleDays.length === 0) return `Choose days of week to generate ${unit}s.`;
               const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, rescheduleDays);
               return dayCount > 0
-                ? `${dayCount} session${dayCount !== 1 ? "s" : ""} will be created: ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
-                : "Choose a date range and days of week to generate slots.";
+                ? `${units(dayCount)} will be created: ${formatTimeRange(rescheduleTime, rescheduleEndTime, { clock: "12h" })}.`
+                : `Choose a date range and days of week to generate ${unit}s.`;
             })()
           : "Choose a date range to see a preview."}
       </div>
@@ -356,9 +360,9 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
             ? (() => {
                 if (!isTithingReschedule) {
                   const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, rescheduleDays);
-                  return `Apply: ${dayCount} slot${dayCount === 1 ? "" : "s"}`;
+                  return `Apply: ${units(dayCount)}`;
                 }
-                return `Apply: ${tithingTotal} slot${tithingTotal === 1 ? "" : "s"}`;
+                return `Apply: ${units(tithingTotal)}`;
               })()
             : "Select a date range"}
         </button>

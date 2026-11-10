@@ -115,19 +115,17 @@ describe("createTimeOrderIssue", () => {
 });
 
 describe("TimeInput error prop", () => {
-  it("shows the message, marks the selects invalid and describes them", () => {
+  it("shows the message, marks the field invalid and describes it", () => {
     render(<TimeInput value="09:00" onChange={() => {}} label="End time" error={TIME_ORDER_ERROR} />);
     const msg = screen.getByText(TIME_ORDER_ERROR);
-    for (const part of ["hour", "minute", "AM or PM"]) {
-      const sel = screen.getByLabelText(`End time ${part}`);
-      expect(sel).toHaveAttribute("aria-invalid", "true");
-      expect(sel.getAttribute("aria-describedby")).toContain(msg.id);
-    }
+    const field = screen.getByRole("button", { name: "End time, 9:00 AM" });
+    expect(field).toHaveAttribute("aria-invalid", "true");
+    expect(field.getAttribute("aria-describedby")).toContain(msg.id);
   });
 
   it("renders no error state without the prop", () => {
     render(<TimeInput value="09:00" onChange={() => {}} label="End time" />);
-    expect(screen.getByLabelText("End time hour")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByRole("button", { name: "End time, 9:00 AM" })).not.toHaveAttribute("aria-invalid");
     expect(screen.queryByText(TIME_ORDER_ERROR)).toBeNull();
   });
 });
@@ -141,7 +139,7 @@ describe("create TimeSection inline order error", () => {
       />,
     );
     expect(screen.getByText(TIME_ORDER_ERROR)).toBeInTheDocument();
-    expect(screen.getByLabelText("End time hour")).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("button", { name: /^End time, 6:00 PM/ })).toHaveAttribute("aria-invalid", "true");
     expect(document.getElementById(CREATE_EVENT_TIMES_ROW_ID)).not.toBeNull();
   });
 
@@ -153,7 +151,7 @@ describe("create TimeSection inline order error", () => {
       />,
     );
     expect(screen.queryByText(TIME_ORDER_ERROR)).toBeNull();
-    expect(screen.getByLabelText("End time hour")).not.toHaveAttribute("aria-invalid");
+    expect(screen.getByRole("button", { name: /^End time, 1:00 AM/ })).not.toHaveAttribute("aria-invalid");
     expect(screen.getByText("(next day)")).toBeInTheDocument();
   });
 

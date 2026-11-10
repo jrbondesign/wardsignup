@@ -2,6 +2,7 @@
 
 import { SessionData, resolveSpotsDraft, scrollToEditSection } from "@/components/edit/edit-page-shared";
 import { focusTimeRow, startTimePanelError, TITHING_NO_SLOTS_ERROR, tithingWindowError } from "@/lib/utils";
+import { inferTimeUnitWord } from "@/lib/time-unit-word";
 import { generateTithingDeclarationSessions } from "@/lib/tithing-reschedule";
 import { type EditEventState } from "./useEditEventState";
 import { type EditEventSettings } from "./useEditEventSettings";
@@ -99,7 +100,8 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
   };
 
   const requireStartTime = (time: string, panelId: string, open: () => void) => {
-    const message = startTimePanelError(time, timePanelHasPartial(panelId));
+    const unit = inferTimeUnitWord({ name: ctx.eventName, isAppointmentWindow: isTithingReschedule });
+    const message = startTimePanelError(time, timePanelHasPartial(panelId), unit);
     if (message) {
       open();
       setError(message);

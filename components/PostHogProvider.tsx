@@ -6,7 +6,11 @@ import { useEffect } from "react";
 import { initAttributionTracking } from "@/lib/attribution";
 import { scrubExceptionEvent } from "@/lib/pii-scrub";
 
-if (typeof window !== "undefined") {
+// Preview only /demo/ pages use fake data; keep them out of analytics and replays.
+// (Remove with the demo route before merge.)
+const isDemoPage = typeof window !== "undefined" && window.location.pathname.startsWith("/demo/");
+
+if (typeof window !== "undefined" && !isDemoPage) {
   posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
     api_host: "/ingest",
     ui_host: "https://us.posthog.com",
@@ -29,7 +33,7 @@ export function PostHogProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Initialize attribution tracking on mount
     // This captures first-touch attribution and sets PostHog person properties
-    if (typeof window !== "undefined") {
+    if (typeof window !== "undefined" && !isDemoPage) {
       initAttributionTracking(posthog);
     }
   }, []);
