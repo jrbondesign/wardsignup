@@ -217,8 +217,10 @@ function AcceptInner() {
 
   const handleSignOut = async () => {
     const supabase = createClientComponentClient();
-    await supabase.auth.signOut();
-    resetPostHogOnSignOut();
+    const { error } = await supabase.auth.signOut();
+    // Only unlink PostHog once the session is really gone.
+    if (error) console.error("Sign out failed:", error.message);
+    else resetPostHogOnSignOut();
     router.refresh();
   };
 

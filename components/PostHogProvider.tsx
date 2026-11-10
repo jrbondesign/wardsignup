@@ -4,6 +4,7 @@ import posthog from "posthog-js";
 import { PostHogProvider as PHProvider } from "posthog-js/react";
 import { useEffect } from "react";
 import { initAttributionTracking } from "@/lib/attribution";
+import { scrubExceptionEvent } from "@/lib/pii-scrub";
 
 if (typeof window !== "undefined") {
   posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
@@ -18,6 +19,9 @@ if (typeof window !== "undefined") {
     // Error tracking: unhandled errors and unhandled promise rejections become
     // $exception events tied to the session replay.
     capture_exceptions: true,
+    // Error messages can echo an email or a token; scrub $exception events
+    // before they leave the browser (same rules as the server side).
+    before_send: scrubExceptionEvent,
   });
 }
 
