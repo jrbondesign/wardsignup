@@ -17,6 +17,35 @@
   --bg: #F4FAFB;
 }
 
+/*
+ * Native date and time inputs. iOS Safari gives them an intrinsic minimum
+ * width (the formatted date plus its own padding), so `w-full` alone does not
+ * stop them sticking out past a narrow card, and the extra page width also
+ * widens the iPhone layout viewport. Let them shrink to their container; on
+ * iOS only, drop the native chrome that carries the minimum width and keep an
+ * empty field the same height as the other inputs. In a base layer so
+ * utilities on each input still win.
+ */
+@layer base {
+  input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"]) {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+  @supports (-webkit-touch-callout: none) {
+    input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"]) {
+      -webkit-appearance: none;
+      appearance: none;
+      display: block;
+      min-height: 2.75rem;
+    }
+    input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-date-and-time-value {
+      text-align: left;
+      min-height: 1.25rem;
+    }
+  }
+}
+
 body {
   font-family: var(--font-dm-sans, 'DM Sans', sans-serif);
   background: var(--bg);
