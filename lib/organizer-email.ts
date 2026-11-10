@@ -8,7 +8,8 @@ import {
 import { buildOrganizerEmailFooterHtml } from "@/lib/site-footer";
 import { escapeHtml } from "@/lib/html-escape";
 import { formatTimeRange } from "@/lib/utils";
-import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
+import { spansMultipleDays } from "@/lib/calendar-times";
+import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { formatInTimeZone } from "date-fns-tz";
 import {
@@ -119,8 +120,8 @@ function buildNewSignupsBannerHtml(
 
 export { formatSessionSlotLabel };
 
-function formatSessionWhen(s: SessionRow, eventTimezone?: string | null): string {
-  return formatSessionSlotLabel(s, { eventTimezone: eventTimezone ?? null });
+function formatSessionWhen(s: SessionRow, eventTimezone?: string | null, eventEndDate?: string | null): string {
+  return formatSessionSlotLabel(s, { eventTimezone: eventTimezone ?? null, eventEndDate: eventEndDate ?? null });
 }
 
 /**
@@ -163,8 +164,9 @@ function filterFutureSessions(
 function sessionDateAndTimeLabels(
   s: SessionRow,
   eventTimezone?: string | null,
+  eventEndDate?: string | null,
 ): { dateLabel: string; timeLabel: string } {
-  const timeLabel = formatTimeRange(s.time, s.end_time);
+  const timeLabel = formatTimeRange(s.time, s.end_time, { multiDay: spansMultipleDays(s.session_date, eventEndDate) });
   if (s.session_date) {
     const tz = resolveEffectiveEventTimezone(eventTimezone ?? null);
     try {
@@ -211,7 +213,7 @@ function sessionFieldsToRow(sess: {
 
 function buildSessionsTableHtml(
   sessions: SessionRow[],
-  options?: { rosterStyle?: "default" | "faster"; eventTimezone?: string | null },
+  options?: { rosterStyle?: "default" | "faster"; eventTimezone?: string | null; eventEndDate?: string | null },
 ): string {
   if (sessions.length === 0) {
     return `<p style="color:#5A8399;font-size:14px;">No slots yet.</p>`;
@@ -227,7 +229,7 @@ function buildSessionsTableHtml(
   const rows: string[] = [];
   let lastDateLabel: string | null = null;
   for (const s of sorted) {
-    const { dateLabel, timeLabel } = sessionDateAndTimeLabels(s, options?.eventTimezone);
+    const { dateLabel, timeLabel } = sessionDateAndTimeLabels(s, options?.eventTimezone, options?.eventEndDate);
     if (dateLabel !== lastDateLabel) {
       rows.push(`
       <div style="margin:${lastDateLabel === null ? "0" : "28px"} 0 12px;padding:8px 12px;background:#E6F7FB;border-radius:8px;font-weight:700;color:#054F64;font-size:14px;">${escapeHtml(dateLabel)}</div>
@@ -424,6 +426,8 @@ export function buildOrganizerMetricsEmailHtml(params: {
   kind?: "digest" | "manual" | "faster";
   fasterNewSignups?: FasterNewSignupRow[];
   eventTimezone?: string | null;
+  /** Multi-day RSVP end date, so its range doesn't read "(next day)". */
+  eventEndDate?: string | null;
 }): string {
   const {
     brand,
@@ -439,6 +443,7 @@ export function buildOrganizerMetricsEmailHtml(params: {
     kind = "digest",
     fasterNewSignups = [],
     eventTimezone = null,
+    eventEndDate = null,
   } = params;
 
   const eventUrlWithUtm = withUtm(eventUrl, {
@@ -489,7 +494,7 @@ export function buildOrganizerMetricsEmailHtml(params: {
     ${fasterBanner}
 
     <h2 style="font-size:15px;color:#2E5566;margin:0 0 12px;">Slots & signups</h2>
-    ${buildSessionsTableHtml(sessions, { rosterStyle: isFaster ? "faster" : "default", eventTimezone })}
+    ${buildSessionsTableHtml(sessions, { rosterStyle: isFaster ? "faster" : "default", eventTimezone, eventEndDate })}
 
     ${buildOrganizerEmailFooterHtml(brand)}
   </div>
@@ -549,7 +554,7 @@ export async function sendOrganizerMetricsEmail(
     public_host: c.public_host as string | null | undefined,
   });
 
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend API key not configured for this brand" };
   }
 
@@ -635,6 +640,7 @@ export async function sendOrganizerMetricsEmail(
       headline: headlineForKind(kind),
       kind,
       eventTimezone: (c.event_timezone as string | null) ?? null,
+      eventEndDate: (c.event_end_date as string | null) ?? null,
     });
   }
 
@@ -703,7 +709,7 @@ export async function sendOrganizerFasterAlertEmail(
   const { data: campaign, error: cErr } = await admin
     .from("campaigns")
     .select(
-      "id, name, user_email, created_by, organizer_instant_notify_enabled, organizer_last_instant_notify_at, brand_id, public_host, event_timezone",
+      "id, name, user_email, created_by, organizer_instant_notify_enabled, organizer_last_instant_notify_at, brand_id, public_host, event_timezone, event_end_date",
     )
     .eq("id", campaignId)
     .single();
@@ -718,7 +724,7 @@ export async function sendOrganizerFasterAlertEmail(
     public_host: c.public_host as string | null | undefined,
   });
 
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend API key not configured for this brand" };
   }
 
@@ -779,7 +785,11 @@ export async function sendOrganizerFasterAlertEmail(
     const sessRaw = row.sessions;
     const sess = Array.isArray(sessRaw) ? sessRaw[0] : sessRaw;
     const label = sess
-      ? formatSessionWhen(sessionFieldsToRow(sess), (c.event_timezone as string | null) ?? null)
+      ? formatSessionWhen(
+          sessionFieldsToRow(sess),
+          (c.event_timezone as string | null) ?? null,
+          (c.event_end_date as string | null) ?? null,
+        )
       : "Slot";
     return {
       name: row.member_name,
@@ -836,6 +846,7 @@ export async function sendOrganizerFasterAlertEmail(
     kind: "faster",
     fasterNewSignups,
     eventTimezone: (c.event_timezone as string | null) ?? null,
+    eventEndDate: (c.event_end_date as string | null) ?? null,
   });
 
   try {

@@ -7,6 +7,7 @@
  */
 
 import type { EventType } from "@/lib/types";
+import { isEndSameAsStart } from "@/lib/utils";
 
 export type LabeledTime = { label: string; time: string };
 export type LabeledLocation = { label: string; address: string };
@@ -325,4 +326,51 @@ export function validateForSubmit(state: CreateFormState): ValidationResult {
   }
 
   return { ok: errors.length === 0, errors };
+}
+
+
+/**
+ * Additional times sent on save. A row needs a time to be kept; the label is
+ * optional and an unlabeled row is saved with label "" (the event page shows just
+ * the time). Rows with neither are dropped, as are label only rows with no time.
+ */
+export function cleanExtraTimesForSave(extraTimes: LabeledTime[]): LabeledTime[] {
+  return extraTimes
+    .map((t) => ({ label: t.label.trim(), time: t.time.trim() }))
+    .filter((t) => t.time);
+}
+
+export const CREATE_EVENT_TIMES_ROW_ID = "create-event-times";
+export const CREATE_SPOTS_TIMES_ROW_ID = "create-spots-times";
+export const createSpotsWindowRowId = (id: string) => `create-spots-window-${id}`;
+
+/**
+ * Finds the first Start and End pair on create where End equals Start. End earlier
+ * than Start is allowed: it ends the next day (for example 10 PM to 1 AM).
+ * Plain text times and multi day RSVP ranges are not checked.
+ * Returns the TimeRangeRow id so the form can focus its End hour.
+ */
+export function createTimeOrderIssue(state: CreateFormState): { rowId: string } | null {
+  if (state.eventType === "rsvp" || state.eventType === "items") {
+    if (!state.hasTime || state.approximateTime) return null;
+    if (isMultiDayRsvp(state)) return null;
+    return isEndSameAsStart(state.startTime, state.endTime)
+      ? { rowId: CREATE_EVENT_TIMES_ROW_ID }
+      : null;
+  }
+  if (state.eventType === "spots") {
+    if (state.spotsDateMode === "specific") {
+      const bad = state.spotsPickedDates.find((p) => isEndSameAsStart(p.start, p.end));
+      return bad ? { rowId: createSpotsWindowRowId(bad.id) } : null;
+    }
+    return isEndSameAsStart(state.spotsStartTime, state.spotsEndTime)
+      ? { rowId: CREATE_SPOTS_TIMES_ROW_ID }
+      : null;
+  }
+  return null;
+}
+
+/** True when an RSVP spans several dates, so End is on the last date, not the next day. */
+export function isMultiDayRsvp(state: CreateFormState): boolean {
+  return state.eventType === "rsvp" && state.multiDay && !!state.endDate && state.endDate > state.date;
 }

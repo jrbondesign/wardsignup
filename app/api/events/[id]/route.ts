@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { getAuthFromRequest } from "@/lib/auth";
 import { getBrandFromHost } from "@/lib/brand";
 import { campaignMatchesHostBrand } from "@/lib/campaign-brand-guard";
 import { userCanAdminCampaign, userCanDeleteCampaign } from "@/lib/campaign-access";
 import { isValidIanaTimezone } from "@/lib/event-timezone";
 import type { Campaign } from "@/lib/types";
-import { getPostHogClient } from "@/lib/posthog-server";
+import { captureServerException, getPostHogClient } from "@/lib/posthog-server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { removeCoverIfUnreferenced } from "@/lib/event-media";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
@@ -82,12 +83,14 @@ export async function DELETE(
       },
     });
 
+    revalidateEventPage(eventId);
     return NextResponse.json(
       { success: true, message: "Event deleted successfully" },
       { status: 200 }
     );
   } catch (error) {
     console.error("Error in DELETE /api/events/[id]:", error);
+    captureServerException(error, { route: "/api/events/[id]" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
@@ -390,16 +393,19 @@ export async function PATCH(
           await syncCampaignCalendar(eventId);
         } catch (e) {
           console.error("Calendar sync after event update:", e);
+          captureServerException(e, { route: "/api/events/[id]" });
         }
       });
     }
 
+    revalidateEventPage(eventId);
     return NextResponse.json(
       { success: true, event: updatedEvent },
       { status: 200 }
     );
   } catch (error) {
     console.error("Error in PATCH /api/events/[id]:", error);
+    captureServerException(error, { route: "/api/events/[id]" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

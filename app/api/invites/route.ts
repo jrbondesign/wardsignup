@@ -9,7 +9,7 @@ import { userCanAdminCampaign } from "@/lib/campaign-access";
 import { escapeHtml } from "@/lib/html-escape";
 import { isAppEmailInvitesEnabled } from "@/lib/limits";
 import type { Campaign, Database } from "@/lib/types";
-import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
+import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { consumeEmailKeyRate, sendGuardedEmail } from "@/lib/email-send";
 import { consumeActionRate } from "@/lib/rate-limit";
 import { getPostHogClient } from "@/lib/posthog-server";
@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
     const { siteOrigin, brand: campaignBrand } = publicSiteOriginAndBrandForCampaign(
       eventRow as { brand_id?: string | null; public_host?: string | null },
     );
-    if (!hasResendConfiguredForBrand(campaignBrand)) {
+    if (!hasEmailProviderConfigured(campaignBrand)) {
       return NextResponse.json(
         { error: "Email is not configured for this site." },
         { status: 503 },

@@ -7,6 +7,7 @@
  */
 
 import type { CreateFormState } from "@/lib/create-form-state";
+import { addDaysIso } from "@/lib/calendar-times";
 
 export interface GeneratedSession {
   day_of_week: number;
@@ -110,18 +111,25 @@ export function generateSpotsSessions(state: CreateFormState): GeneratedSession[
 
     if (state.spotsAutoSplit && w.start && w.end && state.spotsSlotDuration > 0) {
       const startMin = toMinutes(w.start);
-      const endMin = toMinutes(w.end);
+      let endMin = toMinutes(w.end);
+      // End earlier than Start runs past midnight into the next day. Equal
+      // Start and End is not a window (create blocks it), so it yields nothing.
+      if (endMin < startMin) endMin += 1440;
       const dur = state.spotsSlotDuration;
+      const nextDate = addDaysIso(w.date, 1);
+      const nextDow = parseIso(nextDate).getDay();
       let slot = startMin;
       while (slot + dur <= endMin) {
+        // Slots that start after midnight belong to the next date.
+        const afterMidnight = slot >= 1440;
         sessions.push({
-          day_of_week: dow,
-          time: fromMinutes(slot),
-          end_time: fromMinutes(slot + dur),
+          day_of_week: afterMidnight ? nextDow : dow,
+          time: fromMinutes(slot % 1440),
+          end_time: fromMinutes((slot + dur) % 1440),
           capacity,
           location,
           notes: null,
-          session_date: w.date,
+          session_date: afterMidnight ? nextDate : w.date,
         });
         slot += dur;
       }

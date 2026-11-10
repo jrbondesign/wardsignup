@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient, User } from "@supabase/supabase-js";
 import { createBrowserClient } from "@supabase/ssr";
 import { AUTH_RETURN_STORAGE_KEY, safeReturnPath } from "./auth-return-path";
-import { posthogDistinctIdHeader } from "./posthog-client";
+import { posthogDistinctIdHeader, resetPostHogOnSignOut } from "./posthog-client";
 import type { AuthError } from "@supabase/supabase-js";
 import { Database } from "./types";
 import { createServiceRoleClient } from "./supabase-admin";
@@ -165,7 +165,7 @@ function oauthCallbackRedirectUrl(): string {
   return `${window.location.origin}/auth/callback`;
 }
 
-export async function signInWithMagicLink(email: string) {
+export async function signInWithMagicLink(email: string, opts: { captchaToken?: string | null } = {}) {
   if (typeof window === "undefined") {
     return { data: null, error: { message: "Magic link is only available in the browser." } as AuthError };
   }
@@ -184,7 +184,11 @@ export async function signInWithMagicLink(email: string) {
       "Content-Type": "application/json",
       ...posthogDistinctIdHeader(),
     },
-    body: JSON.stringify({ email: email.trim(), next }),
+    body: JSON.stringify({
+      email: email.trim(),
+      next,
+      ...(opts.captchaToken ? { captchaToken: opts.captchaToken } : {}),
+    }),
   });
 
   const json = (await res.json().catch(() => ({}))) as {
@@ -243,5 +247,6 @@ export async function signInWithGoogle() {
 export async function signOut() {
   const supabase = createClientComponentClient();
   const { error } = await supabase.auth.signOut();
+  resetPostHogOnSignOut();
   return { error };
 }

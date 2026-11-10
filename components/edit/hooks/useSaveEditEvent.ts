@@ -8,6 +8,7 @@ import { type EditEventState } from "./useEditEventState";
 import { type EditEventSettings } from "./useEditEventSettings";
 import { type ScheduleBuilders } from "./useScheduleBuilders";
 import { type SlotActions } from "./useSlotActions";
+import { ITEMS_TIME_ORDER_ERROR, ITEMS_TIME_PARTIAL_ERROR, focusTimeRow, isEndSameAsStart, subtreeHasInvalidTimeSelect } from "@/lib/utils";
 
 /** Saves the schedule (with destructive-delete guard) and items events. */
 export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & ScheduleBuilders & SlotActions) {
@@ -244,8 +245,19 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
         return;
       }
     }
-    if (!itemsApproximateTime && itemsEventStartTime && itemsEventEndTime && itemsEventStartTime >= itemsEventEndTime) {
-      setItemsError("End time must be after start time.");
+    if (!itemsApproximateTime && isEndSameAsStart(itemsEventStartTime, itemsEventEndTime)) {
+      setItemsError(ITEMS_TIME_ORDER_ERROR);
+      // Focus the End hour (Start is three selects, End starts at index 3).
+      focusTimeRow("edit-items-times", 3);
+      return;
+    }
+    if (
+      !itemsApproximateTime &&
+      typeof document !== "undefined" &&
+      subtreeHasInvalidTimeSelect(document.getElementById("edit-items-times"))
+    ) {
+      setItemsError(ITEMS_TIME_PARTIAL_ERROR);
+      focusTimeRow("edit-items-times");
       return;
     }
     setItemsSaving(true);

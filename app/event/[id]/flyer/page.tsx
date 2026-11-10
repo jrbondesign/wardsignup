@@ -1,16 +1,19 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import { permanentRedirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import QRCode from "qrcode";
 import { supabase, getPublicCampaignById, getPublicDirectorySlugForCampaign } from "@/lib/supabase";
 import type { Session, CampaignItemWithSignups } from "@/lib/types";
-import { formatTime } from "@/lib/utils";
+import { formatTime, nextDaySuffix, spansMultipleDays } from "@/lib/utils";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
 import { usePublicCover } from "@/lib/use-public-cover";
 import { printAfterPaint } from "@/lib/deferred-print";
+import { canonicalPublicEventRedirect, cleanEventId, isPublicEventUuid, queryStringFromSearchParams } from "@/lib/public-event-id";
+import { EVENT_NOT_FOUND_GUIDANCE, QR_DOWNLOAD_HINT } from "@/lib/public-event-copy";
 
 const DAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -18,9 +21,21 @@ interface SessionWithSignups extends Session {
   signups: { id: string; guest_names: string[] }[] | null;
 }
 
-export default function FlyerPage({ params }: { params: Promise<{ id: string }> }) {
+export default function FlyerPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
   const brand = useBrand();
-  const { id: eventId } = use(params);
+  const { id: rawId } = use(params);
+  const sp = use(searchParams);
+  const cleanedId = cleanEventId(rawId);
+  const eventId = isPublicEventUuid(cleanedId) ? cleanedId : rawId;
+  // 308 when a pasted line break is removed and the id is a real UUID. Query (UTM) stays.
+  const target = canonicalPublicEventRedirect(`/event/${rawId}/flyer`, queryStringFromSearchParams(sp));
+  if (target) permanentRedirect(target);
   const publicCover = usePublicCover(eventId);
   const [event, setEvent] = useState<any>(null);
   const [eventType, setEventType] = useState<"spots" | "items" | "rsvp">("spots");
@@ -172,6 +187,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
         <div className="bg-white rounded-2xl shadow-[0_8px_32px_rgba(8,100,126,0.10)] p-10 max-w-md w-full text-center">
           <h1 className="font-serif text-2xl text-[#0D2B35] mb-3">Event not found</h1>
           <p className="text-sm text-[#5A8399]">This event may have been removed or the link is incorrect.</p>
+          <p className="text-sm text-[#5A8399] mt-2">{EVENT_NOT_FOUND_GUIDANCE}</p>
         </div>
       </div>
     );
@@ -207,13 +223,16 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
             Back to event
           </Link>
           <div className="flex items-center gap-2">
-            <a
-              href={qrPngDataUrl}
-              download={`qr-${slugify(event.name)}.png`}
-              className="text-sm font-semibold px-4 py-2 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#08647E] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all no-underline"
-            >
-              Download QR only
-            </a>
+            <div className="flex flex-col items-end gap-1 max-w-[16rem]">
+              <a
+                href={qrPngDataUrl}
+                download={`qr-${slugify(event.name)}.png`}
+                className="text-sm font-semibold px-4 py-2 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#08647E] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all no-underline"
+              >
+                Download QR only
+              </a>
+              <p className="text-[11px] leading-snug text-[#5A8399] text-right m-0">{QR_DOWNLOAD_HINT}</p>
+            </div>
             <button
               type="button"
               onClick={() => printAfterPaint()}
@@ -289,6 +308,7 @@ export default function FlyerPage({ params }: { params: Promise<{ id: string }> 
             showCapacityPublicly={showCapacityPublicly}
             sessionHeadcount={sessionHeadcount}
             isRsvp={eventType === "rsvp"}
+            eventEndDate={event?.event_end_date ?? null}
           />
         )}
 
@@ -556,11 +576,13 @@ function SessionsList({
   showCapacityPublicly,
   sessionHeadcount,
   isRsvp,
+  eventEndDate,
 }: {
   sessions: SessionWithSignups[];
   showCapacityPublicly: boolean;
   sessionHeadcount: (s: SessionWithSignups) => number;
   isRsvp: boolean;
+  eventEndDate: string | null;
 }) {
   if (sessions.length === 0) return null;
 
@@ -586,7 +608,7 @@ function SessionsList({
               })()
             : DAYS[s.day_of_week];
           const timeStr =
-            formatTime(s.time) + (s.end_time ? ` – ${formatTime(s.end_time)}` : "");
+            formatTime(s.time) + (s.end_time ? ` to ${formatTime(s.end_time)}${nextDaySuffix(s.time, s.end_time, { multiDay: spansMultipleDays(s.session_date, eventEndDate) })}` : "");
 
           return (
             <div key={s.id} className="flyer-session">

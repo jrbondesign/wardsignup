@@ -5,8 +5,24 @@ import Link from "next/link";
 import { downloadEventQr } from "@/lib/download-qr";
 import { COVER_SIZE_HINT } from "@/lib/cover-position";
 import { type AdminEventView } from "@/components/admin/hooks/deriveAdminEventView";
+import { useEffect, useRef } from "react";
+import { earliestYmd } from "@/lib/date-shift";
+import { useDuplicateEvent } from "@/components/event-actions/DuplicateEventModal";
+import EventActionsSheet, { eventSheetSubtitle, type EventSheetGroup } from "@/components/event-actions/EventActionsSheet";
+import {
+  CopyIcon,
+  DotsVerticalIcon,
+  EyeIcon,
+  GearIcon,
+  ImageIcon,
+  LinkIcon,
+  PencilIcon,
+  PrinterIcon,
+  QrIcon,
+} from "@/components/event-actions/icons";
+import { COPY_LINK_LINE_HINT, QR_ACTION_HELPER, QR_DOWNLOAD_HINT, copyLinkHelper } from "@/lib/public-event-copy";
 
-/** Title row actions: mobile More menu and desktop buttons. */
+/** Title row actions: phone action row plus More sheet, and the desktop buttons. */
 export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
   const {
     calendarLastSyncedAt,
@@ -18,19 +34,120 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
     coverUrl,
     event,
     eventId,
+    eventType,
+    isWardBrand,
+    items,
     moreMenuOpen,
-    moreMenuRef,
     posthog,
+    router,
     setMoreMenuOpen,
     setShowDeleteModal,
     setShowToast,
     setToastMessage,
+    sessions,
     shareableLink,
+    totalCapacity,
+    totalSignups,
   } = ctx;
+  const moreButtonRef = useRef<HTMLButtonElement>(null);
+  const { openDuplicate, duplicateDialog } = useDuplicateEvent({ router, posthog });
+  const canAddCover = coverEnabled && !coverUrl && !coverPreview;
+  const desktopCoverRef = useRef<HTMLButtonElement>(null);
+  // Where focus goes when the sheet closes: the phone More button, or the desktop
+  // Add cover button when the sheet was opened by #add-cover on a wide screen.
+  const sheetReturnRef = useRef<HTMLElement | null>(null);
+
+  // The dashboard sheet's "Add cover photo" lands here with #add-cover. Browsers only
+  // open a file picker from a tap, so open the More sheet (a bottom sheet on phones,
+  // a centered dialog on wider screens) with Add cover photo in it. The hash is
+  // always cleared, even when there is nothing to add.
+  useEffect(() => {
+    if (typeof window === "undefined" || window.location.hash !== "#add-cover") return;
+    window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    if (!canAddCover) return;
+    const isPhone = typeof window.matchMedia === "function" && window.matchMedia("(max-width: 639px)").matches;
+    sheetReturnRef.current = isPhone ? moreButtonRef.current : desktopCoverRef.current;
+    setMoreMenuOpen(true);
+  }, [canAddCover, setMoreMenuOpen]);
+
+  const copyLink = (message = "Link copied") => {
+    navigator.clipboard.writeText(shareableLink);
+    posthog?.capture("event_shared", { event_id: eventId, campaign_id: eventId, org_id: (event as { organization_id?: string | null } | null)?.organization_id ?? null });
+    setToastMessage(message);
+    setShowToast(true);
+  };
+
+  const downloadQr = async () => {
+    try {
+      await downloadEventQr(eventId, event.name);
+    } catch (err) {
+      console.error("QR download failed:", err);
+    }
+  };
+
+  const isItems = eventType === "items";
+  const claimedItems = items.filter((it) => (it.item_signups ?? []).length > 0).length;
+  const anchorDate = earliestYmd([
+    event.event_date,
+    ...(Array.isArray(event.event_dates) ? event.event_dates : []),
+    ...sessions.map((s) => s.session_date),
+  ]);
+  const subtitle = eventSheetSubtitle({
+    ymd: anchorDate,
+    isItems,
+    filled: isItems ? claimedItems : totalSignups,
+    total: isItems ? items.length : totalCapacity,
+  });
+
+  const sheetGroups: EventSheetGroup[] = [
+    {
+      heading: "Edit",
+      actions: [
+        { key: "edit", label: "Edit event", helper: "Name, dates, times and slots", icon: <PencilIcon />, href: `/edit/${eventId}` },
+        { key: "settings", label: "Event settings", helper: "Visibility, reminders and Google Calendar", icon: <GearIcon />, href: `/edit/${eventId}#event-settings` },
+        ...(canAddCover
+          ? [{ key: "cover", label: "Add cover photo", helper: "Shows at the top of the signup page", icon: <ImageIcon />, onSelect: () => coverInputRef.current?.click() }]
+          : []),
+      ],
+    },
+    {
+      heading: "Share",
+      actions: [
+        {
+          key: "copy",
+          label: "Copy link",
+          helper: copyLinkHelper(isWardBrand),
+          icon: <LinkIcon />,
+          onSelect: () => copyLink(),
+        },
+        {
+          key: "preview",
+          label: "Preview signup page",
+          helper: isWardBrand ? "See what ward members see" : "See what people see when they sign up",
+          icon: <EyeIcon />,
+          href: `/event/${eventId}`,
+        },
+        { key: "qr", label: "Download QR code", helper: QR_ACTION_HELPER, icon: <QrIcon />, onSelect: () => void downloadQr() },
+        { key: "flyer", label: "Print flyer", helper: "A printable page with the QR code", icon: <PrinterIcon />, href: `/event/${eventId}/flyer` },
+      ],
+    },
+    {
+      heading: "Manage",
+      actions: [
+        {
+          key: "duplicate",
+          label: "Duplicate event",
+          helper: "Copy it to new dates",
+          icon: <CopyIcon />,
+          onSelect: () => openDuplicate({ id: eventId, name: event.name, anchorDate }),
+        },
+      ],
+    },
+  ];
 
   return (
     <div className="mb-6">
-      <div className="flex items-center justify-end gap-2 sm:gap-3 flex-wrap mb-3">
+      <div className={`flex items-center justify-end gap-2 sm:gap-3 flex-wrap ${calendarSyncEnabled && calendarLastSyncedAt ? "mb-3" : "sm:mb-3"}`}>
         {calendarSyncEnabled && calendarLastSyncedAt && (
           <div className="flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-medium text-[#0E96B0] bg-[#E6F7FB] border border-[#0E96B0]/20 rounded-full whitespace-nowrap flex-shrink-0 mr-auto">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3">
@@ -42,105 +159,6 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
             On Google Calendar · {formatSyncTime(calendarLastSyncedAt)}
           </div>
         )}
-        {/* Mobile: actions in More menu */}
-        <div className="relative flex-shrink-0 sm:hidden" ref={moreMenuRef}>
-            <button
-              type="button"
-              onClick={() => setMoreMenuOpen((o) => !o)}
-              aria-expanded={moreMenuOpen}
-              aria-haspopup="menu"
-              className="inline-flex items-center gap-1.5 text-sm font-semibold px-3 py-2 rounded-xl border-[1.5px] border-[#0E96B0]/35 text-[#08647E] bg-white hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all"
-            >
-              More
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 transition-transform ${moreMenuOpen ? "rotate-180" : ""}`}>
-                <polyline points="6 9 12 15 18 9"/>
-              </svg>
-            </button>
-            {moreMenuOpen && (
-              <div
-                className="absolute right-0 mt-1 min-w-[12rem] w-max max-w-[min(18rem,calc(100vw-3rem))] bg-white rounded-xl shadow-[0_8px_28px_rgba(8,100,126,0.16)] border border-[#0E96B0]/10 py-1 z-20"
-                role="menu"
-              >
-                <Link
-                  href={`/edit/${eventId}`}
-                  className="block px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors no-underline"
-                  onClick={() => setMoreMenuOpen(false)}
-                  role="menuitem"
-                >
-                  Edit
-                </Link>
-                <Link
-                  href={`/event/${eventId}`}
-                  className="block px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors no-underline"
-                  onClick={() => setMoreMenuOpen(false)}
-                  role="menuitem"
-                >
-                  Preview
-                </Link>
-                <Link
-                  href={`/event/${eventId}/flyer`}
-                  className="block px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors no-underline"
-                  onClick={() => setMoreMenuOpen(false)}
-                  role="menuitem"
-                >
-                  Print flyer
-                </Link>
-                {coverEnabled && !coverUrl && !coverPreview && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMoreMenuOpen(false);
-                      coverInputRef.current?.click();
-                    }}
-                    className="block w-full text-left px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors"
-                    role="menuitem"
-                  >
-                    Add cover
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setMoreMenuOpen(false);
-                    try {
-                      await downloadEventQr(eventId, event.name);
-                    } catch (err) {
-                      console.error("QR download failed:", err);
-                    }
-                  }}
-                  className="block w-full text-left px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors"
-                  role="menuitem"
-                >
-                  Download QR code
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigator.clipboard.writeText(shareableLink);
-                    posthog?.capture("event_shared", { event_id: eventId, campaign_id: eventId, org_id: (event as { organization_id?: string | null } | null)?.organization_id ?? null });
-                    setToastMessage("Link copied to clipboard!");
-                    setShowToast(true);
-                    setMoreMenuOpen(false);
-                  }}
-                  className="block w-full text-left px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors"
-                  role="menuitem"
-                >
-                  Copy link
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowDeleteModal(true);
-                    setMoreMenuOpen(false);
-                  }}
-                  className="block w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
-                  role="menuitem"
-                >
-                  Delete
-                </button>
-              </div>
-            )}
-          </div>
         <div className="hidden sm:flex flex-shrink-0 flex-row flex-wrap items-center justify-end gap-x-3 gap-y-2">
         <Link
           href={`/edit/${eventId}`}
@@ -173,8 +191,9 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
           </svg>
           Print flyer
         </Link>
-        {coverEnabled && !coverUrl && !coverPreview && (
+        {canAddCover && (
         <button
+          ref={desktopCoverRef}
           type="button"
           onClick={() => coverInputRef.current?.click()}
           disabled={coverUploading}
@@ -191,13 +210,8 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
         )}
         <button
           type="button"
-          onClick={async () => {
-            try {
-              await downloadEventQr(eventId, event.name);
-            } catch (err) {
-              console.error("QR download failed:", err);
-            }
-          }}
+          onClick={() => void downloadQr()}
+          aria-describedby="admin-qr-download-hint"
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2E5566] hover:text-[#0E96B0] transition-colors"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 flex-shrink-0 opacity-90">
@@ -213,12 +227,8 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
         </button>
         <button
           type="button"
-          onClick={() => {
-            navigator.clipboard.writeText(shareableLink);
-            posthog?.capture("event_shared", { event_id: eventId, campaign_id: eventId, org_id: (event as { organization_id?: string | null } | null)?.organization_id ?? null });
-            setToastMessage("Link copied to clipboard!");
-            setShowToast(true);
-          }}
+          onClick={() => copyLink()}
+          title={COPY_LINK_LINE_HINT}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2E5566] hover:text-[#0E96B0] transition-colors"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 flex-shrink-0 opacity-90">
@@ -238,11 +248,58 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
           </svg>
           Delete
         </button>
+        <p id="admin-qr-download-hint" className="basis-full text-right text-[11px] leading-snug text-[#5A8399] m-0">
+          {QR_DOWNLOAD_HINT}
+        </p>
         </div>
       </div>
       <h1 className="font-serif text-[clamp(24px,3.5vw,36px)] text-[#0D2B35] tracking-[-0.4px] leading-tight">
         {event.name}
       </h1>
+      {/* Phone: the two direct actions plus More, which opens the grouped sheet. */}
+      <div className="mt-4 flex items-center gap-2 sm:hidden">
+        <button
+          type="button"
+          onClick={() => copyLink()}
+          title={COPY_LINK_LINE_HINT}
+          className="inline-flex h-11 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[#08647E] px-3 min-[375px]:px-4 text-sm font-semibold text-white transition-colors hover:bg-[#054F64] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0E96B0]"
+        >
+          <LinkIcon className="hidden size-4 min-[375px]:block" />
+          Copy link
+        </button>
+        <Link
+          href={`/edit/${eventId}`}
+          className="inline-flex h-11 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-xl border-[1.5px] border-[#0E96B0]/40 bg-white px-3 min-[375px]:px-4 text-sm font-semibold text-[#08647E] no-underline transition-colors hover:border-[#0E96B0] hover:bg-[#E6F7FB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0E96B0]"
+        >
+          <PencilIcon className="hidden size-4 min-[375px]:block" />
+          Edit
+        </Link>
+        <button
+          ref={moreButtonRef}
+          type="button"
+          onClick={() => {
+            sheetReturnRef.current = moreButtonRef.current;
+            setMoreMenuOpen((o) => !o);
+          }}
+          aria-label={`More actions for ${event.name}`}
+          aria-haspopup="dialog"
+          aria-expanded={moreMenuOpen}
+          className="ml-auto inline-flex size-11 flex-shrink-0 items-center justify-center rounded-xl border-[1.5px] border-[#0E96B0]/40 bg-white text-[#08647E] transition-colors hover:border-[#0E96B0] hover:bg-[#E6F7FB] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0E96B0]"
+        >
+          <DotsVerticalIcon className="size-5" />
+        </button>
+      </div>
+      {moreMenuOpen && (
+        <EventActionsSheet
+          title={event.name}
+          subtitle={subtitle}
+          groups={sheetGroups}
+          onDelete={() => setShowDeleteModal(true)}
+          onClose={() => setMoreMenuOpen(false)}
+          triggerRef={sheetReturnRef}
+        />
+      )}
+      {duplicateDialog}
       {event.description && (
         <p className="text-sm text-[#5A8399] mt-2 leading-relaxed whitespace-pre-wrap">
           {event.description}

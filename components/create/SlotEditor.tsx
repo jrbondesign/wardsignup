@@ -83,7 +83,7 @@ export default function SlotEditor({
       <div className="space-y-3">
         {rows.length === 0 && (
           <div className="rounded-xl border border-dashed border-[rgba(14,150,176,0.25)] bg-[#F4FAFB] px-4 py-3 text-[13px] text-[#5A8399]">
-            None yet — add one below.
+            None yet. Add one below.
           </div>
         )}
 

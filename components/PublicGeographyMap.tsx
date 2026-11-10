@@ -116,7 +116,7 @@ export default function PublicGeographyMap() {
       </div>
 
       <div
-        className="relative z-0 isolate h-[500px] w-full rounded-xl overflow-hidden border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)]"
+        className="relative z-0 isolate h-[500px] w-full min-w-0 max-w-full rounded-xl overflow-hidden border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)]"
         onMouseLeave={() => setMapActive(false)}
       >
         {!mapActive && (

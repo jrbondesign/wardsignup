@@ -30,36 +30,6 @@ const WARD_HOME_USE_CASES = {
   ],
 } as const;
 
-const MINISTRY_HOME_USE_CASES = {
-  left: [
-    "Counseling or pastoral appointments",
-    "Volunteer shifts and greeters",
-    "Small group or class sign-ups",
-    "Community meals or hospitality",
-  ],
-  right: [
-    "Training or workshop sessions",
-    "Service project time blocks",
-    "Children’s ministry rotations",
-    "Special events and fundraisers",
-  ],
-} as const;
-
-const ORG_HOME_USE_CASES = {
-  left: [
-    "Volunteer shift sign-ups",
-    "Meeting or appointment slots",
-    "Workshop and training sessions",
-    "Committee or team sign-ups",
-  ],
-  right: [
-    "Club event time slots",
-    "Service project schedules",
-    "Recurring team rotations",
-    "Special event registrations",
-  ],
-} as const;
-
 function UseCaseCheckIcon() {
   return (
     <span className="mt-[3px] w-[18px] h-[18px] shrink-0 self-start rounded-[5px] bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] flex items-center justify-center">
@@ -171,6 +141,13 @@ export default function Home() {
                   <line x1="3" y1="10" x2="21" y2="10"/>
                 </svg>
                 Tithing Appointments
+              </Link>
+              <Link
+                href="/use-cases/ward-christmas-party"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/18 border border-white/32 text-white text-sm font-medium no-underline backdrop-blur-[8px] transition-all duration-200 hover:bg-white/25 hover:border-white/40"
+              >
+                <span aria-hidden="true">⭐</span>
+                Christmas Party
               </Link>
             </div>
 

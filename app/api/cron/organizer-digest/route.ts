@@ -1,3 +1,4 @@
+import { captureServerException } from "@/lib/posthog-server";
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { sendOrganizerMetricsEmail } from "@/lib/organizer-email";
@@ -46,8 +47,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  // Host wins on known brand domains so Org (www.orgsignup.com) claims
-  // `*:orgsignup` even if NEXT_PUBLIC_BRAND_ID is missing/wrong on that project.
+  // Host wins on known brand domains, so a wrong or missing
+  // NEXT_PUBLIC_BRAND_ID can't change the brand-scoped claim key.
   const brandId = resolveCronBrandId(request);
 
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -74,6 +75,7 @@ export async function GET(request: NextRequest) {
     feedbackAsk = await runFeedbackAskPass(admin, brandId);
   } catch (e) {
     console.error("feedback-ask pass:", e);
+    captureServerException(e, { route: "cron:organizer-digest" });
     feedbackAsk = { error: e instanceof Error ? e.message : String(e) };
   }
 

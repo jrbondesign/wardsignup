@@ -21,11 +21,15 @@ import {
   SPOTS_SCHEDULE_FIELDS,
   ITEMS_LIST_FIELDS,
   discardedFieldsOnSwitch,
+  cleanExtraTimesForSave,
+  createTimeOrderIssue,
   type CreateFormState,
 } from "@/lib/create-form-state";
+import { focusTimeRow } from "@/lib/utils";
 import { generateSpotsSessions } from "@/lib/spots-session-generator";
 import { applyPreset, getAlternateRsvpDescription } from "@/lib/event-presets";
 import { getEventTemplate, type TemplateKey } from "@/lib/event-template-data";
+import { templateCoverAssetForCreate, uploadTemplateCover } from "@/lib/apply-template-cover";
 import { aiResultToFormPatch } from "@/lib/ai-result-to-form";
 import type { AiEventResult } from "@/lib/ai-event-extraction";
 import type { EventType } from "@/lib/types";
@@ -291,6 +295,13 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
         return;
       }
     }
+    // End can't equal Start (earlier means next day). The message shows inline under End time,
+    // like edit; move focus to the End hour.
+    const orderIssue = createTimeOrderIssue(state);
+    if (orderIssue) {
+      focusTimeRow(orderIssue.rowId, 3);
+      return;
+    }
     let plannedSpotsSessions: ReturnType<typeof generateSpotsSessions> = [];
     if (state.eventType === "spots") {
       if (state.spotsDateMode === "range") {
@@ -370,9 +381,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
 
       // PATCH event-level extras (event_date / event_times / event_locations,
       // visibility flags, organizer notification prefs).
-      const cleanExtraTimes = state.extraTimes
-        .map((t) => ({ label: t.label.trim(), time: t.time.trim() }))
-        .filter((t) => t.label && t.time);
+      const cleanExtraTimes = cleanExtraTimesForSave(state.extraTimes);
       const cleanExtraLocations = state.extraLocations
         .map((l) => ({ label: l.label.trim(), address: l.address.trim() }))
         .filter((l) => l.label || l.address);
@@ -402,6 +411,24 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
           leader_email: state.leaderEmail.trim() || null,
         }),
       });
+
+      // Seed the template's default cover for allowlisted orgs (Ward Christmas
+      // Party nativity today). Best-effort: create still succeeds if upload fails.
+      const coverAsset = templateCoverAssetForCreate(activeTemplate, organizationId);
+      if (coverAsset) {
+        try {
+          const coverResult = await uploadTemplateCover({
+            eventId: event.id,
+            token,
+            assetPath: coverAsset,
+          });
+          if (!coverResult.ok) {
+            console.error("template default cover:", coverResult.error);
+          }
+        } catch (coverErr) {
+          console.error("template default cover:", coverErr);
+        }
+      }
 
       if (state.eventType === "rsvp") {
         // rsvp creates exactly 1 session anchored to the start date (multi-day range

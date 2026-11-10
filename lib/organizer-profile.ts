@@ -15,7 +15,7 @@ export interface HeardAboutData {
 }
 
 /**
- * Ensure the signed-in user has an organizer profile for this brand (same login can have Ward + Ministry).
+ * Ensure the signed-in user has an organizer profile for this brand (one row per user and brand).
  * Inserts a row for (user_id, brand_id) on first use of that site.
  * 
  * @param attribution - Optional first-touch attribution to set (only written if columns are null)

@@ -1,5 +1,6 @@
 "use client";
 
+import { sessionLastDate } from "@/lib/calendar-times";
 import { SessionWithSignups } from "@/components/event/event-page-shared";
 import { posthogDistinctIdHeader } from "@/lib/posthog-client";
 import { type EventPageCtx } from "@/components/event/hooks/useEventPage";
@@ -19,6 +20,7 @@ export type LoadedEventPageCtx = Omit<EventPageCtx, "event"> & { event: NonNulla
 export function deriveEventPageView(ctx: LoadedEventPageCtx) {
   const {
     captureNudge,
+    customCaptcha,
     customItem,
     emailInputRef,
     event,
@@ -28,6 +30,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     formData,
     funnelCtx,
     guestNames,
+    itemCaptcha,
     itemFormData,
     nudgeShownRef,
     nudgeVariant,
@@ -51,8 +54,12 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setSelectedSessions,
     setSubmitting,
     showSignupsPublicly,
+    slotCaptcha,
     submitting,
     trackFormStarted,
+    signupLock,
+    itemSignupLock,
+    customSignupLock,
   } = ctx;
 
   const toggleSessionSelection = (sessionId: string) => {
@@ -73,15 +80,26 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
 
   const handleItemSignup = async (e: React.FormEvent, itemId: string) => {
     e.preventDefault();
-    if (!itemFormData.name.trim()) { setItemError("Please enter your name"); return; }
+    if (itemSignupLock.current) return;
+    itemSignupLock.current = true;
+    if (!itemFormData.name.trim()) {
+      itemSignupLock.current = false;
+      setItemError("Please enter your name");
+      return;
+    }
     setItemSubmitting(true);
     setItemError("");
+    let captchaUsed = false;
     try {
+      const captchaToken = await itemCaptcha.getToken();
+      if (itemCaptcha.enabled && !captchaToken) throw new Error(itemCaptcha.missingMessage);
+      captchaUsed = itemCaptcha.enabled;
       const { getAttributionForSubmission } = await import("@/lib/attribution");
       const res = await fetch("/api/item-signups", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
         body: JSON.stringify({
+          ...(captchaToken ? { captchaToken } : {}),
           item_id: itemId,
           campaign_id: eventId,
           member_name: itemFormData.name,
@@ -104,22 +122,40 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     } catch (err: any) {
       setItemError(err.message || "Failed to sign up. Please try again.");
     } finally {
+      // Turnstile tokens are single use: get a fresh one for the next try.
+      if (captchaUsed) itemCaptcha.reset();
       setItemSubmitting(false);
+      itemSignupLock.current = false;
     }
   };
 
   const handleCustomItemSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customItem.label.trim()) { setCustomError("Tell us what you'll bring"); return; }
-    if (!customItem.name.trim()) { setCustomError("Please enter your name"); return; }
+    if (customSignupLock.current) return;
+    customSignupLock.current = true;
+    if (!customItem.label.trim()) {
+      customSignupLock.current = false;
+      setCustomError("Tell us what you'll bring");
+      return;
+    }
+    if (!customItem.name.trim()) {
+      customSignupLock.current = false;
+      setCustomError("Please enter your name");
+      return;
+    }
     setCustomSubmitting(true);
     setCustomError("");
+    let captchaUsed = false;
     try {
+      const captchaToken = await customCaptcha.getToken();
+      if (customCaptcha.enabled && !captchaToken) throw new Error(customCaptcha.missingMessage);
+      captchaUsed = customCaptcha.enabled;
       const { getAttributionForSubmission } = await import("@/lib/attribution");
       const res = await fetch("/api/item-signups", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
         body: JSON.stringify({
+          ...(captchaToken ? { captchaToken } : {}),
           campaign_id: eventId,
           custom_label: customItem.label.trim(),
           member_name: customItem.name.trim(),
@@ -138,18 +174,30 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     } catch (err: any) {
       setCustomError(err.message || "Failed to add your contribution");
     } finally {
+      if (captchaUsed) customCaptcha.reset();
       setCustomSubmitting(false);
+      customSignupLock.current = false;
     }
   };
 
   const handleSignup = async (e?: React.FormEvent, opts: { skipNudge?: boolean } = {}) => {
     e?.preventDefault();
+    if (signupLock.current) return;
+    signupLock.current = true;
     // For single-session events (rsvp/spots with one session), auto-use that session
     const sessionsToSignUp = isSingleSession && sessions.length === 1
       ? [sessions[0].id]
       : selectedSessions;
-    if (sessionsToSignUp.length === 0) { setError("Please select at least one slot"); return; }
-    if (!formData.name.trim()) { setError("Please enter your name"); return; }
+    if (sessionsToSignUp.length === 0) {
+      signupLock.current = false;
+      setError("Please select at least one slot");
+      return;
+    }
+    if (!formData.name.trim()) {
+      signupLock.current = false;
+      setError("Please enter your name");
+      return;
+    }
 
     // Test arm only: one nudge per signup when a dated slot has no email.
     // Never blocks: Skip submits right away.
@@ -168,6 +216,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
       nudgeShownRef.current += 1;
       setNudgeOpen(true);
       captureNudge(EMAIL_NUDGE_EVENTS.shown);
+      signupLock.current = false;
       return;
     }
     setNudgeOpen(false);
@@ -175,7 +224,11 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setSubmitting(true);
     setError("");
 
+    let captchaUsed = false;
     try {
+      const captchaToken = await slotCaptcha.getToken();
+      if (slotCaptcha.enabled && !captchaToken) throw new Error(slotCaptcha.missingMessage);
+      captchaUsed = slotCaptcha.enabled;
       const cleanGuests = guestNames.map((n) => n.trim()).filter(Boolean);
 
       // Single bulk request → single confirmation email covering every slot.
@@ -184,6 +237,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         method: "POST",
         headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
         body: JSON.stringify({
+          ...(captchaToken ? { captchaToken } : {}),
           campaign_id: eventId,
           session_ids: sessionsToSignUp,
           member_name: formData.name,
@@ -218,7 +272,10 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
             member_name: formData.name.trim(),
             guest_names: event.allow_guests === false ? [] : cleanGuests.slice(0, 10),
             campaign_name: event.name,
-            slot_label: formatSessionSlotLabel(primary, { eventTimezone: event.event_timezone ?? null }),
+            slot_label: formatSessionSlotLabel(primary, {
+              eventTimezone: event.event_timezone ?? null,
+              eventEndDate: event.event_end_date ?? null,
+            }),
             event_url: `${window.location.origin}/event/${eventId}`,
             session_date: primary.session_date ?? null,
             session_time: primary.time ?? null,
@@ -236,7 +293,10 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     } catch (err: any) {
       setError(err.message || "Failed to sign up. Please try again.");
     } finally {
+      // Turnstile tokens are single use: get a fresh one for the next try.
+      if (captchaUsed) slotCaptcha.reset();
       setSubmitting(false);
+      signupLock.current = false;
     }
   };
 
@@ -291,8 +351,10 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
       if (!showSignupsPublicly && sessionHeadcount(s) >= s.capacity) return false;
       // Hide one-time slots whose date is in the past. Recurring slots
       // (session_date === null) keep repeating, so they're always shown.
+      // An overnight slot (End earlier than Start) runs into the next day, so
+      // it stays until that day is over.
       if (s.session_date) {
-        const [y, m, d] = s.session_date.split("-").map(Number);
+        const [y, m, d] = sessionLastDate(s.session_date, s.time, s.end_time).split("-").map(Number);
         const slotDate = new Date(y, m - 1, d);
         const today = new Date();
         today.setHours(0, 0, 0, 0);

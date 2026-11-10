@@ -3,15 +3,18 @@
 import { useBrand } from "@/components/BrandProvider";
 import { usePostHog } from "posthog-js/react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { usePublicCover, type PublicCover } from "@/lib/use-public-cover";
 import type { PublicEventPageData } from "@/lib/public-event-page";
 import { SessionWithSignups } from "@/components/event/event-page-shared";
 import { type CampaignItemWithSignups } from "@/lib/types";
+import { useCaptcha } from "@/lib/use-captcha";
 
 export interface EventPageInit {
   /** Server loaded data: object = loaded, null = no such event, undefined = load in the browser. */
   initialPage?: PublicEventPageData | null;
+  /** When the server read initialPage (ms epoch); decides whether the browser needs a background refresh. */
+  initialLoadedAt?: number;
   /** Server loaded cover: object = show, null = none, undefined = fetch in the browser. */
   initialCover?: PublicCover | null;
 }
@@ -56,8 +59,15 @@ export function useEventPageState(eventId: string, init: EventPageInit = {}) {
     return new Date(d.getFullYear(), d.getMonth(), 1);
   });
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<{ day: number; year: number; month: number } | null>(null);
+  // Turnstile, one widget per form (off until the Turnstile keys are set).
+  const slotCaptcha = useCaptcha();
+  const itemCaptcha = useCaptcha();
+  const customCaptcha = useCaptcha();
 
   return {
+    slotCaptcha,
+    itemCaptcha,
+    customCaptcha,
     brand,
     posthog,
     router,
@@ -117,6 +127,9 @@ export function useEventPageState(eventId: string, init: EventPageInit = {}) {
     setCalendarMonth,
     selectedCalendarDate,
     setSelectedCalendarDate,
+    signupLock: useRef(false),
+    itemSignupLock: useRef(false),
+    customSignupLock: useRef(false),
   };
 }
 

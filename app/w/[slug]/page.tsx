@@ -1,9 +1,9 @@
 "use client";
 
+import { nextDaySuffix } from "@/lib/utils";
 import { use, useEffect, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
-import Head from "next/head";
 import { getPublicOrgCampaigns } from "@/lib/supabase";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import { useBrand } from "@/components/BrandProvider";
@@ -105,9 +105,6 @@ export default function WardDirectoryPage({ params }: { params: Promise<{ slug: 
 
   return (
     <>
-      <Head>
-        <meta name="robots" content="noindex" />
-      </Head>
       <div className="min-h-screen bg-[#F4FAFB] flex flex-col">
         <header className="bg-white border-b border-[#0E96B0]/10">
         <div className="max-w-4xl mx-auto px-6 min-h-[60px] py-2 flex items-center justify-between gap-3">
@@ -165,7 +162,7 @@ export default function WardDirectoryPage({ params }: { params: Promise<{ slug: 
                         {event.event_start_time && (
                           <div className="text-[11px] text-[#5A8399] leading-tight mt-0.5">
                             {formatTime(event.event_start_time)}
-                            {event.event_end_time && ` – ${formatTime(event.event_end_time)}`}
+                            {event.event_end_time && ` to ${formatTime(event.event_end_time)}${event.event_end_date && event.event_date && event.event_end_date > event.event_date ? "" : nextDaySuffix(event.event_start_time, event.event_end_time)}`}
                           </div>
                         )}
                       </div>
@@ -193,7 +190,7 @@ export default function WardDirectoryPage({ params }: { params: Promise<{ slug: 
                         <svg viewBox="0 0 24 24" fill="none" stroke="#0E96B0" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4 flex-shrink-0">
                           <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
                         </svg>
-                        <span className="text-[#5A8399]">{event.event_times[0].label}</span>
+                        <span className="text-[#5A8399]">{event.event_times[0].label || formatTime(event.event_times[0].time)}</span>
                       </div>
                     )}
                   </div>

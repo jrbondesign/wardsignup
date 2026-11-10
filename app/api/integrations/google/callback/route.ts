@@ -13,7 +13,7 @@ import { userIsAcceptedOrgMember } from '@/lib/campaign-access';
 import { persistGoogleCalendarConnection } from '@/lib/google-calendar-connection';
 import { clearConnectionBroken } from '@/lib/google-calendar-health';
 import { createServiceRoleClient } from '@/lib/supabase-admin';
-import { getPostHogClient } from '@/lib/posthog-server';
+import { captureServerException, getPostHogClient } from '@/lib/posthog-server';
 
 function readCookie(request: Request, name: string): string | null {
   const header = request.headers.get('cookie');
@@ -183,7 +183,7 @@ export async function GET(request: Request) {
     }
 
     // Reconnect succeeded: clear any broken state so the banner goes away and the
-    // next breakage notifies again. The hourly reconcile cron catches the calendar up.
+    // next breakage notifies again. The reconcile cron (every 3 hours) catches the calendar up.
     if (connectionId) {
       await clearConnectionBroken(admin, connectionId);
     }
@@ -205,6 +205,7 @@ export async function GET(request: Request) {
     return clearNonceCookie(NextResponse.redirect(redirectUrl.toString()));
   } catch (err) {
     console.error('[google/callback] error:', err);
+    captureServerException(err, { route: "/api/integrations/google/callback" });
     return NextResponse.redirect(new URL('/settings/organization?error=gcal_internal_error', origin));
   }
 }

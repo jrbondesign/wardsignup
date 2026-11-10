@@ -6,7 +6,7 @@ import {
 } from "@/lib/brand";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { escapeHtml } from "@/lib/html-escape";
-import { getResendForBrand } from "@/lib/resend-for-brand";
+import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { withUtm } from "@/lib/utm";
 import { buildWelcomeEmail } from "@/lib/welcome-email";
@@ -87,7 +87,7 @@ export async function POST(request: NextRequest) {
 
     const normalizedEmail = canonicalUser.email?.trim().toLowerCase() ?? "";
 
-    // One welcome per brand (same email can get Ward + Ministry welcomes separately)
+    // One welcome per brand (tracked in user_metadata.welcome_sent_by_brand)
     if (
       alreadyWelcomedForBrand(
         canonicalUser.user_metadata as
@@ -108,8 +108,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const resend = getResendForBrand(brand);
-    if (!resend) {
+    if (!hasEmailProviderConfigured(brand)) {
       console.error("welcome: Resend API key missing for brand", brand.id);
       return NextResponse.json(
         { error: "Email is not configured." },

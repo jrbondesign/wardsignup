@@ -1,12 +1,14 @@
 "use client";
 
+import { endTimeNote } from "@/lib/utils";
 import { DAYS, DateRangePicker, keepSpotsSelectionOnMouseUp, resolveSpotsDraft, selectAllSpotsOnFocus } from "@/components/edit/edit-page-shared";
-import TimeInput from "@/components/TimeInput";
+import TimeInput, { TimeRangeRow } from "@/components/TimeInput";
 import { type EditEventCtx } from "@/components/edit/hooks/useEditEvent";
 
 /** Add-multiple-sessions panel. */
 export default function BulkAddSessionsForm({ ctx }: { ctx: EditEventCtx }) {
   const {
+    error,
     addBulkSessions,
     bulkCapacity,
     bulkCapacityDraft,
@@ -110,29 +112,29 @@ export default function BulkAddSessionsForm({ ctx }: { ctx: EditEventCtx }) {
 
       {/* Time and spots */}
       <div className="space-y-3">
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div className="min-w-0">
-            <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">
-              Start Time *
-            </label>
+        <TimeRangeRow
+          id="edit-bulk-time"
+          start={
             <TimeInput
               value={bulkTime}
               onChange={setBulkTime}
+              label="Start time"
+              labelNote="(required)"
+              nativeValidity={false}
               className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
             />
-          </div>
-          <div className="min-w-0">
-            <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">
-              End Time
-            </label>
+          }
+          end={
             <TimeInput
               value={bulkEndTime}
               onChange={setBulkEndTime}
-              placeholder="e.g. 5pm"
+              label="End time"
+              labelNote={endTimeNote(bulkTime, bulkEndTime)}
+              nativeValidity={false}
               className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
             />
-          </div>
-        </div>
+          }
+        />
 
         <div className="min-w-0">
           <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1">
@@ -204,6 +206,11 @@ export default function BulkAddSessionsForm({ ctx }: { ctx: EditEventCtx }) {
         />
       </div>
 
+      {error ? (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-sm" role="alert">
+          {error}
+        </div>
+      ) : null}
       <button
         type="button"
         onClick={addBulkSessions}

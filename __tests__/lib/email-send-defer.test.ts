@@ -8,7 +8,7 @@ jest.mock("@/lib/supabase-admin", () => ({
 }));
 jest.mock("@/lib/resend-for-brand", () => ({ getResendForBrand: () => ({ emails: { send: jest.fn() } }) }));
 const deliverEmail = jest.fn();
-jest.mock("@/lib/email-deliver", () => ({ deliverEmail: (...a: unknown[]) => deliverEmail(...a), brevoConfig: () => null }));
+jest.mock("@/lib/email-deliver", () => ({ deliverEmail: (...a: unknown[]) => deliverEmail(...a), brevoConfig: () => null, hasEmailProviderConfigured: () => true }));
 const enqueueEmail = jest.fn().mockResolvedValue({ ok: true });
 jest.mock("@/lib/email-queue", () => ({ enqueueEmail: (...a: unknown[]) => enqueueEmail(...a) }));
 
@@ -40,7 +40,7 @@ it("queues deferrable (batch) mail after 6 AM Arizona for 12:05 AM Arizona", asy
 it("sends deferrable mail right away early in the Arizona day (5:05 AM digest)", async () => {
   jest.setSystemTime(new Date("2026-10-12T12:05:00Z"));
   deliverEmail.mockResolvedValue({ ok: true, provider: "resend" });
-  expect(await sendGuardedEmail({ ...base, deferrable: true })).toEqual({ ok: true });
+  expect(await sendGuardedEmail({ ...base, deferrable: true })).toEqual({ ok: true, provider: expect.any(String) });
   expect(enqueueEmail).not.toHaveBeenCalled();
 });
 
@@ -54,7 +54,7 @@ it("5:05 PM Arizona (the old UTC reset) is no longer a send window", async () =>
 it("never queues urgent mail", async () => {
   jest.setSystemTime(new Date("2026-10-11T15:11:00Z"));
   deliverEmail.mockResolvedValue({ ok: true, provider: "brevo" });
-  expect(await sendGuardedEmail({ ...base, urgent: true })).toEqual({ ok: true });
+  expect(await sendGuardedEmail({ ...base, urgent: true })).toEqual({ ok: true, provider: expect.any(String) });
   expect(deliverEmail.mock.calls[0][1]).toEqual({ urgent: true, realtime: false });
   expect(enqueueEmail).not.toHaveBeenCalled();
 });
@@ -85,7 +85,7 @@ describe("near real time mail (welcome, new creator, feedback received)", () => 
   it.each(times)("a welcome at %s sends immediately, never held for 12:05 AM", async (t) => {
     jest.setSystemTime(new Date(t));
     deliverEmail.mockResolvedValue({ ok: true, provider: "resend" });
-    expect(await sendGuardedEmail({ ...base, realtime: true, kind: "welcome" })).toEqual({ ok: true });
+    expect(await sendGuardedEmail({ ...base, realtime: true, kind: "welcome" })).toEqual({ ok: true, provider: expect.any(String) });
     expect(enqueueEmail).not.toHaveBeenCalled();
     expect(deliverEmail.mock.calls[0][1]).toEqual({ urgent: false, realtime: true });
   });
@@ -93,7 +93,7 @@ describe("near real time mail (welcome, new creator, feedback received)", () => 
   it("realtime wins over a stray deferrable flag", async () => {
     jest.setSystemTime(new Date("2026-10-12T16:00:00Z"));
     deliverEmail.mockResolvedValue({ ok: true, provider: "resend" });
-    expect(await sendGuardedEmail({ ...base, realtime: true, deferrable: true, kind: "new_creator" })).toEqual({ ok: true });
+    expect(await sendGuardedEmail({ ...base, realtime: true, deferrable: true, kind: "new_creator" })).toEqual({ ok: true, provider: expect.any(String) });
     expect(enqueueEmail).not.toHaveBeenCalled();
   });
 

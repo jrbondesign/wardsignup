@@ -13,13 +13,10 @@ export const dynamic = "force-dynamic";
  * unverified payload. Resend signs with Svix (svix-id / timestamp / signature);
  * verify against the raw body via resend.webhooks.verify.
  *
- * Configure one webhook per Resend project pointing at:
- *   https://<brand-host>/api/webhooks/resend
+ * Configure a webhook in the Resend project pointing at:
+ *   https://wardsignup.com/api/webhooks/resend
  * Events: email.bounced, email.complained
- * Secrets (any one may match — Ward / Ministry / Org projects):
- *   RESEND_WEBHOOK_SECRET
- *   RESEND_WEBHOOK_SECRET_MINISTRY
- *   RESEND_WEBHOOK_SECRET_ORG
+ * Secret: RESEND_WEBHOOK_SECRET
  */
 
 type ResendWebhookEvent = {
@@ -34,8 +31,6 @@ type ResendWebhookEvent = {
 function webhookSecrets(): string[] {
   return [
     process.env.RESEND_WEBHOOK_SECRET,
-    process.env.RESEND_WEBHOOK_SECRET_MINISTRY,
-    process.env.RESEND_WEBHOOK_SECRET_ORG,
   ]
     .map((s) => s?.trim())
     .filter((s): s is string => Boolean(s));

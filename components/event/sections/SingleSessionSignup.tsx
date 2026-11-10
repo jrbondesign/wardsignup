@@ -1,7 +1,10 @@
 "use client";
 
+import SignupCaptcha from "@/components/event/SignupCaptcha";
+import { useRef } from "react";
+import { beginSubmit, finishSubmit } from "@/lib/one-submit";
 import { DAYS } from "@/components/event/event-page-shared";
-import { formatTime } from "@/lib/utils";
+import { formatTime, nextDaySuffix, spansMultipleDays } from "@/lib/utils";
 import EmailTypoHint from "@/components/EmailTypoHint";
 import { signerEmailHint } from "@/lib/reminder-copy";
 import EmailNudgePrompt from "@/components/EmailNudgePrompt";
@@ -13,6 +16,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
   const {
     allowGuests,
     error,
+    event,
     eventType,
     formData,
     guestNameFields,
@@ -28,6 +32,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
     showCapacityPublicly,
     showSignupsPublicly,
     signupSessionIds,
+    slotCaptcha,
     singleSession,
     singleSessionFull,
     submitting,
@@ -35,6 +40,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
     trackEmailEntered,
     trackFormStarted,
   } = ctx;
+  const submitLock = useRef(false);
 
   return (
     isSingleSession && (eventType === "spots" || eventType === "rsvp") && !success && (
@@ -82,7 +88,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
                   ? (() => { const [y,m,d] = singleSession.session_date!.split("-").map(Number); return new Date(y, m-1, d).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" }); })()
                   : DAYS[singleSession.day_of_week]}
                 {" · "}{formatTime(singleSession.time)}
-                {singleSession.end_time && ` – ${formatTime(singleSession.end_time)}`}
+                {singleSession.end_time && ` to ${formatTime(singleSession.end_time)}${nextDaySuffix(singleSession.time, singleSession.end_time, { multiDay: spansMultipleDays(singleSession.session_date, event.event_end_date) })}`}
                 {singleSession.location && ` · ${singleSession.location}`}
               </span>
               {showCapacityPublicly && singleSession.capacity < 999 && (
@@ -116,7 +122,14 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
 
           <h2 className="font-serif text-2xl text-[#0D2B35] mb-5">Register for this event</h2>
 
-          <form onSubmit={handleSignup} onFocusCapture={() => trackFormStarted("slots")} className="space-y-4">
+          <form
+            onSubmit={(e) => {
+              if (!beginSubmit(submitLock, e)) return;
+              void Promise.resolve(handleSignup(e)).finally(() => finishSubmit(submitLock));
+            }}
+            onFocusCapture={() => trackFormStarted("slots")}
+            className="space-y-4"
+          >
             <div>
               <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
                 Your Name <span className="text-red-400">*</span>
@@ -165,6 +178,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
             {error && (
               <div className="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-xl text-sm">{error}</div>
             )}
+            <SignupCaptcha captcha={slotCaptcha} action="event_signup" />
             {nudgeOpen && <EmailNudgePrompt onAdd={handleNudgeAdd} onSkip={handleNudgeSkip} disabled={submitting} />}
             <button type="submit" disabled={submitting}
               className="w-full text-base font-semibold px-4 py-[15px] rounded-xl text-white bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] shadow-[0_6px_20px_rgba(14,150,176,0.38)] hover:-translate-y-0.5 hover:shadow-[0_10px_28px_rgba(14,150,176,0.45)] active:translate-y-0 transition-all disabled:opacity-60 disabled:cursor-default disabled:translate-y-0">

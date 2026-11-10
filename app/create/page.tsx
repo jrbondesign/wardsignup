@@ -11,7 +11,7 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 import UnifiedCreateForm from "@/components/create/UnifiedCreateForm";
 import OrgNameModal from "@/components/OrgNameModal";
 import { AiEventInput } from "@/components/AiEventInput";
-import { getTemplatesForBrand, type TemplateKey } from "@/lib/event-template-data";
+import { getTemplatesForBrand, getEventTemplate, type TemplateKey } from "@/lib/event-template-data";
 import type { AiEventResult } from "@/lib/ai-event-extraction";
 import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } from "@/lib/limits";
 
@@ -30,8 +30,7 @@ function CreateInner() {
     [brandTemplates]
   );
 
-  // Only honor ?template= if the key is valid AND offered to this brand, so a
-  // shared Ward template URL doesn't prefill on ministrysignup/orgsignup.
+  // Only honor ?template= if the key is valid AND offered to this brand.
   const rawTemplate = searchParams.get("template") ?? "";
   const initialTemplateKey: TemplateKey | null = brandTemplateKeys.has(rawTemplate as TemplateKey)
     ? (rawTemplate as TemplateKey)
@@ -230,6 +229,14 @@ function CreateInner() {
                       </Link>
                       .
                     </p>
+                  )}
+                  {initialTemplateKey && getEventTemplate(initialTemplateKey)?.previewImage && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={getEventTemplate(initialTemplateKey)!.previewImage}
+                      alt=""
+                      className="mt-3 w-full max-h-[180px] object-cover rounded-lg"
+                    />
                   )}
                 </div>
               )}

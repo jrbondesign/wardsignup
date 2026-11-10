@@ -1,9 +1,12 @@
+import { captureServerException } from "@/lib/posthog-server";
 import { NextResponse, after } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { createSignupIfCapacityRpc, mapSignupRpcError } from "@/lib/supabase";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { getClientIp } from "@/lib/request-ip";
+import { verifyTurnstile, turnstileRejectionMessage } from "@/lib/turnstile";
 import { sendParticipantBatchSignupConfirmation } from "@/lib/participant-email";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
@@ -63,6 +66,18 @@ export async function POST(request: Request) {
       return NextResponse.json(
         { error: "Too many slots in one request" },
         { status: 400 },
+      );
+    }
+
+    // Cloudflare Turnstile (no-op until both Turnstile keys are set). Checked
+    // before the rate limit and before create_signup_if_capacity, so bots
+    // neither take slots nor use up a shared network's signup allowance.
+    // Siteverify outages fail open (see lib/turnstile.ts).
+    const captcha = await verifyTurnstile(body.captchaToken, getClientIp(request));
+    if (!captcha.ok) {
+      return NextResponse.json(
+        { error: turnstileRejectionMessage(captcha.reason), captcha: true },
+        { status: 403 },
       );
     }
 
@@ -273,6 +288,7 @@ export async function POST(request: Request) {
           }
         } catch (e) {
           console.error("Bulk confirmation email:", e);
+          captureServerException(e, { route: "/api/signups/bulk" });
         }
       });
 
@@ -283,6 +299,7 @@ export async function POST(request: Request) {
             await syncCampaignCalendar(campaign_id);
           } catch (e) {
             console.error("Calendar sync after bulk signup:", e);
+            captureServerException(e, { route: "/api/signups/bulk" });
           }
         });
       }
@@ -320,6 +337,7 @@ export async function POST(request: Request) {
       }
     });
 
+    revalidateEventPage(campaign_id);
     return NextResponse.json({
       results,
       primary_cancel_token: successfulCancelTokens[0] ?? null,
@@ -334,6 +352,7 @@ export async function POST(request: Request) {
       );
     }
     console.error("Error creating bulk signup:", error);
+    captureServerException(error, { route: "/api/signups/bulk" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 },

@@ -79,8 +79,8 @@ Either steward can merge PRs and ship fixes independently. For major architectur
 
 ### Who Holds What
 
-- **Domain/DNS** — Jonathan manages wardsignup.com, ministrysignup.com, orgsignup.com
-- **Email (Resend)** — Jonathan manages Resend accounts for all brands
+- **Domain/DNS** — Jonathan manages wardsignup.com (plus the retired ministrysignup.com and orgsignup.com, which redirect to it)
+- **Email (Resend)** — Jonathan manages the Resend account
 - **Supabase** — Jonathan manages the shared Supabase project
 - **Vercel** — Jonathan manages Vercel deployments and environment variables
 - **GitHub** — Jonathan is the primary GitHub admin; Ammon is a collaborator

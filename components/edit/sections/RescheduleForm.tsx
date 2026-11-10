@@ -1,13 +1,14 @@
 "use client";
 
 import { DAYS_SHORT, DURATION_PRESETS, DateRangePicker, countDaysInRange, countTithingSlotsPerDay, keepSpotsSelectionOnMouseUp, resolveSpotsDraft, selectAllSpotsOnFocus } from "@/components/edit/edit-page-shared";
-import TimeInput from "@/components/TimeInput";
-import { formatTimeRange } from "@/lib/utils";
+import TimeInput, { TimeRangeRow } from "@/components/TimeInput";
+import { formatTimeRange, endTimeNote, tithingWindowError } from "@/lib/utils";
 import { type EditEventCtx } from "@/components/edit/hooks/useEditEvent";
 
 /** Replace-schedule panel. */
 export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
   const {
+    error,
     applyReschedule,
     customDuration,
     isTithingReschedule,
@@ -42,6 +43,19 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
     toggleRescheduleDay,
     toggleTithingDay,
   } = ctx;
+
+  // Tithing: why the window can't be split (shown under End time), and how many
+  // slots Apply would create. Apply stays off while either blocks a real schedule.
+  const tithingError = isTithingReschedule ? tithingWindowError(rescheduleTime, rescheduleEndTime, tithingDuration) : null;
+  const tithingTotal =
+    isTithingReschedule && rescheduleStart && rescheduleEnd
+      ? countDaysInRange(rescheduleStart, rescheduleEnd, tithingDays) *
+        countTithingSlotsPerDay(rescheduleTime, rescheduleEndTime, tithingDuration)
+      : 0;
+  const canApply =
+    !!rescheduleStart &&
+    !!rescheduleEnd &&
+    (isTithingReschedule ? tithingDays.length > 0 && !tithingError && tithingTotal > 0 : rescheduleDays.length > 0);
 
   return (
     showReschedule && (
@@ -101,37 +115,30 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
         )}
       </div>
 
-      <div className={isTithingReschedule ? "grid grid-cols-1 sm:grid-cols-2 gap-3" : "grid grid-cols-1 sm:grid-cols-2 gap-4"}>
-        <div>
-          <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">
-            {isTithingReschedule ? "Start Time" : "Start Time"}
-          </label>
+      <TimeRangeRow
+        id="edit-reschedule-time"
+        start={
           <TimeInput
             value={rescheduleTime}
             onChange={setRescheduleTime}
-            className={
-              isTithingReschedule
-                ? "w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
-                : "w-full text-base text-[#0D2B35] px-[14px] py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
-            }
+            label="Start time"
+            labelNote="(required)"
+            nativeValidity={false}
+            className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
           />
-        </div>
-        <div>
-          <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">
-            {isTithingReschedule ? "End Time" : "End Time (Optional)"}
-          </label>
+        }
+        end={
           <TimeInput
             value={rescheduleEndTime}
             onChange={setRescheduleEndTime}
-            placeholder="e.g. 9pm"
-            className={
-              isTithingReschedule
-                ? "w-full text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
-                : "w-full text-base text-[#0D2B35] px-[14px] py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
-            }
+            label="End time"
+            labelNote={isTithingReschedule ? "(required)" : endTimeNote(rescheduleTime, rescheduleEndTime)}
+            error={tithingError ?? undefined}
+            nativeValidity={false}
+            className="w-full min-w-0 text-sm text-[#0D2B35] px-3 py-[10px] border-[1.5px] border-[rgba(14,150,176,0.22)] rounded-xl bg-white outline-none transition-all focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)]"
           />
-        </div>
-      </div>
+        }
+      />
 
       {isTithingReschedule ? (
         <div className="space-y-5">
@@ -305,23 +312,28 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
           ? (() => {
               if (isTithingReschedule) {
                 if (tithingDays.length === 0) return "Choose days of week to generate slots.";
-                const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, tithingDays);
-                const perDay = countTithingSlotsPerDay(rescheduleTime, rescheduleEndTime, tithingDuration);
-                const total = dayCount * perDay;
+                const total = tithingTotal;
+                if (!rescheduleTime) return "Choose a start time to generate slots.";
+                if (tithingError) return "Fix the end time above to generate slots.";
                 return total > 0
-                  ? `${total} slot${total !== 1 ? "s" : ""} will be created — ${tithingDuration}-min appointments, ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
+                  ? `${total} slot${total !== 1 ? "s" : ""} will be created: ${tithingDuration}-min appointments, ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
                   : "Configure the schedule above to auto-generate slots.";
               }
 
               if (rescheduleDays.length === 0) return "Choose days of week to generate slots.";
               const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, rescheduleDays);
               return dayCount > 0
-                ? `${dayCount} session${dayCount !== 1 ? "s" : ""} will be created — ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
+                ? `${dayCount} session${dayCount !== 1 ? "s" : ""} will be created: ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
                 : "Choose a date range and days of week to generate slots.";
             })()
           : "Choose a date range to see a preview."}
       </div>
 
+      {error ? (
+        <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-sm" role="alert">
+          {error}
+        </div>
+      ) : null}
       <div className="flex gap-3">
         <button
           type="button"
@@ -333,15 +345,9 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
         <button
           type="button"
           onClick={applyReschedule}
-          disabled={
-            !rescheduleStart ||
-            !rescheduleEnd ||
-            (isTithingReschedule ? tithingDays.length === 0 : rescheduleDays.length === 0)
-          }
+          disabled={!canApply}
           className={`flex-1 text-sm font-semibold px-4 py-[10px] rounded-xl text-white transition-all ${
-            rescheduleStart &&
-            rescheduleEnd &&
-            (!isTithingReschedule || tithingDays.length > 0)
+            canApply
               ? "bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] shadow-[0_4px_14px_rgba(14,150,176,0.30)] hover:-translate-y-0.5"
               : "bg-[#C8DDE6] cursor-default"
           }`}
@@ -352,10 +358,7 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
                   const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, rescheduleDays);
                   return `Apply: ${dayCount} slot${dayCount === 1 ? "" : "s"}`;
                 }
-                const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, tithingDays);
-                const perDay = countTithingSlotsPerDay(rescheduleTime, rescheduleEndTime, tithingDuration);
-                const total = dayCount * perDay;
-                return `Apply — ${total} slot${total === 1 ? "" : "s"}`;
+                return `Apply: ${tithingTotal} slot${tithingTotal === 1 ? "" : "s"}`;
               })()
             : "Select a date range"}
         </button>

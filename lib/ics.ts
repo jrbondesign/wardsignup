@@ -10,15 +10,14 @@ export type IcsSession = {
   session_date: string | null;
 };
 
-/** "2026-04-18" + "17:00" → "20260418T170000" */
-export function toCalDate(date: string, time: string): string {
-  return date.replace(/-/g, "") + "T" + time.replace(":", "") + "00";
-}
+import { calendarSpan, minutesToHHMM, timeToMinutes, toCalDate } from "@/lib/calendar-times";
 
-/** "17:00" → "18:00" */
+export { toCalDate };
+
+/** "17:00" → "18:00" (wraps past midnight; pair with calendarSpan for the date). */
 export function addOneHour(time: string): string {
-  const [h, m] = time.split(":").map(Number);
-  return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+  const m = timeToMinutes(time);
+  return m === null ? time : minutesToHHMM(m + 60);
 }
 
 /** RFC 5545 TEXT escaping: backslash, semicolon, comma, newline. */
@@ -46,20 +45,25 @@ export function buildVeventLines(opts: {
 }): string[] {
   const { session, campaignName, eventUrl, timezone, campaignEventEndDate, campaignId } = opts;
   if (!session.session_date || !session.time) return [];
-  const start = toCalDate(session.session_date, session.time);
-  const endTime = session.end_time ?? addOneHour(session.time);
-  const end = toCalDate(session.session_date, endTime);
+  // End earlier than start ends the next day; a multi-day overnight range is one span.
+  const span = calendarSpan({
+    date: session.session_date,
+    start: session.time,
+    end: session.end_time,
+    eventEndDate: campaignEventEndDate,
+  });
+  if (!span) return [];
+  const start = toCalDate(span.startDate, span.startTime);
+  const end = toCalDate(span.endDate, span.endTime);
   const dtStart = timezone ? `DTSTART;TZID=${timezone}:${start}` : `DTSTART:${start}`;
   const dtEnd = timezone ? `DTEND;TZID=${timezone}:${end}` : `DTEND:${end}`;
+  const endTime = session.end_time ?? addOneHour(session.time);
   const uid = `${campaignId ?? "event"}-${session.session_date}-${session.time}-${endTime}@wardsignup.com`.replace(/[^a-zA-Z0-9@.-]/g, "-");
 
-  // RSVP multi-day campaigns: one VEVENT with daily recurrence.
-  const rrule =
-    campaignEventEndDate &&
-    /^\d{4}-\d{2}-\d{2}$/.test(campaignEventEndDate) &&
-    campaignEventEndDate > session.session_date
-      ? [`RRULE:FREQ=DAILY;UNTIL=${campaignEventEndDate.replace(/-/g, "")}T235959Z`]
-      : [];
+  // RSVP multi-day campaigns with a same-day range: one VEVENT with daily recurrence.
+  const rrule = span.repeatUntil
+    ? [`RRULE:FREQ=DAILY;UNTIL=${span.repeatUntil.replace(/-/g, "")}T235959Z`]
+    : [];
 
   return [
     "BEGIN:VEVENT",

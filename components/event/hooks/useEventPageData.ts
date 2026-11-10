@@ -1,5 +1,6 @@
 "use client";
 
+import { sessionLastDate } from "@/lib/calendar-times";
 import { useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { loadPublicEventPage, type PublicEventClient } from "@/lib/public-event-page";
@@ -12,20 +13,47 @@ export function firstUpcomingMonth(sessions: SessionWithSignups[], now: Date = n
   today.setHours(0, 0, 0, 0);
   const futureDates = sessions
     .filter((s) => s.session_date)
+    // Keep an overnight slot that is still running today (it started yesterday).
+    .filter((s) => {
+      const [y, m, d] = sessionLastDate(s.session_date!, s.time, s.end_time).split("-").map(Number);
+      return new Date(y, m - 1, d) >= today;
+    })
     .map((s) => {
       const [y, m, d] = s.session_date!.split("-").map(Number);
       return new Date(y, m - 1, d);
     })
-    .filter((d) => d >= today)
     .sort((a, b) => a.getTime() - b.getTime());
   return futureDates.length > 0 ? new Date(futureDates[0].getFullYear(), futureDates[0].getMonth(), 1) : null;
 }
 
 /**
+ * Server data younger than this is shown as is: no background refresh. The
+ * server cache is EVENT_PAGE_CACHE_SECONDS (30 s) and every signup/cancel
+ * route expires it, so a fresh page load is already current.
+ */
+export const BACKGROUND_REFRESH_AFTER_MS = 60_000;
+/** Allowed browser clock skew; beyond it the age is unknown and we refresh as before. */
+const CLOCK_SKEW_MS = 5 * 60_000;
+
+/**
+ * Whether server rendered data needs a background refresh in the browser.
+ * Fresh server data (normal page load) skips it, saving one
+ * get_public_event_page call per view; old data (back/forward to a cached
+ * page, or no timestamp) still refreshes so counts stay current.
+ */
+export function needsBackgroundRefresh(loadedAt: number | undefined, now: number): boolean {
+  if (typeof loadedAt !== "number" || !Number.isFinite(loadedAt)) return true;
+  const age = now - loadedAt;
+  if (age < -CLOCK_SKEW_MS) return true;
+  return age > BACKGROUND_REFRESH_AFTER_MS;
+}
+
+/**
  * Loads the event, sessions, items and public signups. When the server already
- * loaded them (init.initialPage is set), the page renders right away and the
- * browser refreshes in the background when idle; fetchData also runs after
- * every signup to refresh counts and names.
+ * loaded them (init.initialPage is set), the page renders right away; the
+ * browser refreshes in the background only when that data is old (see
+ * needsBackgroundRefresh). fetchData also runs after every signup to refresh
+ * counts and names.
  */
 export function useEventPageData(ctx: EventPageState, init: EventPageInit = {}) {
   const {
@@ -98,11 +126,12 @@ export function useEventPageData(ctx: EventPageState, init: EventPageInit = {}) 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters come from useEventPageState and are stable
   }, [eventId, applyBrowserOnlyState]);
 
-  // Server data present: apply the browser only bits now, then refresh in the
-  // background once the browser is idle (no spinner), so counts stay current
-  // after back/forward navigation. No server data (slow or failed): fetch now,
-  // with the spinner, exactly as before.
+  // Server data present: apply the browser only bits now. Refresh in the
+  // background (no spinner) only when the server data is old, e.g. after
+  // back/forward navigation to a cached page. No server data (slow or failed):
+  // fetch now, with the spinner, exactly as before.
   const initialPage = init.initialPage;
+  const initialLoadedAt = init.initialLoadedAt;
   const startedInitial = useRef(false);
   useEffect(() => {
     if (startedInitial.current) return;
@@ -113,10 +142,11 @@ export function useEventPageData(ctx: EventPageState, init: EventPageInit = {}) 
     }
     if (initialPage && initialPage.eventType !== "items") applyBrowserOnlyState(initialPage.sessions);
     if (!initialPage) return;
+    if (!needsBackgroundRefresh(initialLoadedAt, Date.now())) return;
     const w = window as Window & { requestIdleCallback?: (cb: () => void) => number };
     if (typeof w.requestIdleCallback === "function") w.requestIdleCallback(() => fetchData({ background: true }));
     else setTimeout(() => fetchData({ background: true }), 1000);
-  }, [fetchData, initialPage, applyBrowserOnlyState]);
+  }, [fetchData, initialPage, initialLoadedAt, applyBrowserOnlyState]);
 
   return {
     fetchData,

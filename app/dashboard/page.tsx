@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { usePostHog } from "posthog-js/react";
 import { createClientComponentClient } from "@/lib/auth";
@@ -26,134 +26,40 @@ import { CLAUDE_MCP_ENABLED } from "@/lib/claude-mcp";
 import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } from "@/lib/limits";
 import { EVENT_TEMPLATES, TEMPLATES_INITIAL_VISIBLE } from "@/lib/event-template-data";
 import { downloadEventQr } from "@/lib/download-qr";
-import { diffDays, earliestYmd } from "@/lib/date-shift";
+import { QR_ACTION_HELPER, copyLinkHelper } from "@/lib/public-event-copy";
+import { earliestYmd } from "@/lib/date-shift";
 import { isTipJarEnabled } from "@/lib/tip-jar";
-
-interface DeleteModalProps {
-  eventId: string;
-  eventName: string;
-  onConfirm: () => void;
-  onCancel: () => void;
-}
-
-function DeleteModal({ eventId, eventName, onConfirm, onCancel }: DeleteModalProps) {
-  return (
-    <div className="fixed inset-0 bg-[#0D2B35]/50 backdrop-blur-[2px] flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-[0_20px_60px_rgba(8,100,126,0.18)] max-w-md w-full p-8">
-        <h2 className="font-serif text-2xl text-[#0D2B35] mb-3">Delete Event?</h2>
-        <p className="text-sm text-[#5A8399] leading-relaxed mb-6">
-          Are you sure you want to delete <strong className="text-[#0D2B35] font-semibold">{eventName}</strong>? This will also delete all slots, signups, and invitations. This action cannot be undone.
-        </p>
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 text-sm font-semibold px-4 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#2E5566] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 text-sm font-semibold px-4 py-2.5 rounded-xl bg-red-500 hover:bg-red-600 text-white transition-colors"
-          >
-            Delete Event
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-interface DuplicateModalProps {
-  eventName: string;
-  anchorDate: string | null;
-  duplicating: boolean;
-  onConfirm: (name: string, newStartDate: string) => void;
-  onCancel: () => void;
-}
-
-function DuplicateModal({ eventName, anchorDate, duplicating, onConfirm, onCancel }: DuplicateModalProps) {
-  const [name, setName] = useState(`Copy of ${eventName}`);
-  const [newStart, setNewStart] = useState("");
-
-  const shiftDays =
-    anchorDate && /^\d{4}-\d{2}-\d{2}$/.test(newStart)
-      ? (diffDays(anchorDate, newStart) ?? 0)
-      : 0;
-  const showShiftHint = anchorDate && newStart && shiftDays !== 0;
-
-  return (
-    <div className="fixed inset-0 bg-[#0D2B35]/50 backdrop-blur-[2px] flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-2xl shadow-[0_20px_60px_rgba(8,100,126,0.18)] max-w-md w-full p-8">
-        <h2 className="font-serif text-2xl text-[#0D2B35] mb-2">Duplicate Event</h2>
-        <p className="text-sm text-[#5A8399] leading-relaxed mb-5">
-          Creates a copy of <strong className="text-[#0D2B35] font-semibold">{eventName}</strong> with all its
-          spots and items — but no signups. You can fine-tune everything afterward.
-        </p>
-
-        <label className="block text-xs font-semibold text-[#2E5566] mb-1.5">New event name</label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          disabled={duplicating}
-          className="w-full text-sm px-3 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/25 focus:border-[#0E96B0] focus:outline-none mb-5 disabled:opacity-60"
-        />
-
-        {anchorDate && (
-          <>
-            <label className="block text-xs font-semibold text-[#2E5566] mb-1.5">
-              New start date <span className="font-normal text-[#5A8399]">(optional)</span>
-            </label>
-            <input
-              type="date"
-              value={newStart}
-              onChange={(e) => setNewStart(e.target.value)}
-              disabled={duplicating}
-              className="w-full text-sm px-3 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/25 focus:border-[#0E96B0] focus:outline-none disabled:opacity-60"
-            />
-            <p className="text-[11px] text-[#5A8399] mt-1.5 leading-snug">
-              {showShiftHint
-                ? `All dates shift by ${shiftDays > 0 ? "+" : ""}${shiftDays} day${Math.abs(shiftDays) === 1 ? "" : "s"} (original starts ${anchorDate}).`
-                : `Leave blank to keep the same dates. The original starts ${anchorDate}.`}
-            </p>
-          </>
-        )}
-
-        <div className="flex gap-3 mt-7">
-          <button
-            onClick={onCancel}
-            disabled={duplicating}
-            className="flex-1 text-sm font-semibold px-4 py-2.5 rounded-xl border-[1.5px] border-[#0E96B0]/30 text-[#2E5566] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all disabled:opacity-60"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={() => onConfirm(name.trim(), newStart)}
-            disabled={duplicating || !name.trim()}
-            className="flex-1 text-sm font-semibold px-4 py-2.5 rounded-xl bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:-translate-y-0.5 transition-all disabled:opacity-60 disabled:hover:translate-y-0"
-          >
-            {duplicating ? "Duplicating…" : "Duplicate"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+import PostSignInTipBanner from "@/components/PostSignInTipBanner";
+import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
+import EventActionsSheet, { eventSheetSubtitle } from "@/components/event-actions/EventActionsSheet";
+import DeleteEventConfirm from "@/components/event-actions/DeleteEventConfirm";
+import { useDuplicateEvent } from "@/components/event-actions/DuplicateEventModal";
+import {
+  CopyIcon,
+  DotsVerticalIcon,
+  EyeIcon,
+  GearIcon,
+  ImageIcon,
+  LinkIcon,
+  PencilIcon,
+  PrinterIcon,
+  QrIcon,
+} from "@/components/event-actions/icons";
 
 export default function DashboardPage() {
   const brand = useBrand();
   const isWardBrand = brand.id === "wardsignup";
   const router = useRouter();
   const posthog = usePostHog();
+  const { openDuplicate, duplicateDialog } = useDuplicateEvent({ router, posthog });
   const [user, setUser] = useState<any>(null);
   const [events, setEvents] = useState<DashboardEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deleteModal, setDeleteModal] = useState<{ id: string; name: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [duplicateModal, setDuplicateModal] = useState<{ id: string; name: string; anchorDate: string | null } | null>(null);
-  const [duplicating, setDuplicating] = useState(false);
-  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [actionsEventId, setActionsEventId] = useState<string | null>(null);
+  const actionsTriggerRef = useRef<HTMLButtonElement | null>(null);
   const [copyToast, setCopyToast] = useState(false);
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [showAllTemplates, setShowAllTemplates] = useState(false);
@@ -164,6 +70,28 @@ export default function DashboardPage() {
   const [wardName, setWardName] = useState<string | null | undefined>(undefined);
 
   const maxEvents = getMaxCampaignsForOrg(orgId) ?? getMaxCampaignsPerUser();
+  // Cover gate for the More sheet, same rule as the event page: the org is on the
+  // cover allowlist and the event has no cover yet. The dashboard payload has no
+  // cover field, so ask the existing cover endpoint when the sheet opens (once per
+  // event; the answer is kept for reopens). While it loads, the row is shown dimmed
+  // so nothing shifts under a tap.
+  const coverEnabledForOrg = isCoverImageEnabledForOrg(orgId);
+  const [hasCoverById, setHasCoverById] = useState<Record<string, boolean | "error">>({});
+  useEffect(() => {
+    if (!actionsEventId || !coverEnabledForOrg || actionsEventId in hasCoverById) return;
+    let cancelled = false;
+    fetch(`/api/events/${actionsEventId}/cover`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { coverUrl?: string | null } | null) => {
+        if (!cancelled) setHasCoverById((m) => ({ ...m, [actionsEventId]: d ? Boolean(d.coverUrl) : "error" }));
+      })
+      .catch(() => {
+        if (!cancelled) setHasCoverById((m) => ({ ...m, [actionsEventId]: "error" }));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [actionsEventId, coverEnabledForOrg, hasCoverById]);
   const isUnlimited = isUnlimitedEventsUser(user?.email);
   const atLimit = !isUnlimited && events.length >= maxEvents;
 
@@ -194,41 +122,6 @@ export default function DashboardPage() {
       alert(error.message || "Failed to delete event");
     } finally {
       setDeleting(false);
-    }
-  };
-
-  const handleDuplicate = async (name: string, newStartDate: string) => {
-    if (!duplicateModal) return;
-
-    setDuplicating(true);
-    try {
-      const supabase = createClientComponentClient();
-      const { data: { session } } = await supabase.auth.getSession();
-
-      const response = await fetch(`/api/events/${duplicateModal.id}/duplicate`, {
-        method: "POST",
-        headers: {
-          "Authorization": `Bearer ${session?.access_token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ name, new_start_date: newStartDate || undefined }),
-      });
-
-      const bodyJson = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(bodyJson?.error || "Failed to duplicate event");
-      }
-
-      posthog?.capture("event_duplicated", {
-        source_event_id: duplicateModal.id,
-        event_id: bodyJson?.event?.id,
-      });
-      setDuplicateModal(null);
-      // Land on the edit page so the organizer can review and fine-tune dates.
-      router.push(`/edit/${bodyJson.event.id}`);
-    } catch (error: any) {
-      alert(error.message || "Failed to duplicate event");
-      setDuplicating(false);
     }
   };
 
@@ -295,14 +188,6 @@ export default function DashboardPage() {
     loadUserAndEvents();
   }, [router, brand.id, posthog, isWardBrand]);
 
-  useEffect(() => {
-    const handleClickOutside = () => setOpenDropdown(null);
-    if (openDropdown) {
-      document.addEventListener("click", handleClickOutside);
-      return () => document.removeEventListener("click", handleClickOutside);
-    }
-  }, [openDropdown]);
-
   if (loading) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-[#F4FAFB]">
@@ -339,15 +224,23 @@ export default function DashboardPage() {
     void navigator.clipboard.writeText(url);
     posthog?.capture("event_link_copied", { event_id: eventId });
     setCopyToast(true);
-    setOpenDropdown(null);
   };
+
+  const actionsEvent = actionsEventId ? events.find((e) => e.id === actionsEventId) ?? null : null;
+  const anchorDateFor = (event: DashboardEvent) =>
+    earliestYmd([
+      event.event_date,
+      ...(Array.isArray(event.event_dates) ? (event.event_dates as (string | null)[]) : []),
+      ...event.session_dates,
+    ]);
 
   return (
     <>
-      <Toast message="Link copied to clipboard!" show={copyToast} onClose={() => setCopyToast(false)} />
+      <Toast message="Link copied" show={copyToast} onClose={() => setCopyToast(false)} />
       <Navigation />
       <main className="min-h-screen bg-[#F4FAFB] px-6 py-10 md:px-10">
         <div className="max-w-6xl mx-auto">
+          <PostSignInTipBanner />
 
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
@@ -462,9 +355,7 @@ export default function DashboardPage() {
               </div>
               <h2 className="font-serif text-[22px] text-[#0D2B35] mb-2">No Events Yet</h2>
               <p className="text-sm text-[#5A8399] mb-7 leading-relaxed">
-                {isWardBrand
-                  ? "Pick a template or create a custom event from scratch."
-                  : "Create your first event to start managing signups for your ministry or church."}
+                Pick a template or create a custom event from scratch.
               </p>
               <Link
                 href="/create"
@@ -491,96 +382,23 @@ export default function DashboardPage() {
                   >
                     {/* Card header */}
                     <div className="p-6 pb-4 flex-1">
-                      <div className="absolute top-4 right-4">
+                      <div className="absolute top-3 right-3">
                         <button
+                          type="button"
                           onClick={(e) => {
-                            e.stopPropagation();
-                            setOpenDropdown(openDropdown === event.id ? null : event.id);
+                            actionsTriggerRef.current = e.currentTarget;
+                            setActionsEventId(event.id);
                           }}
                           aria-label={`More actions for ${event.name}`}
-                          aria-haspopup="menu"
-                          aria-expanded={openDropdown === event.id}
-                          className="p-2 hover:bg-[#0E96B0]/8 rounded-lg transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
+                          aria-haspopup="dialog"
+                          aria-expanded={actionsEventId === event.id}
+                          className="inline-flex size-11 items-center justify-center rounded-xl text-[#5A8399] hover:bg-[#0E96B0]/8 hover:text-[#08647E] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#0E96B0]"
                         >
-                          <svg className="w-4 h-4 text-[#5A8399]" fill="currentColor" viewBox="0 0 20 20">
-                            <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                          </svg>
+                          <DotsVerticalIcon className="size-5" />
                         </button>
-
-                        {openDropdown === event.id && (
-                          <div className="absolute right-0 mt-1 min-w-[11rem] w-max max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-[0_8px_28px_rgba(8,100,126,0.16)] border border-[#0E96B0]/10 py-1 z-10">
-                            <Link
-                              href={`/edit/${event.id}`}
-                              className="block px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors no-underline"
-                              onClick={() => setOpenDropdown(null)}
-                            >
-                              Edit details
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const anchorDate = earliestYmd([
-                                  event.event_date,
-                                  ...(Array.isArray(event.event_dates) ? (event.event_dates as (string | null)[]) : []),
-                                  ...event.session_dates,
-                                ]);
-                                setDuplicateModal({ id: event.id, name: event.name, anchorDate });
-                                setOpenDropdown(null);
-                              }}
-                              className="block w-full text-left px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors"
-                            >
-                              Duplicate
-                            </button>
-                            <Link
-                              href={`/event/${event.id}`}
-                              className="block px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors no-underline"
-                              onClick={() => setOpenDropdown(null)}
-                            >
-                              Preview
-                            </Link>
-                            <Link
-                              href={`/event/${event.id}/flyer`}
-                              className="block px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors no-underline"
-                              onClick={() => setOpenDropdown(null)}
-                            >
-                              Print flyer
-                            </Link>
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                setOpenDropdown(null);
-                                try {
-                                  await downloadEventQr(event.id, event.name);
-                                } catch (err) {
-                                  console.error("QR download failed:", err);
-                                }
-                              }}
-                              className="block w-full text-left px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors"
-                            >
-                              Download QR code
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => copyEventLink(event.id)}
-                              className="block w-full text-left px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors"
-                            >
-                              Copy link
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setDeleteModal({ id: event.id, name: event.name });
-                                setOpenDropdown(null);
-                              }}
-                              className="block w-full text-left px-4 py-2.5 text-sm text-red-500 hover:bg-red-50 transition-colors"
-                            >
-                              Delete
-                            </button>
-                          </div>
-                        )}
                       </div>
 
-                      <h3 className="font-serif text-[18px] text-[#0D2B35] mb-1 pr-8 leading-snug">
+                      <h3 className="font-serif text-[18px] text-[#0D2B35] mb-1 pr-10 leading-snug">
                         {event.name}
                       </h3>
                       <p className="text-xs text-[#5A8399] mb-4">
@@ -677,24 +495,95 @@ export default function DashboardPage() {
         </div>
       </main>
 
+      {actionsEvent && (() => {
+        const stats = dashboardCardStats(actionsEvent);
+        return (
+          <EventActionsSheet
+            title={actionsEvent.name}
+            subtitle={eventSheetSubtitle({
+              ymd: anchorDateFor(actionsEvent),
+              isItems: stats.isItems,
+              filled: stats.isItems ? stats.totalCapacity - stats.remaining : stats.totalSignups,
+              total: stats.totalCapacity,
+            })}
+            triggerRef={actionsTriggerRef}
+            onClose={() => setActionsEventId(null)}
+            onDelete={() => setDeleteModal({ id: actionsEvent.id, name: actionsEvent.name })}
+            groups={[
+              {
+                heading: "Edit",
+                actions: [
+                  { key: "edit", label: "Edit event", helper: "Name, dates, times and slots", icon: <PencilIcon />, href: `/edit/${actionsEvent.id}` },
+                  { key: "settings", label: "Event settings", helper: "Visibility, reminders and Google Calendar", icon: <GearIcon />, href: `/edit/${actionsEvent.id}#event-settings` },
+                  ...(coverEnabledForOrg && hasCoverById[actionsEvent.id] !== true && hasCoverById[actionsEvent.id] !== "error"
+                    ? [{
+                        key: "cover",
+                        label: "Add cover photo",
+                        helper: "Shows at the top of the signup page",
+                        icon: <ImageIcon />,
+                        href: `/admin/${actionsEvent.id}#add-cover`,
+                        pending: !(actionsEvent.id in hasCoverById),
+                      }]
+                    : []),
+                ],
+              },
+              {
+                heading: "Share",
+                actions: [
+                  {
+                    key: "copy",
+                    label: "Copy link",
+                    helper: copyLinkHelper(isWardBrand),
+                    icon: <LinkIcon />,
+                    onSelect: () => copyEventLink(actionsEvent.id),
+                  },
+                  {
+                    key: "preview",
+                    label: "Preview signup page",
+                    helper: isWardBrand ? "See what ward members see" : "See what people see when they sign up",
+                    icon: <EyeIcon />,
+                    href: `/event/${actionsEvent.id}`,
+                  },
+                  {
+                    key: "qr",
+                    label: "Download QR code",
+                    helper: QR_ACTION_HELPER,
+                    icon: <QrIcon />,
+                    onSelect: () => {
+                      downloadEventQr(actionsEvent.id, actionsEvent.name).catch((err) => console.error("QR download failed:", err));
+                    },
+                  },
+                  { key: "flyer", label: "Print flyer", helper: "A printable page with the QR code", icon: <PrinterIcon />, href: `/event/${actionsEvent.id}/flyer` },
+                ],
+              },
+              {
+                heading: "Manage",
+                actions: [
+                  {
+                    key: "duplicate",
+                    label: "Duplicate event",
+                    helper: "Copy it to new dates",
+                    icon: <CopyIcon />,
+                    onSelect: () =>
+                      openDuplicate({ id: actionsEvent.id, name: actionsEvent.name, anchorDate: anchorDateFor(actionsEvent) }),
+                  },
+                ],
+              },
+            ]}
+          />
+        );
+      })()}
+
       {deleteModal && (
-        <DeleteModal
-          eventId={deleteModal.id}
+        <DeleteEventConfirm
           eventName={deleteModal.name}
+          deleting={deleting}
           onConfirm={handleDelete}
           onCancel={() => setDeleteModal(null)}
         />
       )}
 
-      {duplicateModal && (
-        <DuplicateModal
-          eventName={duplicateModal.name}
-          anchorDate={duplicateModal.anchorDate}
-          duplicating={duplicating}
-          onConfirm={handleDuplicate}
-          onCancel={() => setDuplicateModal(null)}
-        />
-      )}
+      {duplicateDialog}
 
       {orgNeedsNaming && (
         <OrgNameModal

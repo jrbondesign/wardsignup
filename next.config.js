@@ -8,11 +8,13 @@ const csp = [
   "default-src 'self'",
   // Next.js injects inline hydration; 'unsafe-inline'/'unsafe-eval' stay
   // until a nonce-based pipeline replaces them.
-  "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+  "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://challenges.cloudflare.com",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: https:",
   "font-src 'self' data:",
   "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://us.i.posthog.com https://us-assets.i.posthog.com",
+  // Cloudflare Turnstile widget iframe (login page, only when its site key is set).
+  "frame-src 'self' https://challenges.cloudflare.com",
   "frame-ancestors 'self'",
   "base-uri 'self'",
   "form-action 'self'",
@@ -59,10 +61,16 @@ const nextConfig = {
     dangerouslyAllowLocalIP: process.env.NODE_ENV === "development",
   },
   async headers() {
+    // Preview deployments are review-only. Production keeps the existing
+    // per-route robots tags and does not get this blanket marker.
+    const globalHeaders = [...securityHeaders];
+    if (process.env.VERCEL_ENV === "preview") {
+      globalHeaders.push({ key: "X-Robots-Tag", value: "noindex, nofollow" });
+    }
     return [
       {
         source: "/:path*",
-        headers: securityHeaders,
+        headers: globalHeaders,
       },
       {
         // Public event pages show members' names. Keep them out of search
@@ -70,6 +78,14 @@ const nextConfig = {
         // so /event is NOT disallowed in robots.ts). Covers /event/[id],
         // /event/[id]/flyer and any subpath.
         source: "/event/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
+      {
+        // Public ward directory pages list a ward's sheets. Same treatment as
+        // /event: noindex via header, and /w is NOT disallowed in robots.ts.
+        // (The old next/head tag in app/w/[slug]/page.tsx did nothing in the
+        // App Router; app/w/[slug]/layout.tsx now sets the meta tag too.)
+        source: "/w/:path*",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
     ];
@@ -95,6 +111,11 @@ const nextConfig = {
       {
         source: "/support",
         destination: "/support-the-project",
+        permanent: true,
+      },
+      {
+        source: "/tip",
+        destination: "https://venmo.com/u/jrbond",
         permanent: true,
       },
       // Permanent 301 redirects: ministrysignup.com + orgsignup.com → wardsignup.com

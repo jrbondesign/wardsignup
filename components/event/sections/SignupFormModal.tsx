@@ -1,7 +1,10 @@
 "use client";
 
+import SignupCaptcha from "@/components/event/SignupCaptcha";
+import { useRef } from "react";
+import { beginSubmit, finishSubmit } from "@/lib/one-submit";
 import { DAYS } from "@/components/event/event-page-shared";
-import { formatTime } from "@/lib/utils";
+import { formatTime, nextDaySuffix, spansMultipleDays } from "@/lib/utils";
 import EmailTypoHint from "@/components/EmailTypoHint";
 import { signerEmailHint } from "@/lib/reminder-copy";
 import EmailNudgePrompt from "@/components/EmailNudgePrompt";
@@ -13,6 +16,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
   const {
     allowGuests,
     error,
+    event,
     formData,
     guestNameFields,
     emailInputRef,
@@ -28,10 +32,12 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
     setShowSignupForm,
     showSignupForm,
     signupSessionIds,
+    slotCaptcha,
     submitting,
     trackEmailEntered,
     trackFormStarted,
   } = ctx;
+  const submitLock = useRef(false);
 
   return (
     showSignupForm && (
@@ -58,14 +64,21 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
                         return new Date(y, m - 1, d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
                       })()
                     : DAYS[session.day_of_week]}
-                  {" · "}{formatTime(session.time)}{session.end_time ? ` – ${formatTime(session.end_time)}` : ""}
+                  {" · "}{formatTime(session.time)}{session.end_time ? ` to ${formatTime(session.end_time)}${nextDaySuffix(session.time, session.end_time, { multiDay: spansMultipleDays(session.session_date, event.event_end_date) })}` : ""}
                 </div>
               );
             })}
           </div>
         </div>
 
-        <form onSubmit={handleSignup} onFocusCapture={() => trackFormStarted("slots")} className="space-y-4">
+        <form
+          onSubmit={(e) => {
+            if (!beginSubmit(submitLock, e)) return;
+            void Promise.resolve(handleSignup(e)).finally(() => finishSubmit(submitLock));
+          }}
+          onFocusCapture={() => trackFormStarted("slots")}
+          className="space-y-4"
+        >
           <div>
             <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1.5">
               Your Name <span className="text-red-400">*</span>
@@ -115,6 +128,7 @@ export default function SignupFormModal({ ctx }: { ctx: EventPageView }) {
             </div>
           )}
 
+          <SignupCaptcha captcha={slotCaptcha} action="event_signup" />
           {nudgeOpen && <EmailNudgePrompt onAdd={handleNudgeAdd} onSkip={handleNudgeSkip} disabled={submitting} />}
           <div className="flex gap-3 pt-2">
             <button type="button"

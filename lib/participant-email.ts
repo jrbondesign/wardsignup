@@ -6,10 +6,11 @@ import {
 } from "@/lib/brand";
 import { buildParticipantEmailFooterHtml } from "@/lib/site-footer";
 import { formatSessionSlotLabel } from "@/lib/organizer-email";
-import { hasResendConfiguredForBrand } from "@/lib/resend-for-brand";
+import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import type { Campaign } from "@/lib/types";
 import { withUtm } from "@/lib/utm";
+import { googleTemplateDates } from "@/lib/calendar-times";
 
 function runYourOwnCtaHtml(siteOrigin: string): string {
   const createPageUrl = withUtm(`${siteOrigin}/create`, {
@@ -51,17 +52,6 @@ function participantFooter(brand: PublicBrand): string {
   return buildParticipantEmailFooterHtml(brand);
 }
 
-/** "2026-04-18" + "17:00" → "20260418T170000" */
-function toCalDate(date: string, time: string): string {
-  return date.replace(/-/g, "") + "T" + time.replace(":", "") + "00";
-}
-
-/** "17:00" → "18:00" */
-function addOneHour(time: string): string {
-  const [h, m] = time.split(":").map(Number);
-  return `${String((h + 1) % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
-}
-
 function buildGoogleCalendarUrl(
   session: SessionFields,
   campaignName: string,
@@ -70,25 +60,22 @@ function buildGoogleCalendarUrl(
   eventEndDate?: string | null,
 ): string | null {
   if (!session.session_date || !session.time) return null;
-  const start = toCalDate(session.session_date, session.time);
-  const endTime = session.end_time ?? addOneHour(session.time);
-  const end = toCalDate(session.session_date, endTime);
+  // End earlier than start ends the next day; multi-day same-day ranges repeat daily.
+  const g = googleTemplateDates({
+    date: session.session_date,
+    start: session.time,
+    end: session.end_time,
+    eventEndDate,
+  });
+  if (!g) return null;
   const params = new URLSearchParams({
     action: "TEMPLATE",
     text: campaignName,
-    dates: `${start}/${end}`,
+    dates: g.dates,
     details: `Sign up or manage your spot: ${eventUrl}`,
     ...(timezone ? { ctz: timezone } : {}),
   });
-  // Multi-day events: emit a daily recurrence rule so the same start/end time
-  // repeats across each day in the range.
-  if (
-    eventEndDate &&
-    /^\d{4}-\d{2}-\d{2}$/.test(eventEndDate) &&
-    eventEndDate > session.session_date
-  ) {
-    params.set("recur", `RRULE:FREQ=DAILY;UNTIL=${eventEndDate.replace(/-/g, "")}T235959Z`);
-  }
+  if (g.recur) params.set("recur", g.recur);
   return `https://calendar.google.com/calendar/render?${params.toString()}`;
 }
 
@@ -102,12 +89,13 @@ export async function sendParticipantSignupConfirmation(params: {
   guestNames?: string[];
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
   }
 
   const slotLabel = formatSessionSlotLabel(params.session, {
     eventTimezone: params.campaign.event_timezone,
+    eventEndDate: params.campaign.event_end_date ?? null,
   });
   const eventTitle = escapeHtml(params.campaign.name);
   const name = escapeHtml(params.memberName.trim());
@@ -166,6 +154,7 @@ export async function sendParticipantSignupConfirmation(params: {
     brand,
     urgent: true,
       category: "transactional",
+    kind: "signup_confirmation",
     from,
     to: params.to.trim(),
     subject: `You’re signed up: ${params.campaign.name}`,
@@ -187,12 +176,13 @@ export async function sendParticipantReminderEmail(params: {
   cancelToken?: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
   }
 
   const slotLabel = formatSessionSlotLabel(params.session, {
     eventTimezone: params.campaign.event_timezone,
+    eventEndDate: params.campaign.event_end_date ?? null,
   });
   const eventTitle = escapeHtml(params.campaign.name);
   const name = escapeHtml(params.memberName.trim());
@@ -250,6 +240,8 @@ export async function sendParticipantReminderEmail(params: {
     brand,
     urgent: true,
       category: "notification",
+    // Bulk kind: Brevo first when configured (lib/email-deliver.ts BULK_KINDS).
+    kind: "reminder",
     from,
     to: params.to.trim(),
     subject: `Reminder tomorrow: ${params.campaign.name}`,
@@ -293,7 +285,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
   }
 
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
-  if (!hasResendConfiguredForBrand(brand)) {
+  if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
   }
 
@@ -323,7 +315,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
         ? `&nbsp;·&nbsp;<a href="${escapeHtml(slotCancelUrl)}" style="color:#5A8399;font-size:13px;">Cancel</a>`
         : "";
       return `<li style="margin:0 0 4px;font-size:15px;">${escapeHtml(
-        formatSessionSlotLabel(s, { eventTimezone: params.campaign.event_timezone }),
+        formatSessionSlotLabel(s, { eventTimezone: params.campaign.event_timezone, eventEndDate: params.campaign.event_end_date ?? null }),
       )}${slotCancel}</li>`;
     })
     .join("");
@@ -351,7 +343,10 @@ export async function sendParticipantBatchSignupConfirmation(params: {
 
   const calendarButtons = calendarLinks
     .map((url, i) => {
-      const label = formatSessionSlotLabel(params.sessions[i], { eventTimezone: params.campaign.event_timezone });
+      const label = formatSessionSlotLabel(params.sessions[i], {
+        eventTimezone: params.campaign.event_timezone,
+        eventEndDate: params.campaign.event_end_date ?? null,
+      });
       return `<a href="${escapeHtml(url)}" style="display:inline-block;margin:0 8px 8px 0;padding:8px 16px;border-radius:8px;border:1.5px solid rgba(14,150,176,0.30);font-size:13px;font-weight:600;color:#0E96B0;text-decoration:none;">Google: ${escapeHtml(label)}</a>`;
     })
     .join("");
@@ -391,6 +386,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
     brand,
     urgent: true,
       category: "transactional",
+    kind: "signup_confirmation",
     from,
     to: params.to.trim(),
     subject: `You’re signed up: ${params.campaign.name} (${params.sessions.length} slots)`,
