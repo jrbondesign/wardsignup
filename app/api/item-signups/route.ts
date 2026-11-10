@@ -114,6 +114,10 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Failed to sign up" }, { status: 500 });
     }
 
+    // The item signup exists now: expire the page cache right away so counts
+    // update even if a later step throws. Expired again below after PostHog.
+    revalidateEventPage(campaign_id);
+
     // Assigned-leader notification (fire-and-forget; never fails the signup).
     if (serviceKey && supabaseUrl) {
       // after() keeps the function alive past the response — a bare floating

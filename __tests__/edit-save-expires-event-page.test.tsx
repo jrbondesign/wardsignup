@@ -117,4 +117,22 @@ describe("edit page slot save expires the public event page", () => {
     expect(writes).toEqual([]);
     expect(mockExpire).not.toHaveBeenCalled();
   });
+
+  it("does not resolve the save until the expire request has finished", async () => {
+    let finish: (ok: boolean) => void = () => {};
+    mockExpire.mockImplementationOnce(() => new Promise<boolean>((resolve) => { finish = resolve; }));
+    const { result } = renderHook(() => useSaveEditEvent(ctx([slot("a")], ["a"])));
+    let done = false;
+    let save: Promise<void> = Promise.resolve();
+    await act(async () => {
+      save = result.current.performSave().then(() => { done = true; });
+    });
+    expect(done).toBe(false);
+    expect(mockExpire).toHaveBeenCalledWith(EVENT, "tok");
+    await act(async () => {
+      finish(true);
+      await save;
+    });
+    expect(done).toBe(true);
+  });
 });

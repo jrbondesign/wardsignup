@@ -238,8 +238,10 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
       setSaving(false);
     } finally {
       // Slot rows were written from the browser, which no server route sees.
-      // Fire and forget: the save result never depends on it.
-      if (slotWriteAttempted) void expirePublicEventPage(eventId, accessToken);
+      // Await so a mid-save cache refill is expired before "saved" resolves
+      // and the organizer opens the public page. Ignore the boolean: a failed
+      // expire must not fail the save; the 5 minute window then covers it.
+      if (slotWriteAttempted) await expirePublicEventPage(eventId, accessToken);
     }
   };
 
