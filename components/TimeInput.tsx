@@ -6,6 +6,7 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type ReactNode,
 } from "react";
@@ -129,10 +130,14 @@ export function draftClockLabel(parts: TimeParts): string {
 const triggerBase =
   "group/time flex items-center gap-2 w-full sm:w-[11.5rem] @min-[35rem]:w-[11.5rem] min-w-0 h-11 sm:h-10 @min-[35rem]:h-10 pl-3 pr-2 text-left text-sm rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] hover:border-[#0E96B0] focus-visible:border-[#0E96B0] focus-visible:shadow-[0_0_0_3px_rgba(14,150,176,0.18)] aria-invalid:border-red-400 disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation";
 
-/** Chip used for AM/PM, hours and minutes. Selected = light fill, never the solid primary. */
-function chipClass(selected: boolean, extra = ""): string {
+/**
+ * Chip used for AM/PM, hours and minutes. Selected = light fill, never the solid primary.
+ * Grid chips pass fill so they take their column width (min-w-0) instead of a
+ * 44px minimum: six 44px columns plus gaps are wider than a 320px phone.
+ */
+function chipClass(selected: boolean, extra = "", fill = false): string {
   return [
-    "relative inline-flex items-center justify-center min-h-11 min-w-11 rounded-xl border-[1.5px] text-[15px] tabular-nums transition-colors touch-manipulation outline-none focus-visible:shadow-[0_0_0_3px_rgba(14,150,176,0.25)]",
+    `relative inline-flex items-center justify-center min-h-11 ${fill ? "min-w-0 w-full" : "min-w-11"} rounded-xl border-[1.5px] text-[15px] tabular-nums transition-colors touch-manipulation outline-none focus-visible:shadow-[0_0_0_3px_rgba(14,150,176,0.25)]`,
     selected
       ? "bg-[#E6F7FB] border-[#0E96B0] text-[#08647E] font-semibold"
       : "bg-white border-[rgba(14,150,176,0.22)] text-[#0D2B35] hover:border-[#0E96B0]",
@@ -155,6 +160,30 @@ function ClockIcon() {
       <path d="M10 6v4l2.5 1.5" />
     </svg>
   );
+}
+
+/**
+ * Overlay box that covers exactly the visible part of the page (the visual
+ * viewport), drawn at normal size even when the page is zoomed. Exported for tests.
+ */
+export function visualViewportOverlayStyle(vv: {
+  offsetLeft: number;
+  offsetTop: number;
+  width: number;
+  height: number;
+  scale: number;
+}): CSSProperties {
+  const scale = vv.scale > 0 ? vv.scale : 1;
+  return {
+    left: vv.offsetLeft,
+    top: vv.offsetTop,
+    right: "auto",
+    bottom: "auto",
+    width: vv.width * scale,
+    height: vv.height * scale,
+    transform: scale === 1 ? undefined : `scale(${1 / scale})`,
+    transformOrigin: "0 0",
+  };
 }
 
 /** Focusable elements inside the sheet, in DOM order, for the focus trap. */
@@ -198,6 +227,7 @@ export default function TimeInput({
   const [draft, setDraft] = useState<TimeParts>(() => hhmmToParts(value));
   const [showAllMinutes, setShowAllMinutes] = useState(false);
   const [missing, setMissing] = useState(false);
+  const [overlayStyle, setOverlayStyle] = useState<CSSProperties | undefined>(undefined);
 
   const draftHhmm = partsToHhmm(draft.hour12, draft.minute, draft.meridiem);
   const showPartial = open && isPartialTime(draft);
@@ -277,6 +307,27 @@ export default function TimeInput({
     };
   }, [open]);
 
+  // Pin the overlay to the part of the page that is actually on screen. On an
+  // iPhone the fixed layout viewport can be wider than the screen (any page
+  // content that sticks out widens it, and pinch zoom shrinks the visible part),
+  // so inset-0 alone made the sheet wider than the phone and clipped both
+  // sides. visualViewport is the visible rectangle; scaling by its zoom keeps
+  // the sheet at its normal size. Browsers without it keep inset-0.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) return;
+    const update = () => setOverlayStyle(visualViewportOverlayStyle(vv));
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      setOverlayStyle(undefined);
+    };
+  }, [open]);
+
   const onSheetKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
     if (e.key === "Escape") {
       e.preventDefault();
@@ -331,7 +382,7 @@ export default function TimeInput({
   // open only turns true from a click, so document exists when the portal renders.
   const sheet = open
     ? createPortal(
-        <div className="fixed inset-0 z-[300]" data-time-sheet="">
+        <div className="fixed inset-0 z-[300] overflow-hidden" data-time-sheet="" style={overlayStyle}>
           <div
             aria-hidden="true"
             data-testid="time-sheet-backdrop"
@@ -345,7 +396,7 @@ export default function TimeInput({
             aria-labelledby={titleId}
             aria-describedby={previewId}
             onKeyDown={onSheetKeyDown}
-            className="absolute inset-x-0 bottom-0 max-h-[90dvh] overflow-y-auto overscroll-contain bg-white rounded-t-[20px] shadow-[0_-8px_28px_rgba(8,100,126,0.22)] px-4 pt-3 pb-[max(16px,env(safe-area-inset-bottom))] sm:inset-x-auto sm:left-1/2 sm:bottom-auto sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[24rem] sm:rounded-[20px] sm:pb-4"
+            className="absolute inset-x-0 bottom-0 max-h-[90%] overflow-x-hidden overflow-y-auto overscroll-contain bg-white rounded-t-[20px] shadow-[0_-8px_28px_rgba(8,100,126,0.22)] pl-[max(16px,env(safe-area-inset-left))] pr-[max(16px,env(safe-area-inset-right))] pt-3 pb-[max(16px,env(safe-area-inset-bottom))] sm:inset-x-auto sm:left-1/2 sm:bottom-auto sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[24rem] sm:max-w-[calc(100%-2rem)] sm:px-4 sm:rounded-[20px] sm:pb-4"
           >
             <div aria-hidden="true" className="mx-auto mb-2 h-1 w-10 rounded-full bg-[rgba(14,150,176,0.22)] sm:hidden" />
             <div className="flex items-center justify-between gap-3">
@@ -399,7 +450,7 @@ export default function TimeInput({
                   aria-pressed={draft.hour12 === h}
                   aria-label={`${h} o'clock`}
                   onClick={() => pickHour(h)}
-                  className={chipClass(draft.hour12 === h, "px-0")}
+                  className={chipClass(draft.hour12 === h, "px-0", true)}
                 >
                   {h}
                 </button>
@@ -422,7 +473,7 @@ export default function TimeInput({
                   aria-pressed={draft.minute === m}
                   aria-label={`${m} minutes`}
                   onClick={() => pickMinute(m)}
-                  className={chipClass(draft.minute === m, "px-0")}
+                  className={chipClass(draft.minute === m, "px-0", true)}
                 >
                   :{m}
                 </button>

@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import TimeInput, { TimeRangeRow, draftClockLabel, minuteChoices } from "@/components/TimeInput";
+import TimeInput, { TimeRangeRow, draftClockLabel, minuteChoices, visualViewportOverlayStyle } from "@/components/TimeInput";
 import { formatTime12h, subtreeHasInvalidTimeSelect } from "@/lib/utils";
 import { useState } from "react";
 
@@ -86,6 +86,36 @@ describe("TimeInput time sheet (Option A)", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(screen.getByTestId("stored")).toHaveTextContent("19:00");
     expect(field("Start, 7:00 PM")).toHaveFocus();
+  });
+
+  it("hour and minute without AM/PM never reach the form: Set stays off and a submit is blocked", async () => {
+    const user = userEvent.setup();
+    const onSubmit = jest.fn((e: React.FormEvent) => e.preventDefault());
+    render(
+      <form onSubmit={onSubmit}>
+        <Harness initial="" />
+        <button type="submit">Save event</button>
+      </form>
+    );
+    await user.click(field());
+    const dialog = sheet();
+    await user.click(within(dialog).getByRole("button", { name: "7 o'clock" }));
+    await user.click(within(dialog).getByRole("button", { name: "30 minutes" }));
+    // Neither AM nor PM is preselected for a new time.
+    expect(within(dialog).getByRole("button", { name: "AM" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(dialog).getByRole("button", { name: "PM" })).toHaveAttribute("aria-pressed", "false");
+    expect(within(dialog).getByTestId("time-sheet-preview")).toHaveTextContent("7:30");
+    const set = within(dialog).getByRole("button", { name: "Set time" });
+    expect(set).toBeDisabled();
+    await user.click(set);
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("stored")).toHaveTextContent("(empty)");
+    // Closing the sheet throws the draft away; the required blank field blocks the submit.
+    await user.click(screen.getByTestId("time-sheet-backdrop"));
+    expect(screen.getByTestId("stored")).toHaveTextContent("(empty)");
+    await user.click(screen.getByRole("button", { name: "Save event" }));
+    expect(onSubmit).not.toHaveBeenCalled();
+    expect(screen.getByText("Choose a time.")).toBeInTheDocument();
   });
 
   it("from a preset, picking a minute and Set changes only what was picked", async () => {
@@ -324,5 +354,32 @@ describe("TimeRangeRow", () => {
     expect(text.indexOf("Start time")).toBeLessThan(text.indexOf("to"));
     expect(text.indexOf("to", text.indexOf("Start time"))).toBeLessThan(text.indexOf("End time"));
     expect(screen.getAllByRole("group")).toHaveLength(2);
+  });
+});
+
+describe("visualViewportOverlayStyle", () => {
+  it("covers the visible screen and is a no-op transform at normal zoom", () => {
+    expect(visualViewportOverlayStyle({ offsetLeft: 0, offsetTop: 0, width: 390, height: 844, scale: 1 })).toEqual({
+      left: 0,
+      top: 0,
+      right: "auto",
+      bottom: "auto",
+      width: 390,
+      height: 844,
+      transform: undefined,
+      transformOrigin: "0 0",
+    });
+  });
+
+  it("when iOS zooms the page out, keeps the sheet at screen size over the visible part", () => {
+    const style = visualViewportOverlayStyle({ offsetLeft: 24, offsetTop: 10, width: 450, height: 1000, scale: 0.8 });
+    expect(style).toMatchObject({ left: 24, top: 10, width: 360, height: 800, transform: "scale(1.25)" });
+  });
+
+  it("treats a missing or zero scale as 1", () => {
+    expect(visualViewportOverlayStyle({ offsetLeft: 0, offsetTop: 0, width: 320, height: 600, scale: 0 })).toMatchObject({
+      width: 320,
+      transform: undefined,
+    });
   });
 });

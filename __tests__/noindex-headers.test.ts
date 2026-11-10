@@ -55,6 +55,8 @@ describe("user-created pages stay out of search", () => {
     expect(robotsHeaderFor(production, "/")).toBeUndefined();
     expect(robotsHeaderFor(production, "/about")).toBeUndefined();
     expect(robotsHeaderFor(production, "/event/abc")).toBe("noindex, nofollow");
+    expect(robotsHeaderFor(production, "/demo/create-layout")).toBe("noindex, nofollow");
+    expect(robotsHeaderFor(production, "/demo/manage-edit")).toBe("noindex, nofollow");
 
     if (prev === undefined) delete process.env.VERCEL_ENV;
     else process.env.VERCEL_ENV = prev;
