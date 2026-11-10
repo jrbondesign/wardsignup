@@ -521,6 +521,23 @@ describe("provider outcomes", () => {
     });
   });
 
+  it("checks every envelope recipient, not only the first", async () => {
+    const hard = harness();
+    hard.deps.recipientBlock = async (email) => (email === "bounced@example.com" ? "hard" : "allow");
+    expect(
+      await send(hard.deps, { idempotencyKey: "two-hard", to: "ok@example.com, bounced@example.com" }),
+    ).toMatchObject({ ok: false, terminal: true });
+    expect(hard.brevo).not.toHaveBeenCalled();
+    expect(hard.resend).not.toHaveBeenCalled();
+
+    const unknown = harness();
+    unknown.deps.recipientBlock = async (email) => (email === "second@example.com" ? "unknown" : "allow");
+    expect(
+      await send(unknown.deps, { idempotencyKey: "two-unknown", kind: "magic_link", to: "a@example.com, second@example.com" }),
+    ).toMatchObject({ ok: false, retryable: true });
+    expect(unknown.brevo).not.toHaveBeenCalled();
+  });
+
   it("does not send a magic link or a welcome when the suppression list cannot be read", async () => {
     for (const kind of ["magic_link", "welcome", "signup_confirmation", "org_invite_link"] as const) {
       const blocked = harness();

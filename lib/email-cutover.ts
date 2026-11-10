@@ -315,7 +315,20 @@ export async function runBrevoCutover(
       terminal: true,
     };
   }
-  const block = await deps.recipientBlock(recipients[0] ?? "", params.kind ?? "other");
+  // Every envelope recipient is checked, not only the first. A hard bounce or
+  // complaint wins, then an unsubscribe that blocks this kind, then a failed read.
+  const kind = params.kind ?? "other";
+  const results = new Set<"allow" | "hard" | "unsubscribe" | "unknown">();
+  for (const address of recipients.length ? recipients : [""]) {
+    results.add(await deps.recipientBlock(address, kind));
+  }
+  const block: "allow" | "hard" | "unsubscribe" | "unknown" = results.has("hard")
+    ? "hard"
+    : results.has("unsubscribe") && !TRANSACTIONAL_KINDS.has(kind)
+      ? "unsubscribe"
+      : results.has("unknown")
+        ? "unknown"
+        : "allow";
   if (block === "hard" || (block === "unsubscribe" && !TRANSACTIONAL_KINDS.has(params.kind ?? ""))) {
     return {
       ok: false,
