@@ -22,6 +22,13 @@ export const GEOGRAPHY_PUBLIC_CACHE_CONTROL =
   "public, s-maxage=3600, stale-while-revalidate=86400";
 
 /**
+ * Give up on a slow geography_snapshot_cache read. Past this, the public
+ * route serves the baked snapshot instead of waiting for the platform to
+ * kill the function.
+ */
+export const GEOGRAPHY_CACHE_READ_TIMEOUT_MS = 5_000;
+
+/**
  * Purge the cached public map response after the snapshot row changes so the
  * homepage and founder metrics map match right away. Never throws: a failed
  * purge must not fail the write; the 1h window covers it.
@@ -156,13 +163,29 @@ export async function readGeographyCache(): Promise<{
   source: string;
 } | null> {
   if (!hasServiceRole()) return null;
+  const controller = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const admin = createServiceRoleClient();
-    const { data, error } = await admin
+    const pending = admin
       .from("geography_snapshot_cache" as never)
       .select("cities, refreshed_at, source, total_cities")
       .eq("id", CACHE_ROW_ID)
+      .abortSignal(controller.signal)
       .maybeSingle();
+    // A late abort must not surface as an unhandled rejection after we already
+    // fell through to the snapshot.
+    void Promise.resolve(pending).then(
+      () => {},
+      () => {},
+    );
+    const timedOut = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        controller.abort();
+        reject(new Error("geography cache read timeout"));
+      }, GEOGRAPHY_CACHE_READ_TIMEOUT_MS);
+    });
+    const { data, error } = await Promise.race([pending, timedOut]);
 
     if (error) {
       // Table may not be migrated yet — fall through silently.
@@ -186,6 +209,8 @@ export async function readGeographyCache(): Promise<{
   } catch (err) {
     console.warn("geography cache read failed:", err);
     return null;
+  } finally {
+    if (timer) clearTimeout(timer);
   }
 }
 

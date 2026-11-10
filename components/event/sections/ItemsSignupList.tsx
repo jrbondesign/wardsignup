@@ -1,7 +1,8 @@
 "use client";
 
 import { orderBySection } from "@/components/event/event-page-shared";
-import { Fragment } from "react";
+import { Fragment, useRef } from "react";
+import { beginSubmit, finishSubmit } from "@/lib/one-submit";
 import EmailTypoHint from "@/components/EmailTypoHint";
 import SignupCaptcha from "@/components/event/SignupCaptcha";
 import { type EventPageView } from "@/components/event/hooks/deriveEventPageView";
@@ -31,6 +32,8 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
     trackEmailEntered,
     trackFormStarted,
   } = ctx;
+  const itemLock = useRef(false);
+  const customLock = useRef(false);
 
   return (
     eventType === "items" && (
@@ -121,7 +124,14 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
                       {itemError}
                     </div>
                   )}
-                  <form onSubmit={(e) => handleItemSignup(e, item.id)} onFocusCapture={() => trackFormStarted("item")} className="space-y-3">
+                  <form
+                    onSubmit={(e) => {
+                      if (!beginSubmit(itemLock, e)) return;
+                      void Promise.resolve(handleItemSignup(e, item.id)).finally(() => finishSubmit(itemLock));
+                    }}
+                    onFocusCapture={() => trackFormStarted("item")}
+                    className="space-y-3"
+                  >
                     <div>
                       <label className="block text-[12px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1">
                         How many?
@@ -238,7 +248,14 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
             ))}
           </div>
         )}
-        <form onSubmit={handleCustomItemSignup} onFocusCapture={() => trackFormStarted("custom_item")} className="px-5 py-4 space-y-3 bg-[#F4FAFB]">
+        <form
+          onSubmit={(e) => {
+            if (!beginSubmit(customLock, e)) return;
+            void Promise.resolve(handleCustomItemSignup(e)).finally(() => finishSubmit(customLock));
+          }}
+          onFocusCapture={() => trackFormStarted("custom_item")}
+          className="px-5 py-4 space-y-3 bg-[#F4FAFB]"
+        >
           {customError && (
             <div className="bg-red-50 border border-red-200 text-red-700 px-3 py-2 rounded-xl text-sm">{customError}</div>
           )}

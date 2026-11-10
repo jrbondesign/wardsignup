@@ -61,10 +61,16 @@ const nextConfig = {
     dangerouslyAllowLocalIP: process.env.NODE_ENV === "development",
   },
   async headers() {
+    // Preview deployments are review-only. Production keeps the existing
+    // per-route robots tags and does not get this blanket marker.
+    const globalHeaders = [...securityHeaders];
+    if (process.env.VERCEL_ENV === "preview") {
+      globalHeaders.push({ key: "X-Robots-Tag", value: "noindex, nofollow" });
+    }
     return [
       {
         source: "/:path*",
-        headers: securityHeaders,
+        headers: globalHeaders,
       },
       {
         // Public event pages show members' names. Keep them out of search
@@ -105,6 +111,11 @@ const nextConfig = {
       {
         source: "/support",
         destination: "/support-the-project",
+        permanent: true,
+      },
+      {
+        source: "/tip",
+        destination: "https://venmo.com/u/jrbond",
         permanent: true,
       },
       // Permanent 301 redirects: ministrysignup.com + orgsignup.com → wardsignup.com

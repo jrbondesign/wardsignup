@@ -17,7 +17,13 @@ jest.mock("@/lib/supabase-admin", () => ({
     from: () => ({
       upsert: mockUpsert,
       select: () => ({
-        eq: () => ({ maybeSingle: mockMaybeSingle }),
+        eq: () => {
+          const query = {
+            abortSignal: () => query,
+            maybeSingle: () => mockMaybeSingle(),
+          };
+          return query;
+        },
         or: async () => ({ data: [], error: null }),
       }),
     }),
@@ -25,6 +31,7 @@ jest.mock("@/lib/supabase-admin", () => ({
 }));
 
 import {
+  GEOGRAPHY_CACHE_READ_TIMEOUT_MS,
   GEOGRAPHY_PUBLIC_CACHE_CONTROL,
   GEOGRAPHY_PUBLIC_PATH,
   fetchLiveGeographyFromPostHog,
@@ -33,7 +40,7 @@ import {
   writeGeographyCache,
 } from "@/lib/geography-cache";
 import { formatMapUpdatedDate } from "@/lib/geography-format";
-import { GEOGRAPHY_SNAPSHOT } from "@/lib/geography-snapshot";
+import { GEOGRAPHY_SNAPSHOT, toGeographyResponse } from "@/lib/geography-snapshot";
 
 const city = {
   city: "Mesa",
@@ -147,6 +154,33 @@ describe("resolveGeographyPayload", () => {
       expect(fetchMock).not.toHaveBeenCalled();
     } finally {
       global.fetch = original;
+    }
+  });
+
+  it("resolves a hanging read to the baked snapshot within the timeout", async () => {
+    jest.useFakeTimers();
+    mockMaybeSingle.mockImplementation(() => new Promise(() => {}));
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      let settled = false;
+      const pending = resolveGeographyPayload().then((payload) => {
+        settled = true;
+        return payload;
+      });
+      await jest.advanceTimersByTimeAsync(GEOGRAPHY_CACHE_READ_TIMEOUT_MS - 1);
+      expect(settled).toBe(false);
+      await jest.advanceTimersByTimeAsync(1);
+      const payload = await pending;
+      expect(settled).toBe(true);
+      expect(payload).toEqual(toGeographyResponse(GEOGRAPHY_SNAPSHOT, "snapshot"));
+      expect(payload.cities.length).toBeGreaterThan(0);
+      expect(warn).toHaveBeenCalledWith(
+        "geography cache read failed:",
+        expect.objectContaining({ message: "geography cache read timeout" }),
+      );
+    } finally {
+      warn.mockRestore();
+      jest.useRealTimers();
     }
   });
 

@@ -11,6 +11,12 @@ const MAX_BYTES = 5 * 1024 * 1024; // 5 MB
 const BUCKET = EVENT_MEDIA_BUCKET;
 
 export async function POST(request: NextRequest) {
+  // Set after a cover lands in storage; cleared once campaigns.cover_image_url is
+  // saved. On persist failure (returned error or throw) we roll this URL back via
+  // removeCoverIfUnreferenced — never the previous cover still on the row.
+  let uploadedCoverUrlToRollback: string | null = null;
+  let adminForRollback: ReturnType<typeof createServiceRoleClient> | null = null;
+
   try {
     // 1. Verify JWT
     const auth = await getAuthFromRequest(request);
@@ -62,6 +68,7 @@ export async function POST(request: NextRequest) {
     }
 
     const admin = createServiceRoleClient();
+    adminForRollback = admin;
     let previousCoverUrl: string | null = null;
 
     // 4. Ownership check for cover uploads
@@ -113,6 +120,9 @@ export async function POST(request: NextRequest) {
       .from(BUCKET)
       .getPublicUrl(storagePath);
     const urlWithVersion = `${publicUrl}?v=${Date.now()}`;
+    if (uploadType === "cover") {
+      uploadedCoverUrlToRollback = urlWithVersion;
+    }
 
     // 8. Persist URL to DB
     if (uploadType === "logo") {
@@ -135,18 +145,47 @@ export async function POST(request: NextRequest) {
         );
       }
     } else {
-      // Update campaigns.cover_image_url
-      const { error: patchErr } = await admin
-        .from("campaigns")
-        .update({ cover_image_url: urlWithVersion, cover_position: null } as never)
-        .eq("id", eventId!);
-      if (patchErr) {
-        console.error("campaigns cover_image_url update error:", patchErr);
+      // Update campaigns.cover_image_url. Require exactly one affected row
+      // (.select().single()): a deleted/missing event yields zero rows with no
+      // PostgREST error on a bare update, which would otherwise look like success
+      // and orphan the upload. On any persist failure, roll back only the newly
+      // uploaded object when unreferenced — never a previous cover still on the row.
+      let patchErr: { message?: string } | null = null;
+      let patchedId: string | null = null;
+      try {
+        const result = await admin
+          .from("campaigns")
+          .update({ cover_image_url: urlWithVersion, cover_position: null } as never)
+          .eq("id", eventId!)
+          .select("id")
+          .single();
+        patchErr = result.error;
+        patchedId = (result.data as { id?: string } | null)?.id ?? null;
+      } catch (persistErr) {
+        console.error("campaigns cover_image_url update threw:", persistErr);
+        await removeCoverIfUnreferenced(admin, uploadedCoverUrlToRollback);
+        uploadedCoverUrlToRollback = null;
         return NextResponse.json(
           { error: "Failed to save cover image URL" },
           { status: 500 }
         );
       }
+      if (patchErr || !patchedId) {
+        console.error(
+          "campaigns cover_image_url update error:",
+          patchErr ?? "no campaign row updated"
+        );
+        // Marker still set until cleanup runs; then clear so outer catch does not double-roll.
+        await removeCoverIfUnreferenced(admin, uploadedCoverUrlToRollback);
+        uploadedCoverUrlToRollback = null;
+        return NextResponse.json(
+          { error: "Failed to save cover image URL" },
+          { status: 500 }
+        );
+      }
+      // Persist confirmed (one campaign row returned) — do not roll back the new
+      // cover if later old-object cleanup throws.
+      uploadedCoverUrlToRollback = null;
       // Clean up the old object if it lived at a different path (other
       // format, other uploader, or a file shared from a duplicated event).
       if (eventMediaPath(previousCoverUrl) !== storagePath) {
@@ -157,6 +196,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ url: urlWithVersion });
   } catch (e) {
     console.error("upload route:", e);
+    if (uploadedCoverUrlToRollback) {
+      try {
+        const admin = adminForRollback ?? createServiceRoleClient();
+        await removeCoverIfUnreferenced(admin, uploadedCoverUrlToRollback);
+      } catch (cleanupErr) {
+        console.error("upload route cover rollback:", cleanupErr);
+      }
+    }
     return NextResponse.json(
       { error: "Something went wrong. Please try again." },
       { status: 500 }

@@ -52,7 +52,7 @@ export function CoreMetricsStrip({ core }: { core: CoreWeekly }) {
   const hist = core.weeks.slice(-6);
   return (
     <div
-      className="bg-white rounded-2xl border border-[rgba(14,150,176,0.22)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6"
+      className="bg-white rounded-2xl border border-[rgba(14,150,176,0.22)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6 min-w-0"
       data-testid="core-metrics-strip"
     >
       <div className="text-[12px] font-semibold text-[#08647E] uppercase tracking-[0.5px] mb-1">This week vs last week</div>
@@ -61,7 +61,7 @@ export function CoreMetricsStrip({ core }: { core: CoreWeekly }) {
         Team and test accounts are excluded. ▲ up · ▼ down · ▬ within 3%.
         {!core.posthogAvailable && " PostHog is unavailable right now, so visitor, signup, sheet and organizer counts show n/a."}
       </p>
-      <div className="overflow-x-auto">
+      <div data-testid="metrics-hscroll" data-metrics-scroll="core" className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
         <table className="w-full text-[13px]">
           <thead>
             <tr className="text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] border-b border-[rgba(14,150,176,0.10)]">
@@ -203,7 +203,7 @@ export function WeeklyTrendChart({
           : { left: `${(x(active) / W) * 100}%`, transform: "translateX(-50%)" };
 
   return (
-    <div className="bg-[#F9FCFD] rounded-xl border border-[rgba(14,150,176,0.12)] p-4" data-testid={testId}>
+    <div className="bg-[#F9FCFD] rounded-xl border border-[rgba(14,150,176,0.12)] p-4 min-w-0" data-testid={testId}>
       <div className="text-[12px] font-semibold text-[#0D2B35] mb-1">{title}</div>
       <div className="flex flex-wrap gap-x-3 text-[11px] text-[#5A8399] mb-1">
         {series.map((s) => (
@@ -222,7 +222,7 @@ export function WeeklyTrendChart({
         }}
         onMouseLeave={() => setActive(null)}
       >
-        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="group" aria-label={title}>
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-full h-auto" role="group" aria-label={title}>
           <line x1={pad.l} x2={W - pad.r} y1={pad.t + ih} y2={pad.t + ih} stroke="#d5e6ec" />
           <text x={pad.l - 4} y={pad.t + 4} fontSize="9" textAnchor="end" fill="#7A9BAE">{fmt(maxL)}</text>
           <text x={pad.l - 4} y={pad.t + ih} fontSize="9" textAnchor="end" fill="#7A9BAE">0</text>
@@ -352,7 +352,7 @@ export function CoreTrendCharts({ core, now }: { core: CoreWeekly; now?: Date | 
   const details = (k: CoreMetric["key"]) => core.metrics.find((m) => m.key === k)?.details;
   return (
     <div
-      className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6"
+      className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6 min-w-0"
       data-testid="core-trend-charts"
     >
       <div className="text-[12px] font-semibold text-[#5A8399] uppercase tracking-[0.5px] mb-1">Weekly trends</div>
@@ -360,7 +360,7 @@ export function CoreTrendCharts({ core, now }: { core: CoreWeekly; now?: Date | 
         Last {core.weeks.length} weeks, Monday to Sunday in Phoenix time. The latest week is still in progress.
         Hover, tap or tab to a week for exact numbers.
       </p>
-      <div className="grid sm:grid-cols-2 gap-4">
+      <div className="grid min-w-0 grid-cols-1 sm:grid-cols-2 gap-4">
         <WeeklyTrendChart
           testId="chart-signups"
           now={now}

@@ -140,7 +140,11 @@ describe("weekly trend chart tooltips", () => {
 });
 
 describe("metrics page keeps existing sections", () => {
-  const src = readFileSync(path.join(process.cwd(), "app/admin/metrics/page.tsx"), "utf8");
+  const src = readFileSync(path.join(process.cwd(), "components/metrics/FounderMetricsPage.tsx"), "utf8");
+  const page = readFileSync(path.join(process.cwd(), "app/admin/metrics/page.tsx"), "utf8");
+  it("admin route renders the shared founder metrics page", () => {
+    expect(page).toContain("FounderMetricsPage");
+  });
   it("still has the email capture card, map, funnel, activation, accounts, creators and weekly history", () => {
     for (const s of [
       'data-testid="email-capture-card"',

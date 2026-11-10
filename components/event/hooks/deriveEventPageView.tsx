@@ -57,6 +57,9 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     slotCaptcha,
     submitting,
     trackFormStarted,
+    signupLock,
+    itemSignupLock,
+    customSignupLock,
   } = ctx;
 
   const toggleSessionSelection = (sessionId: string) => {
@@ -77,7 +80,13 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
 
   const handleItemSignup = async (e: React.FormEvent, itemId: string) => {
     e.preventDefault();
-    if (!itemFormData.name.trim()) { setItemError("Please enter your name"); return; }
+    if (itemSignupLock.current) return;
+    itemSignupLock.current = true;
+    if (!itemFormData.name.trim()) {
+      itemSignupLock.current = false;
+      setItemError("Please enter your name");
+      return;
+    }
     setItemSubmitting(true);
     setItemError("");
     let captchaUsed = false;
@@ -116,13 +125,24 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
       // Turnstile tokens are single use: get a fresh one for the next try.
       if (captchaUsed) itemCaptcha.reset();
       setItemSubmitting(false);
+      itemSignupLock.current = false;
     }
   };
 
   const handleCustomItemSignup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customItem.label.trim()) { setCustomError("Tell us what you'll bring"); return; }
-    if (!customItem.name.trim()) { setCustomError("Please enter your name"); return; }
+    if (customSignupLock.current) return;
+    customSignupLock.current = true;
+    if (!customItem.label.trim()) {
+      customSignupLock.current = false;
+      setCustomError("Tell us what you'll bring");
+      return;
+    }
+    if (!customItem.name.trim()) {
+      customSignupLock.current = false;
+      setCustomError("Please enter your name");
+      return;
+    }
     setCustomSubmitting(true);
     setCustomError("");
     let captchaUsed = false;
@@ -156,17 +176,28 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     } finally {
       if (captchaUsed) customCaptcha.reset();
       setCustomSubmitting(false);
+      customSignupLock.current = false;
     }
   };
 
   const handleSignup = async (e?: React.FormEvent, opts: { skipNudge?: boolean } = {}) => {
     e?.preventDefault();
+    if (signupLock.current) return;
+    signupLock.current = true;
     // For single-session events (rsvp/spots with one session), auto-use that session
     const sessionsToSignUp = isSingleSession && sessions.length === 1
       ? [sessions[0].id]
       : selectedSessions;
-    if (sessionsToSignUp.length === 0) { setError("Please select at least one slot"); return; }
-    if (!formData.name.trim()) { setError("Please enter your name"); return; }
+    if (sessionsToSignUp.length === 0) {
+      signupLock.current = false;
+      setError("Please select at least one slot");
+      return;
+    }
+    if (!formData.name.trim()) {
+      signupLock.current = false;
+      setError("Please enter your name");
+      return;
+    }
 
     // Test arm only: one nudge per signup when a dated slot has no email.
     // Never blocks: Skip submits right away.
@@ -185,6 +216,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
       nudgeShownRef.current += 1;
       setNudgeOpen(true);
       captureNudge(EMAIL_NUDGE_EVENTS.shown);
+      signupLock.current = false;
       return;
     }
     setNudgeOpen(false);
@@ -266,6 +298,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
       // Turnstile tokens are single use: get a fresh one for the next try.
       if (captchaUsed) slotCaptcha.reset();
       setSubmitting(false);
+      signupLock.current = false;
     }
   };
 

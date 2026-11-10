@@ -26,8 +26,10 @@ import { CLAUDE_MCP_ENABLED } from "@/lib/claude-mcp";
 import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } from "@/lib/limits";
 import { EVENT_TEMPLATES, TEMPLATES_INITIAL_VISIBLE } from "@/lib/event-template-data";
 import { downloadEventQr } from "@/lib/download-qr";
+import { QR_ACTION_HELPER, copyLinkHelper } from "@/lib/public-event-copy";
 import { earliestYmd } from "@/lib/date-shift";
 import { isTipJarEnabled } from "@/lib/tip-jar";
+import PostSignInTipBanner from "@/components/PostSignInTipBanner";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import EventActionsSheet, { eventSheetSubtitle } from "@/components/event-actions/EventActionsSheet";
 import DeleteEventConfirm from "@/components/event-actions/DeleteEventConfirm";
@@ -238,6 +240,7 @@ export default function DashboardPage() {
       <Navigation />
       <main className="min-h-screen bg-[#F4FAFB] px-6 py-10 md:px-10">
         <div className="max-w-6xl mx-auto">
+          <PostSignInTipBanner />
 
           {/* Header */}
           <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8">
@@ -530,7 +533,7 @@ export default function DashboardPage() {
                   {
                     key: "copy",
                     label: "Copy link",
-                    helper: isWardBrand ? "Send it to your ward by email or text" : "Send it to your group by email or text",
+                    helper: copyLinkHelper(isWardBrand),
                     icon: <LinkIcon />,
                     onSelect: () => copyEventLink(actionsEvent.id),
                   },
@@ -544,7 +547,7 @@ export default function DashboardPage() {
                   {
                     key: "qr",
                     label: "Download QR code",
-                    helper: "For a slide, bulletin or handout",
+                    helper: QR_ACTION_HELPER,
                     icon: <QrIcon />,
                     onSelect: () => {
                       downloadEventQr(actionsEvent.id, actionsEvent.name).catch((err) => console.error("QR download failed:", err));

@@ -17,8 +17,8 @@ export interface PublicBrand {
   siteHost: string;
   supportEmail: string;
   /**
-   * External tip jar / sponsors URL (e.g. GitHub Sponsors).
-   * Omit or leave unset to fall back to the default Sponsors URL in `lib/tip-jar.ts`.
+   * External tip jar URL (e.g. Venmo).
+   * Omit or leave unset to fall back to the default tip jar URL in `lib/tip-jar.ts`.
    * Hide tip-jar surfaces with `NEXT_PUBLIC_TIP_JAR_ENABLED=0`.
    */
   tipJarUrl?: string;

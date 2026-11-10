@@ -76,6 +76,8 @@ describe("EventPageClient server render", () => {
   it("renders Event not found on the server for a missing event", () => {
     const html = renderToString(ui({ initialPage: null, initialCover: null }));
     expect(html).toContain("Event not found");
+    expect(html).toContain("This link may have been cut off or broken when it was copied");
+    expect(html).toContain("Ask the organizer for the full link, or scan the QR code.");
   });
 
   it("falls back to the spinner when the server had no data", () => {

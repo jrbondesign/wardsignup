@@ -6,6 +6,7 @@ import { publicCoverForCampaign } from "@/lib/event-media";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import type { PublicCover } from "@/lib/use-public-cover";
 import { EVENT_PAGE_CACHE_SECONDS, eventPageTag } from "@/lib/event-page-cache";
+import { cleanEventId, isPublicEventUuid } from "@/lib/public-event-id";
 
 /**
  * Server side loads for /event/[id], memoized per request with React cache()
@@ -27,7 +28,11 @@ import { EVENT_PAGE_CACHE_SECONDS, eventPageTag } from "@/lib/event-page-cache";
 
 export const SERVER_LOAD_TIMEOUT_MS = 1500;
 
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+/** UUID with whitespace removed, or null when it still is not a UUID. */
+function acceptedEventId(eventId: string): string | null {
+  const cleaned = cleanEventId(eventId);
+  return isPublicEventUuid(cleaned) ? cleaned : null;
+}
 
 export async function withTimeout<T>(work: Promise<T>, ms: number): Promise<T | undefined> {
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -66,9 +71,10 @@ function loadCachedEventSnapshot(eventId: string): Promise<ServerEventSnapshot |
 
 export const getServerEventSnapshot = cache(
   async (eventId: string): Promise<ServerEventSnapshot | null | undefined> => {
-    if (!UUID_RE.test(eventId)) return null;
+    const id = acceptedEventId(eventId);
+    if (!id) return null;
     try {
-      return await withTimeout(loadCachedEventSnapshot(eventId), SERVER_LOAD_TIMEOUT_MS);
+      return await withTimeout(loadCachedEventSnapshot(id), SERVER_LOAD_TIMEOUT_MS);
     } catch (err) {
       console.error("Server event page load failed:", err);
       return undefined;
@@ -84,9 +90,10 @@ export async function getServerEventPage(eventId: string): Promise<PublicEventPa
 /** Cover for the event page, already gated by the cover feature allowlist. */
 export const getServerEventCover = cache(
   async (eventId: string): Promise<PublicCover | null | undefined> => {
-    if (!UUID_RE.test(eventId)) return null;
+    const id = acceptedEventId(eventId);
+    if (!id) return null;
     try {
-      return await withTimeout(publicCoverForCampaign(createServiceRoleClient(), eventId), SERVER_LOAD_TIMEOUT_MS);
+      return await withTimeout(publicCoverForCampaign(createServiceRoleClient(), id), SERVER_LOAD_TIMEOUT_MS);
     } catch (err) {
       console.error("Server event cover load failed:", err);
       return undefined;

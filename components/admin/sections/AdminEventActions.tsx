@@ -20,6 +20,7 @@ import {
   PrinterIcon,
   QrIcon,
 } from "@/components/event-actions/icons";
+import { COPY_LINK_LINE_HINT, QR_ACTION_HELPER, QR_DOWNLOAD_HINT, copyLinkHelper } from "@/lib/public-event-copy";
 
 /** Title row actions: phone action row plus More sheet, and the desktop buttons. */
 export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
@@ -115,7 +116,7 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
         {
           key: "copy",
           label: "Copy link",
-          helper: isWardBrand ? "Send it to your ward by email or text" : "Send it to your group by email or text",
+          helper: copyLinkHelper(isWardBrand),
           icon: <LinkIcon />,
           onSelect: () => copyLink(),
         },
@@ -126,7 +127,7 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
           icon: <EyeIcon />,
           href: `/event/${eventId}`,
         },
-        { key: "qr", label: "Download QR code", helper: "For a slide, bulletin or handout", icon: <QrIcon />, onSelect: () => void downloadQr() },
+        { key: "qr", label: "Download QR code", helper: QR_ACTION_HELPER, icon: <QrIcon />, onSelect: () => void downloadQr() },
         { key: "flyer", label: "Print flyer", helper: "A printable page with the QR code", icon: <PrinterIcon />, href: `/event/${eventId}/flyer` },
       ],
     },
@@ -210,6 +211,7 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
         <button
           type="button"
           onClick={() => void downloadQr()}
+          aria-describedby="admin-qr-download-hint"
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2E5566] hover:text-[#0E96B0] transition-colors"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 flex-shrink-0 opacity-90">
@@ -226,6 +228,7 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
         <button
           type="button"
           onClick={() => copyLink()}
+          title={COPY_LINK_LINE_HINT}
           className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#2E5566] hover:text-[#0E96B0] transition-colors"
         >
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5 flex-shrink-0 opacity-90">
@@ -245,6 +248,9 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
           </svg>
           Delete
         </button>
+        <p id="admin-qr-download-hint" className="basis-full text-right text-[11px] leading-snug text-[#5A8399] m-0">
+          {QR_DOWNLOAD_HINT}
+        </p>
         </div>
       </div>
       <h1 className="font-serif text-[clamp(24px,3.5vw,36px)] text-[#0D2B35] tracking-[-0.4px] leading-tight">
@@ -255,6 +261,7 @@ export default function AdminEventActions({ ctx }: { ctx: AdminEventView }) {
         <button
           type="button"
           onClick={() => copyLink()}
+          title={COPY_LINK_LINE_HINT}
           className="inline-flex h-11 min-w-0 items-center gap-1.5 whitespace-nowrap rounded-xl bg-[#08647E] px-3 min-[375px]:px-4 text-sm font-semibold text-white transition-colors hover:bg-[#054F64] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#0E96B0]"
         >
           <LinkIcon className="hidden size-4 min-[375px]:block" />

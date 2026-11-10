@@ -43,6 +43,23 @@ describe("getServerEventPage", () => {
     await expect(getServerEventPage("nope")).resolves.toBeNull();
     expect(mockLoad).not.toHaveBeenCalled();
   });
+  it("strips a line break or %0A before the uuid check and loads the cleaned id", async () => {
+    mockUnstableCache.mockReset();
+    mockLoad.mockResolvedValueOnce({ event: { id: ID } });
+    await expect(getServerEventPage(`${ID.slice(0, 20)}\n${ID.slice(20)}`)).resolves.toEqual({ event: { id: ID } });
+    expect(mockLoad).toHaveBeenCalledWith(expect.anything(), ID);
+    const [keyParts] = mockUnstableCache.mock.calls.at(-1) as [string[], unknown];
+    expect(keyParts).toContain(ID);
+    expect(keyParts.every((part) => !/\s/.test(part))).toBe(true);
+    mockLoad.mockResolvedValueOnce({ event: { id: ID } });
+    const encoded = `${ID.slice(0, 23)}%0A${ID.slice(23)}`;
+    await expect(getServerEventPage(encoded)).resolves.toEqual({ event: { id: ID } });
+    expect(mockLoad).toHaveBeenLastCalledWith(expect.anything(), ID);
+  });
+  it("keeps a truncated id as not found, even with whitespace", async () => {
+    await expect(getServerEventPage("b7d1ead2-85c7-4d82-8a65-d\n2c75b553e")).resolves.toBeNull();
+    expect(mockLoad).not.toHaveBeenCalled();
+  });
   it("passes through loaded data and null (not found)", async () => {
     mockLoad.mockResolvedValueOnce({ event: { id: ID } });
     await expect(getServerEventPage(ID)).resolves.toEqual({ event: { id: ID } });
@@ -84,6 +101,11 @@ describe("getServerEventSnapshot", () => {
 });
 
 describe("getServerEventCover", () => {
+  it("strips whitespace before the cover lookup", async () => {
+    mockCover.mockResolvedValueOnce({ url: "u", position: "50% 50%" });
+    await expect(getServerEventCover(`${ID}%0A`)).resolves.toEqual({ url: "u", position: "50% 50%" });
+    expect(mockCover).toHaveBeenCalledWith(expect.anything(), ID);
+  });
   it("returns the gated cover, or undefined on failure", async () => {
     mockCover.mockResolvedValueOnce({ url: "u", position: "50% 50%" });
     await expect(getServerEventCover(ID)).resolves.toEqual({ url: "u", position: "50% 50%" });

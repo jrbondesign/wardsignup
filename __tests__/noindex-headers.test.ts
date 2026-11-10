@@ -41,4 +41,22 @@ describe("user-created pages stay out of search", () => {
   it("ward layout sets robots noindex meta", () => {
     expect(wardMetadata.robots).toEqual({ index: false, follow: false });
   });
+
+  it("preview deployments noindex every path, and production does not", async () => {
+    const prev = process.env.VERCEL_ENV;
+    process.env.VERCEL_ENV = "preview";
+    const preview = await nextConfig.headers();
+    expect(robotsHeaderFor(preview, "/")).toBe("noindex, nofollow");
+    expect(robotsHeaderFor(preview, "/admin/metrics")).toBe("noindex, nofollow");
+    expect(robotsHeaderFor(preview, "/demo/founder-metrics")).toBe("noindex, nofollow");
+
+    process.env.VERCEL_ENV = "production";
+    const production = await nextConfig.headers();
+    expect(robotsHeaderFor(production, "/")).toBeUndefined();
+    expect(robotsHeaderFor(production, "/about")).toBeUndefined();
+    expect(robotsHeaderFor(production, "/event/abc")).toBe("noindex, nofollow");
+
+    if (prev === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = prev;
+  });
 });
