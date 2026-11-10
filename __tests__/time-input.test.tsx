@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import TimeInput, { TimeRangeRow, minuteChoices } from "@/components/TimeInput";
+import TimeInput, { TimeRangeRow, draftClockLabel, minuteChoices } from "@/components/TimeInput";
 import { formatTime12h, subtreeHasInvalidTimeSelect } from "@/lib/utils";
 import { useState } from "react";
 
@@ -39,6 +39,33 @@ describe("TimeInput time sheet (Option A)", () => {
     expect(within(dialog).getByRole("button", { name: "AM" })).toHaveAttribute("aria-pressed", "false");
     expect(within(dialog).getByRole("button", { name: "00 minutes" })).toHaveAttribute("aria-pressed", "true");
     expect(field()).toHaveAttribute("aria-expanded", "true");
+  });
+
+  it("header shows --:-- when nothing is picked, then live numbers next to AM/PM", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="" />);
+    await user.click(field());
+    const dialog = sheet();
+    const preview = within(dialog).getByTestId("time-sheet-preview");
+    expect(preview).toHaveTextContent("--:--");
+    expect(preview).toHaveAccessibleName("No time selected yet");
+    // The clock and the AM/PM toggle share one header row.
+    const meridiem = within(dialog).getByRole("group", { name: "AM or PM" });
+    expect(preview.parentElement).toContainElement(meridiem);
+    await user.click(within(dialog).getByRole("button", { name: "7 o'clock" }));
+    expect(preview).toHaveTextContent("7:00");
+    expect(preview).toHaveAccessibleName("Selected time 7:00");
+    await user.click(within(dialog).getByRole("button", { name: "30 minutes" }));
+    expect(preview).toHaveTextContent("7:30");
+  });
+
+  it("header shows the saved time in large numbers when the sheet opens", async () => {
+    const user = userEvent.setup();
+    render(<Harness initial="19:00" />);
+    await user.click(field());
+    const preview = within(sheet()).getByTestId("time-sheet-preview");
+    expect(preview).toHaveTextContent("7:00");
+    expect(within(sheet()).getByRole("button", { name: "PM" })).toHaveAttribute("aria-pressed", "true");
   });
 
   it("from blank: 7, PM, Set stores 19:00 (minute defaults to :00)", async () => {
@@ -252,6 +279,15 @@ describe("TimeInput time sheet (Option A)", () => {
     );
     expect(screen.getByRole("group", { name: "Start time" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Start time for Fri, Nov 20, not set" })).toBeInTheDocument();
+  });
+});
+
+describe("draftClockLabel", () => {
+  it("uses --:-- until hour and minute are picked", () => {
+    expect(draftClockLabel({ hour12: "", minute: "", meridiem: "" })).toBe("--:--");
+    expect(draftClockLabel({ hour12: "7", minute: "", meridiem: "PM" })).toBe("7:--");
+    expect(draftClockLabel({ hour12: "", minute: "15", meridiem: "" })).toBe("--:15");
+    expect(draftClockLabel({ hour12: "7", minute: "00", meridiem: "PM" })).toBe("7:00");
   });
 });
 

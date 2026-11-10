@@ -116,6 +116,11 @@ export const TIME_LABEL_NOTE_CLASS = "font-normal normal-case tracking-normal te
 
 const PARTIAL_MESSAGE = "Finish choosing hour, minute, and AM or PM.";
 
+/** Large header clock: "7:00", or "--:--" when that part has not been picked yet. */
+export function draftClockLabel(parts: TimeParts): string {
+  return `${parts.hour12 || "--"}:${parts.minute || "--"}`;
+}
+
 /**
  * The closed field: one button sized like the other inputs (44px on phones,
  * 40px from sm up). Width is fixed from sm up so a Start and End pair fits on
@@ -161,9 +166,10 @@ function focusables(root: HTMLElement | null): HTMLElement[] {
 }
 
 /**
- * Time field that opens a bottom sheet (Option A): AM and PM toggle, hour
- * buttons 1 to 12, minutes at :00 :15 :30 :45 (every 5 on request), and one
- * Set button. Nothing is typed and no native picker opens.
+ * Time field that opens a bottom sheet (Option A): a large header clock
+ * (for example 7:00, or --:-- when nothing is picked) next to the AM/PM
+ * toggle, hour buttons 1 to 12, minutes at :00 :15 :30 :45 (every 5 on
+ * request), and one Set button. Nothing is typed and no native picker opens.
  *
  * Stores the same 24-hour "HH:MM" string the rest of the app expects. Picks
  * inside the sheet are a draft; only Set changes the value, so the saved value
@@ -318,9 +324,8 @@ export default function TimeInput({
     [showPartial ? hintId : "", error ? errorId : "", showMissing ? missingId : ""].filter(Boolean).join(" ") ||
     undefined;
 
-  const previewText = draft.hour12
-    ? `${draft.hour12}:${draft.minute || "00"} ${draft.meridiem || ""}`.trim()
-    : "Pick a time";
+  const previewClock = draftClockLabel(draft);
+  const previewHasTime = !!(draft.hour12 || draft.minute);
   const minutes = minuteChoices(draft.minute, showAllMinutes);
 
   // open only turns true from a click, so document exists when the portal renders.
@@ -356,27 +361,30 @@ export default function TimeInput({
               </button>
             </div>
 
-            <p
-              id={previewId}
-              aria-live="polite"
-              className={`mt-1 text-center text-[32px] leading-10 font-semibold tabular-nums ${draft.hour12 ? "text-[#0D2B35]" : "text-[#5A8399]"}`}
-            >
-              {previewText}
-            </p>
-
-            <div role="group" aria-label="AM or PM" data-sheet-group="" className="mt-3 grid grid-cols-2 gap-2">
-              {(["AM", "PM"] as const).map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={draft.meridiem === m}
-                  onClick={() => pickMeridiem(m)}
-                  className={chipClass(draft.meridiem === m, "h-11")}
-                >
-                  {draft.meridiem === m && <Check />}
-                  {m}
-                </button>
-              ))}
+            <div className="mt-3 flex items-center gap-3">
+              <p
+                id={previewId}
+                data-testid="time-sheet-preview"
+                aria-live="polite"
+                aria-label={previewHasTime ? `Selected time ${previewClock}` : "No time selected yet"}
+                className={`flex-1 min-w-0 text-[40px] leading-none font-semibold tabular-nums tracking-tight ${previewHasTime ? "text-[#0D2B35]" : "text-[#5A8399]"}`}
+              >
+                {previewClock}
+              </p>
+              <div role="group" aria-label="AM or PM" data-sheet-group="" className="grid grid-cols-2 gap-2 shrink-0">
+                {(["AM", "PM"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={draft.meridiem === m}
+                    onClick={() => pickMeridiem(m)}
+                    className={chipClass(draft.meridiem === m, "h-11 min-w-[3.25rem] px-3")}
+                  >
+                    {draft.meridiem === m && <Check />}
+                    {m}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <p className="mt-4 mb-1.5 text-[11px] font-semibold uppercase tracking-[0.4px] text-[#5A8399]" aria-hidden="true">
