@@ -29,8 +29,9 @@ export function creatorNotifyEmailFrom(brand: PublicBrand): string {
 }
 
 /**
- * Creator feedback ask + founder feedback notices. Same address as the
- * welcome email (noreply@ by default), with no Reply-To.
+ * Creator feedback ask. Same address as the welcome email
+ * (Jonathan <jonathan@wardsignup.com> by default). No Reply-To is set;
+ * From is already jonathan@, so replies reach him.
  */
 export function feedbackEmailFrom(brand: PublicBrand): string {
   return env("FEEDBACK_EMAIL_FROM") ?? env("WELCOME_EMAIL_FROM") ?? brand.email.welcomeFrom;

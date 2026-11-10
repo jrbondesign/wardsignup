@@ -1,5 +1,4 @@
 import { createServiceRoleClient } from "@/lib/supabase-admin";
-import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand/campaign-site";
 import { BuildNextForm } from "./BuildNextForm";
 import MarketingNav from "@/components/MarketingNav";
 import MarketingFooter from "@/components/MarketingFooter";
@@ -37,13 +36,7 @@ export default async function BuildNextPage({
   params: Promise<{ token: string }>;
 }) {
   const { token } = await params;
-  const { state, brandId } = await lookupToken(token);
-  const { brand } = publicSiteOriginAndBrandForCampaign({ brand_id: brandId ?? undefined });
-  const supportLink = (
-    <a href={`mailto:${brand.supportEmail}`} className="text-[#0E96B0] font-medium">
-      {brand.supportEmail}
-    </a>
-  );
+  const { state } = await lookupToken(token);
 
   return (
     <div className="min-h-screen bg-[#F4FAFB]">
@@ -57,7 +50,7 @@ export default async function BuildNextPage({
                 This link isn't valid
               </h1>
               <p className="text-[17px] leading-[1.7] text-[#2E5566]">
-                The link may have been mistyped. You can always email {supportLink} instead.
+                The link may have been mistyped. You can always just reply to the email instead.
               </p>
             </>
           )}
@@ -67,7 +60,7 @@ export default async function BuildNextPage({
                 Thanks — we already got your vote!
               </h1>
               <p className="text-[17px] leading-[1.7] text-[#2E5566]">
-                If you have more to share, email {supportLink}.
+                If you have more to share, just reply to the email.
               </p>
             </>
           )}

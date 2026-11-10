@@ -59,7 +59,7 @@ The queue drain passes `email-queue/<row id>` as the key, so a row retried withi
 
 Both the failover and the bulk routing above turn on with these vars.
 
-Brevo stays off (Resend only, exactly as before) until all three are set: `EMAIL_FALLBACK_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` (optional `BREVO_SENDER_NAME`). `BREVO_SENDER_EMAIL` must be an `@wardsignup.com` address, or Brevo stays off. It only switches Brevo on: every Brevo send uses the message's own From address as the sender (for automated mail, `noreply@wardsignup.com`), so that address must exist as a sender in Brevo. Brevo never copies the From into Reply-To.
+Brevo stays off (Resend only, exactly as before) until all three are set: `EMAIL_FALLBACK_PROVIDER=brevo`, `BREVO_API_KEY`, `BREVO_SENDER_EMAIL` (optional `BREVO_SENDER_NAME`). `BREVO_SENDER_EMAIL` must be an `@wardsignup.com` address, or Brevo stays off. It only switches Brevo on: every Brevo send uses the message's own From address as the sender (welcome and feedback ask: `jonathan@wardsignup.com`; all other automated mail: `noreply@wardsignup.com`), so that address must exist as a sender in Brevo. Brevo never copies the From into Reply-To.
 
 **Sender guard.** `lib/email-sender-guard.ts` refuses any From that is not `@wardsignup.com` in `sendGuardedEmail`, `deliverEmail` and `sendViaBrevo`, before any provider is called, and logs `[email-sender-guard] refused`. `*_EMAIL_FROM` overrides that are not `@wardsignup.com` are ignored in favor of the brand default. `EMAIL_RESEND_RETRY_MS` (default 400) is the wait before the Resend retry.
 

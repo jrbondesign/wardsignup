@@ -15,7 +15,7 @@ function formatPhoenixDateTime(iso: string): string {
     timeZoneName: "short",
   });
 }
-import { feedbackEmailFrom } from "@/lib/brand/email-from";
+import { feedbackEmailFrom, organizerEmailFrom } from "@/lib/brand/email-from";
 import { escapeHtml } from "@/lib/html-escape";
 import { sendGuardedEmail } from "@/lib/email-send";
 
@@ -64,7 +64,8 @@ Made with ❤️ in Arizona`;
     deferrable: true,
       kind: "feedback",
       category: "notification",
-    // Automated mail: noreply@ From, no Reply-To.
+    // From is Jonathan <jonathan@wardsignup.com> by default, so replies
+    // reach him. No Reply-To is set; the old welcome reply-to env override is not read.
     from: feedbackEmailFrom(brand),
     to,
     subject: `Quick question about your ${brand.name} event`,
@@ -192,7 +193,7 @@ Q4. What's the #1 thing holding it back from being perfect?
     realtime: true,
     kind: "feedback_response",
     category: "transactional",
-    from: feedbackEmailFrom(brand),
+    from: organizerEmailFrom(brand),
     // Reply-To is the creator so Jonathan can answer them directly.
     replyTo: creatorEmail,
     to: FEEDBACK_RESPONSE_TO,

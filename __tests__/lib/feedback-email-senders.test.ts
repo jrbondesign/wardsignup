@@ -22,13 +22,13 @@ afterAll(() => {
   process.env = saved;
 });
 
-it("feedback ask comes from noreply@ with no Reply-To and no 'reply' copy", async () => {
+it("feedback ask comes from jonathan@ with no Reply-To, and keeps the copy-into-browser line", async () => {
   await sendFeedbackAskEmail({ brand, to: "leader@example.com", firstName: "Ann", formUrl: "https://wardsignup.com/feedback/abc" });
   const p = sendGuardedEmail.mock.calls[0][0];
-  expect(p.from).toBe("Ward Signup <noreply@wardsignup.com>");
+  expect(p.from).toBe("Jonathan <jonathan@wardsignup.com>");
   expect(p.replyTo).toBeUndefined();
-  expect(p.text).not.toMatch(/reply/i);
-  expect(p.html).not.toMatch(/reply/i);
+  expect(p.text).not.toMatch(/support@wardsignup\.com/);
+  expect(p.html).not.toMatch(/support@wardsignup\.com/);
   expect(p.text).toContain("Can't click the link? Copy this into your browser: https://wardsignup.com/feedback/abc");
   expect(p.text).not.toMatch(/[\u2013\u2014]/);
 });
@@ -50,8 +50,13 @@ it("feedback response goes to jonathan@wardsignup.com, Reply-To the creator", as
   expect(p.from).toBe("Ward Signup <noreply@wardsignup.com>");
 });
 
-it("welcome route sends with no Reply-To", () => {
-  const src = readFileSync(join(process.cwd(), "app/api/welcome/route.ts"), "utf8");
-  expect(src).not.toMatch(/WELCOME_REPLY_TO/);
-  expect(src).not.toMatch(/replyTo\s*:/);
+it("welcome and feedback-ask routes send with no Reply-To and do not read WELCOME_REPLY_TO", () => {
+  const welcome = readFileSync(join(process.cwd(), "app/api/welcome/route.ts"), "utf8");
+  const ask = readFileSync(join(process.cwd(), "lib/feedback-email.ts"), "utf8");
+  expect(welcome).not.toMatch(/WELCOME_REPLY_TO/);
+  expect(ask).not.toMatch(/WELCOME_REPLY_TO/);
+  expect(welcome).not.toMatch(/replyTo\s*:/);
+  const askSend = ask.slice(0, ask.indexOf("sendFeedbackResponseNotification"));
+  expect(askSend).not.toMatch(/replyTo\s*:/);
+  expect(welcome + ask).not.toMatch(/bondesign@gmail\.com/);
 });

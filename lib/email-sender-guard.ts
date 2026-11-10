@@ -4,9 +4,10 @@
  * Gmail sender left over in a provider dashboard, a typo in an env override)
  * is refused before it reaches a provider, and logged.
  *
- * Automated mail uses noreply@wardsignup.com (brand defaults in
- * lib/brand/brands.ts). jonathan@wardsignup.com is still allowed so internal
- * founder notices and already queued rows keep working.
+ * Most automated mail uses noreply@wardsignup.com (brand defaults in
+ * lib/brand/brands.ts). The welcome email and the feedback ask default to
+ * Jonathan <jonathan@wardsignup.com> so replies reach Jonathan. That address
+ * is also allowed for already queued rows.
  */
 
 export const ALLOWED_SENDER_DOMAIN = "wardsignup.com";

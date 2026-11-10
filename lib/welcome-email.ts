@@ -3,8 +3,6 @@ import { WELCOME_REMINDERS_LINE } from "@/lib/reminder-copy";
 
 export interface WelcomeEmailInput {
   firstName: string;
-  /** Inbox people can write to (brand.supportEmail). The welcome is sent from noreply@, so replies bounce. */
-  supportEmail: string;
   /** Brand quick start sentence (brand.email.welcomeQuickStartBold). */
   quickPlain: string;
   brandName: string;
@@ -20,7 +18,6 @@ export function buildWelcomeEmail({
   brandName,
   siteHost,
   siteUrlWithUtm,
-  supportEmail,
 }: WelcomeEmailInput): { text: string; html: string } {
   const safeFirst = escapeHtml(firstName);
   const brand = { name: brandName, siteHost };
@@ -34,7 +31,7 @@ Quick start: ${quickPlain}
 
 ${WELCOME_REMINDERS_LINE}
 
-This is free to use. If anything feels off, email ${supportEmail}. I read every message.
+This is free to use. If anything feels off, just reply. I read every message.
 
 One quick question: What's the first event you plan to use it for?
 
@@ -65,7 +62,7 @@ Made with ❤️ in Arizona`;
           </p>
 
           <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
-            This is free to use. If anything feels off, email <a href="mailto:${escapeHtml(supportEmail)}" style="color: #0E96B0; text-decoration: none;">${escapeHtml(supportEmail)}</a>. I read every message.
+            This is free to use. If anything feels off, just reply. I read every message.
           </p>
 
           <p style="font-size: 16px; line-height: 1.7; margin: 0 0 24px;">

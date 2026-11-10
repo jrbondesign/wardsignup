@@ -8,7 +8,7 @@ import {
   sendFeedbackAskEmail,
   type FeedbackDigestRow,
 } from "@/lib/feedback-email";
-import { feedbackEmailFrom } from "@/lib/brand/email-from";
+import { organizerEmailFrom } from "@/lib/brand/email-from";
 import { parseMetricsAdminEmails } from "@/lib/metrics-admin";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { isFeedbackAskPaused } from "@/lib/feedback-ask-pause";
@@ -331,7 +331,7 @@ export async function runFeedbackDigestPass(
     deferrable: true,
       kind: "feedback_summary",
       category: "transactional",
-    from: feedbackEmailFrom(brand),
+    from: organizerEmailFrom(brand),
     to: creatorNotifyTo,
     subject: `${brand.name}: ${rows.length} creator feedback response${rows.length === 1 ? "" : "s"} this week`,
     html: buildFeedbackDigestEmailHtml({ brand, responses: rows }),

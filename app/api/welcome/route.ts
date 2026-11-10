@@ -212,7 +212,6 @@ export async function POST(request: NextRequest) {
       brandName: brand.name,
       siteHost: brand.siteHost,
       siteUrlWithUtm,
-      supportEmail: brand.supportEmail,
     });
 
     // Send welcome email (must succeed before we mark welcome_sent)
@@ -223,7 +222,8 @@ export async function POST(request: NextRequest) {
       category: "transactional",
       realtime: true,
       kind: "welcome",
-      // Automated mail: noreply@ From, no Reply-To (replies bounce by design).
+      // From is Jonathan <jonathan@wardsignup.com> by default, so replies
+      // reach him. No Reply-To is set; the old welcome reply-to env override is not read.
       from: welcomeEmailFrom(brand),
       to: canonicalUser.email!,
       subject: welcomeSubject,

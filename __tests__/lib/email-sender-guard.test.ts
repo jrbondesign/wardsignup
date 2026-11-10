@@ -71,16 +71,6 @@ describe("sender allowlist", () => {
 
 describe("brand From defaults", () => {
   const brand = { ...BRAND_DEFINITIONS.wardsignup, siteHost: "wardsignup.com" } as never;
-  const all = [
-    organizerEmailFrom,
-    inviteEmailFrom,
-    welcomeEmailFrom,
-    creatorNotifyEmailFrom,
-    feedbackEmailFrom,
-    magicLinkEmailFrom,
-    participantEmailFrom,
-    leaderEmailFrom,
-  ];
   const keys = [
     "ORGANIZER_EMAIL_FROM",
     "INVITES_EMAIL_FROM",
@@ -92,18 +82,33 @@ describe("brand From defaults", () => {
     "LEADER_EMAIL_FROM",
   ];
 
-  it("every automated email defaults to Ward Signup <noreply@wardsignup.com>", () => {
+  const JONATHAN = "Jonathan <jonathan@wardsignup.com>";
+  const NOREPLY = "Ward Signup <noreply@wardsignup.com>";
+
+  it("welcome and feedback ask default to Jonathan <jonathan@wardsignup.com>; all others default to noreply@", () => {
     for (const k of keys) delete process.env[k];
-    for (const fn of all) expect(fn(brand)).toBe("Ward Signup <noreply@wardsignup.com>");
+    expect(welcomeEmailFrom(brand)).toBe(JONATHAN);
+    expect(feedbackEmailFrom(brand)).toBe(JONATHAN);
+    for (const fn of [organizerEmailFrom, inviteEmailFrom, creatorNotifyEmailFrom, magicLinkEmailFrom, participantEmailFrom, leaderEmailFrom]) {
+      expect(fn(brand)).toBe(NOREPLY);
+    }
   });
 
   it("a non wardsignup.com override is ignored for every From", () => {
     for (const k of keys) process.env[k] = "PFS <bondesign@gmail.com>";
-    for (const fn of all) expect(fn(brand)).toBe("Ward Signup <noreply@wardsignup.com>");
+    expect(welcomeEmailFrom(brand)).toBe(JONATHAN);
+    expect(feedbackEmailFrom(brand)).toBe(JONATHAN);
+    for (const fn of [organizerEmailFrom, inviteEmailFrom, creatorNotifyEmailFrom, magicLinkEmailFrom, participantEmailFrom, leaderEmailFrom]) {
+      expect(fn(brand)).toBe(NOREPLY);
+    }
   });
 
   it("a wardsignup.com override still works", () => {
-    process.env.WELCOME_EMAIL_FROM = "Jonathan <jonathan@wardsignup.com>";
-    expect(welcomeEmailFrom(brand)).toBe("Jonathan <jonathan@wardsignup.com>");
+    process.env.WELCOME_EMAIL_FROM = "Ward Signup <noreply@wardsignup.com>";
+    expect(welcomeEmailFrom(brand)).toBe(NOREPLY);
+    expect(feedbackEmailFrom(brand)).toBe(NOREPLY);
+    process.env.FEEDBACK_EMAIL_FROM = JONATHAN;
+    expect(feedbackEmailFrom(brand)).toBe(JONATHAN);
+    expect(welcomeEmailFrom(brand)).toBe(NOREPLY);
   });
 });
