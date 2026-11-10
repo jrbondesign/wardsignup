@@ -4,6 +4,7 @@ import { formatSessionDate, formatSlotLabel, orderSessionsBySection } from "@/co
 import Link from "next/link";
 import { Fragment } from "react";
 import { formatTime, nextDaySuffix, spansMultipleDays } from "@/lib/utils";
+import { inferTimeUnitWord } from "@/lib/time-unit-word";
 import SignupOptionsMenu from "@/components/SignupOptionsMenu";
 import { type AdminEventView } from "@/components/admin/hooks/deriveAdminEventView";
 
@@ -22,6 +23,8 @@ export default function AdminSessionsSignups({ ctx }: { ctx: AdminEventView }) {
     setOpenMenuSignupId,
     showConfirmRemove,
   } = ctx;
+
+  const unitWord = inferTimeUnitWord({ name: (event as { name?: string | null } | null)?.name, eventType });
 
   return (
     (eventType === "spots" || eventType === "rsvp") && Object.keys(groupedSessions).length === 0 ? (
@@ -165,14 +168,14 @@ export default function AdminSessionsSignups({ ctx }: { ctx: AdminEventView }) {
                                     contextLabel={
                                       session.section
                                         || session.label
-                                        || formatSlotLabel(session)
+                                        || formatSlotLabel(session, unitWord)
                                     }
                                     onRemove={() => showConfirmRemove(
                                       signup.id,
                                       signup.member_name,
                                       session.section
                                         || session.label
-                                        || formatSlotLabel(session),
+                                        || formatSlotLabel(session, unitWord),
                                       false
                                     )}
                                     onClose={() => {

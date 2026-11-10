@@ -236,9 +236,9 @@ describe("5 and 6. tithing window guards", () => {
     });
   };
 
-  it("valid window: Apply is enabled with the slot count", async () => {
+  it("valid window: Apply is enabled with the appointment count", async () => {
     await renderForm(ctx({}));
-    expect(apply()).toHaveTextContent("Apply: 12 slots");
+    expect(apply()).toHaveTextContent("Apply: 12 appointments");
     expect(apply()).toBeEnabled();
   });
 
@@ -255,7 +255,7 @@ describe("5 and 6. tithing window guards", () => {
 
   it("0 slots (no chosen day in range) keeps Apply disabled", async () => {
     await renderForm(ctx({ rescheduleStart: new Date(2026, 10, 16), rescheduleEnd: new Date(2026, 10, 17), tithingDays: [5] }));
-    expect(apply()).toHaveTextContent("Apply: 0 slots");
+    expect(apply()).toHaveTextContent("Apply: 0 appointments");
     expect(apply()).toBeDisabled();
   });
 });

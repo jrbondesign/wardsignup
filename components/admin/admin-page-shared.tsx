@@ -1,5 +1,6 @@
 "use client";
 
+import type { TimeUnitWord } from "@/lib/time-unit-word";
 import { Session, Signup } from "@/lib/types";
 import { compareBySortOrder } from "@/lib/session-sort-order";
 import { formatTime } from "@/lib/utils";
@@ -41,14 +42,17 @@ export function formatSessionDate(iso: string, withYear = false): string {
   });
 }
 
-/** Format a slot label with article and proper time range: "the 5:00 to 7:00 PM slot" or "the 5:00 PM slot" */
-export function formatSlotLabel(session: SessionWithSignups): string {
+/**
+ * Label one time with its article and the event's own word (never "slot"):
+ * "the 5:00 PM to 7:00 PM shift" or "the 7:00 PM appointment".
+ */
+export function formatSlotLabel(session: SessionWithSignups, unit: TimeUnitWord = "time"): string {
   const startTime = formatTime(session.time);
   if (session.end_time) {
     const endTime = formatTime(session.end_time);
-    return `the ${startTime} to ${endTime} slot`;
+    return `the ${startTime} to ${endTime} ${unit}`;
   }
-  return `the ${startTime} slot`;
+  return `the ${startTime} ${unit}`;
 }
 
 /** Format last sync time as relative time (e.g. "2m ago", "1h ago") */

@@ -198,8 +198,10 @@ describe("startTimePanelError", () => {
   });
 
   it("reports empty start when not partial", () => {
-    expect(startTimePanelError("", false)).toBe("Pick a start time for this slot.");
-    expect(startTimePanelError("   ", false)).toBe("Pick a start time for this slot.");
+    expect(startTimePanelError("", false)).toBe("Choose a start time.");
+    expect(startTimePanelError("   ", false)).toBe("Choose a start time.");
+    expect(startTimePanelError("", false, "appointment")).toBe("Choose a start time for this appointment.");
+    expect(startTimePanelError("", false, "shift")).toBe("Choose a start time for this shift.");
   });
 
   it("returns null when start is complete", () => {

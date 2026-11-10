@@ -1,3 +1,4 @@
+import type { TimeUnitWord } from "@/lib/time-unit-word";
 import { isEndSameAsStart, isOvernightRange, normalizeHHMM, rangeMinutes } from "@/lib/calendar-times";
 /**
  * Format a "HH:mm" (or "HH:mm:ss") time string for display using the runtime
@@ -28,12 +29,29 @@ export function formatTimeEnUs(time: string): string {
   return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", hour12: true });
 }
 
+/**
+ * Fixed 12-hour clock with a plain ASCII space: "19:00" → "7:00 PM".
+ * Same output as formatTimeEnUs but never depends on ICU (some runtimes put a
+ * narrow no-break space before AM/PM). Used next to time fields so a phone set
+ * to 24 hour never shows "19:00" beside a PM picker.
+ */
+export function formatTime12h(time: string): string {
+  const parts = time.split(":");
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  if (!parts[0] || !parts[1] || isNaN(h) || isNaN(m) || h < 0 || h > 23 || m < 0 || m > 59) return time;
+  const hour12 = h % 12 === 0 ? 12 : h % 12;
+  return `${hour12}:${String(m).padStart(2, "0")} ${h >= 12 ? "PM" : "AM"}`;
+}
+
 /** Shown after an overnight range. The no-break space keeps "(next day)" on one line. */
 export const NEXT_DAY_SUFFIX = " (next\u00A0day)";
 
 export type TimeRangeOptions = {
   /** Multi-day RSVP (event_end_date after the session date): the range spans the event, so no "(next day)". */
   multiDay?: boolean;
+  /** "12h" uses formatTime12h (fixed 12-hour) instead of the device locale. */
+  clock?: "locale" | "12h";
 };
 
 /** " (next day)" when End is earlier than Start (and the event isn't multi-day), else "". */
@@ -59,10 +77,11 @@ export function endTimeNote(
  * An End earlier than Start ends the next day: "10:00 PM to 1:00 AM (next day)".
  */
 export function formatTimeRange(start: string, end?: string | null, options?: TimeRangeOptions): string {
-  const a = formatTime(start);
+  const fmt = options?.clock === "12h" ? formatTime12h : formatTime;
+  const a = fmt(start);
   const endTrim = end?.trim() ?? "";
   if (!endTrim) return a;
-  return `${a} to ${formatTime(endTrim)}${nextDaySuffix(start, endTrim, options)}`;
+  return `${a} to ${fmt(endTrim)}${nextDaySuffix(start, endTrim, options)}`;
 }
 
 /**
@@ -225,9 +244,9 @@ export function switchApproximateMode(args: {
  * Message for add/bulk/reschedule start-time checks.
  * Partial is checked before empty so hour-only gets the finish message.
  */
-export function startTimePanelError(time: string, hasPartial: boolean): string | null {
+export function startTimePanelError(time: string, hasPartial: boolean, unit: TimeUnitWord = "time"): string | null {
   if (hasPartial) return "Finish choosing hour, minute, and AM or PM.";
-  if (!time.trim()) return "Pick a start time for this slot.";
+  if (!time.trim()) return unit === "time" ? "Choose a start time." : `Choose a start time for this ${unit}.`;
   return null;
 }
 
@@ -273,16 +292,25 @@ export function isItemsTimeError(message: string): boolean {
 }
 
 /**
- * Scroll a time row into view and focus its first unfinished select
- * (or the select at fallbackIndex when every part is filled).
+ * Scroll a time row into view and focus its first unfinished time field
+ * (or the field at fallbackIndex when every field is set).
+ * fallbackIndex keeps the old per-select numbering (3 parts per time), so
+ * 0 to 2 is Start and 3 to 5 is End.
  */
 export function focusTimeRow(rowId: string, fallbackIndex = 0): void {
   if (typeof document === "undefined") return;
   const row = document.getElementById(rowId);
   if (!row) return;
   row.scrollIntoView?.({ block: "center", behavior: "smooth" });
-  const selects = Array.from(row.querySelectorAll("select"));
-  const target = selects.find((el) => el.value === "" && (el.parentElement?.getAttribute("data-time-partial") === "true")) ?? selects[fallbackIndex] ?? selects[0];
+  const triggers = Array.from(row.querySelectorAll<HTMLElement>("[data-time-trigger]"));
+  if (triggers.length === 0) {
+    const selects = Array.from(row.querySelectorAll("select"));
+    const target = selects.find((el) => el.value === "" && (el.parentElement?.getAttribute("data-time-partial") === "true")) ?? selects[fallbackIndex] ?? selects[0];
+    target?.focus({ preventScroll: true });
+    return;
+  }
+  const partial = triggers.find((el) => el.closest('[data-time-partial="true"]'));
+  const target = partial ?? triggers[Math.floor(fallbackIndex / 3)] ?? triggers[0];
   target?.focus({ preventScroll: true });
 }
 
@@ -292,6 +320,7 @@ export function subtreeHasInvalidTimeSelect(root: ParentNode | null | undefined)
   const el = root as Element;
   return !!(
     el.querySelector("select:invalid") ||
+    el.querySelector("input[data-time-validity]:invalid") ||
     el.querySelector('[data-time-partial="true"]')
   );
 }
