@@ -15,6 +15,8 @@ export function useEditEventState() {
   const [eventName, setEventName] = useState("");
   const [eventDescription, setEventDescription] = useState("");
   const [eventTimezone, setEventTimezone] = useState("America/Phoenix");
+  /** Multi-day RSVP end date (read-only here), so its range doesn't read "(next day)". */
+  const [eventEndDate, setEventEndDate] = useState<string | null>(null);
   const [organizationId, setOrganizationId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<SessionData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -216,6 +218,8 @@ export function useEditEventState() {
     setEventDescription,
     eventTimezone,
     setEventTimezone,
+    eventEndDate,
+    setEventEndDate,
     organizationId,
     setOrganizationId,
     sessions,

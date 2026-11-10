@@ -5,6 +5,7 @@ import {
   preferredBrandApexHost,
 } from "@/lib/brand";
 import { isProtectedPath, updateSession } from "@/lib/supabase/middleware";
+import { publicEventRedirectTarget } from "@/lib/public-event-id";
 
 function copyCookies(from: NextResponse, to: NextResponse) {
   from.cookies.getAll().forEach((c) => {
@@ -57,6 +58,14 @@ export async function middleware(request: NextRequest) {
     } catch {
       // ignore invalid env value
     }
+  }
+
+  // A line break or space pasted into an event link 308s to the canonical id.
+  // Host redirects above run first so this does not point at a www host.
+  // Query string (UTM) stays on the destination.
+  const eventDest = publicEventRedirectTarget(request.url);
+  if (eventDest) {
+    return NextResponse.redirect(eventDest, 308);
   }
 
   const { response, user, timedOut } = await updateSession(request);

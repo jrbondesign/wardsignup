@@ -1,5 +1,6 @@
 "use client";
 
+import { sessionLastDate } from "@/lib/calendar-times";
 import { useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import { loadPublicEventPage, type PublicEventClient } from "@/lib/public-event-page";
@@ -12,11 +13,15 @@ export function firstUpcomingMonth(sessions: SessionWithSignups[], now: Date = n
   today.setHours(0, 0, 0, 0);
   const futureDates = sessions
     .filter((s) => s.session_date)
+    // Keep an overnight slot that is still running today (it started yesterday).
+    .filter((s) => {
+      const [y, m, d] = sessionLastDate(s.session_date!, s.time, s.end_time).split("-").map(Number);
+      return new Date(y, m - 1, d) >= today;
+    })
     .map((s) => {
       const [y, m, d] = s.session_date!.split("-").map(Number);
       return new Date(y, m - 1, d);
     })
-    .filter((d) => d >= today)
     .sort((a, b) => a.getTime() - b.getTime());
   return futureDates.length > 0 ? new Date(futureDates[0].getFullYear(), futureDates[0].getMonth(), 1) : null;
 }

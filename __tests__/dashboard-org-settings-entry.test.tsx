@@ -4,7 +4,7 @@
  * Also covers the matching link in the navigation drawer and the dashboard
  * header wiring (subtitle and gear removed, New Event filled primary).
  */
-import { render, screen, waitFor, fireEvent, act } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 
 const capture = jest.fn();
@@ -333,5 +333,136 @@ describe("Dashboard ward line", () => {
     expect(screen.queryByTestId("org-ward-placeholder")).not.toBeInTheDocument();
     expect(screen.queryByTestId("org-ward-add")).not.toBeInTheDocument();
     expect(wardQueries).toBe(0);
+  });
+});
+
+describe("Dashboard card More sheet", () => {
+  function renderDashboard() {
+    return render(
+      <BrandProvider brand={getDefaultPublicBrand()}>
+        <DashboardPage />
+      </BrandProvider>
+    );
+  }
+
+  beforeEach(() => {
+    rpcResult = {
+      data: {
+        org: { id: "org1", name: "Ward From RPC", needs_naming: false, brand_id: "wardsignup" },
+        events: [
+          {
+            id: "e9",
+            name: "Temple Night",
+            created_at: "2026-10-01T00:00:00Z",
+            event_type: "spots",
+            event_date: null,
+            event_dates: null,
+            session_dates: ["2026-11-01"],
+            total_capacity: 10,
+            total_signups: 4,
+            item_count: 0,
+            item_signups: 0,
+            unclaimed_items: 0,
+          },
+        ],
+      },
+      error: null,
+    };
+  });
+
+  it("uses a 44px labelled three dot button that opens the grouped sheet and returns focus", async () => {
+    mockOrgList(1);
+    renderDashboard();
+    const more = await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 });
+    expect(more).toHaveClass("size-11");
+    expect(more).toHaveAttribute("aria-haspopup", "dialog");
+    more.focus();
+    fireEvent.click(more);
+    const dialog = screen.getByRole("dialog", { name: "Temple Night" });
+    expect(dialog).toHaveAccessibleDescription("Sunday, November 1 · 4 of 10 spots filled");
+    for (const g of ["Edit", "Share", "Manage"]) expect(within(dialog).getByRole("group", { name: g })).toBeInTheDocument();
+    expect(within(dialog).getByRole("link", { name: /Edit event/ })).toHaveAttribute("href", "/edit/e9");
+    expect(within(dialog).queryByText("Add cover photo")).not.toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(more).toHaveFocus();
+    await flush();
+  });
+
+  it("Delete event asks first with Keep event and Delete event", async () => {
+    mockOrgList(1);
+    renderDashboard();
+    fireEvent.click(await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 }));
+    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: /Delete event/ }));
+    const confirm = screen.getByRole("alertdialog", { name: "Delete Temple Night?" });
+    expect(within(confirm).getByRole("button", { name: "Keep event" })).toHaveFocus();
+    fireEvent.click(within(confirm).getByRole("button", { name: "Keep event" }));
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    await flush();
+  });
+  describe("Add cover photo", () => {
+    const prev = process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS;
+    afterEach(() => {
+      process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS = prev;
+    });
+    function mockWithCover(coverUrl: string | null) {
+      mockOrgList(1);
+      const base = global.fetch as jest.Mock;
+      global.fetch = jest.fn(async (url: string) => {
+        if (String(url).includes("/api/events/e9/cover")) return { ok: true, json: async () => ({ coverUrl, coverPosition: null }) };
+        return base(url);
+      }) as unknown as typeof fetch;
+    }
+
+    it("shows in Edit and links to the event page when covers are on and none is set", async () => {
+      process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS = "org1";
+      mockWithCover(null);
+      renderDashboard();
+      fireEvent.click(await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 }));
+      const edit = within(screen.getByRole("dialog")).getByRole("group", { name: "Edit" });
+      const link = await within(edit).findByRole("link", { name: /Add cover photo/ });
+      expect(link).toHaveAttribute("href", "/admin/e9#add-cover");
+      expect(global.fetch).toHaveBeenCalledWith("/api/events/e9/cover");
+    });
+
+    it("holds the row's place, dimmed and not a link, while the check loads", async () => {
+      process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS = "org1";
+      mockOrgList(1);
+      const base = global.fetch as jest.Mock;
+      let resolveCover: (v: unknown) => void = () => {};
+      global.fetch = jest.fn((url: string) => {
+        if (String(url).includes("/api/events/e9/cover")) return new Promise((res) => { resolveCover = res; });
+        return base(url);
+      }) as unknown as typeof fetch;
+      renderDashboard();
+      fireEvent.click(await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 }));
+      const edit = within(screen.getByRole("dialog")).getByRole("group", { name: "Edit" });
+      const pending = within(edit).getByText("Add cover photo").closest("[aria-busy]")!;
+      expect(pending).toHaveAttribute("aria-disabled", "true");
+      expect(within(edit).queryByRole("link", { name: /Add cover photo/ })).not.toBeInTheDocument();
+      await act(async () => {
+        resolveCover({ ok: true, json: async () => ({ coverUrl: null }) });
+      });
+      expect(await within(edit).findByRole("link", { name: /Add cover photo/ })).toHaveAttribute("href", "/admin/e9#add-cover");
+    });
+
+    it("stays hidden when the event already has a cover", async () => {
+      process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS = "org1";
+      mockWithCover("https://x/cover.jpg");
+      renderDashboard();
+      fireEvent.click(await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 }));
+      await waitFor(() => expect(global.fetch).toHaveBeenCalledWith("/api/events/e9/cover"));
+      await waitFor(() => expect(screen.queryByText("Add cover photo")).not.toBeInTheDocument());
+    });
+
+    it("stays hidden and skips the check when the org is not on the cover allowlist", async () => {
+      process.env.NEXT_PUBLIC_FEATURE_COVER_IMAGE_ORG_IDS = "";
+      mockWithCover(null);
+      renderDashboard();
+      fireEvent.click(await screen.findByRole("button", { name: "More actions for Temple Night" }, { timeout: 4000 }));
+      await flush();
+      expect(screen.queryByText("Add cover photo")).not.toBeInTheDocument();
+      expect(global.fetch).not.toHaveBeenCalledWith("/api/events/e9/cover");
+    });
   });
 });

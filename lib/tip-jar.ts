@@ -1,14 +1,17 @@
 import type { PublicBrand } from "@/lib/brand";
 import { withUtm, type UtmParams } from "@/lib/utm";
 
-/** Default GitHub Sponsors URL (enable Sponsors on the account for this to resolve). */
-export const DEFAULT_TIP_JAR_URL = "https://github.com/sponsors/jrbondesign";
+/** Default tip jar URL (Venmo). */
+export const DEFAULT_TIP_JAR_URL = "https://venmo.com/u/jrbond";
 
 /** localStorage key: post-create support prompt dismissed. */
 export const SUPPORT_PROMPT_DISMISSED_KEY = "wardsignup_support_prompt_dismissed";
 
 /** localStorage key: homepage support banner dismissed. */
 export const SUPPORT_BANNER_DISMISSED_KEY = "wardsignup_support_banner_dismissed";
+
+/** localStorage key: post-sign-in Venmo tip banner dismissed. */
+export const POST_SIGNIN_TIP_DISMISSED_KEY = "wardsignup_post_signin_tip_dismissed";
 
 /**
  * Tip jar is on unless explicitly disabled via env (`0` / `false` / `off`)

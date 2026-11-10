@@ -11,7 +11,7 @@ import { LoadingSpinner } from "@/components/LoadingSpinner";
 import UnifiedCreateForm from "@/components/create/UnifiedCreateForm";
 import OrgNameModal from "@/components/OrgNameModal";
 import { AiEventInput } from "@/components/AiEventInput";
-import { getTemplatesForBrand, type TemplateKey } from "@/lib/event-template-data";
+import { getTemplatesForBrand, getEventTemplate, type TemplateKey } from "@/lib/event-template-data";
 import type { AiEventResult } from "@/lib/ai-event-extraction";
 import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } from "@/lib/limits";
 
@@ -229,6 +229,14 @@ function CreateInner() {
                       </Link>
                       .
                     </p>
+                  )}
+                  {initialTemplateKey && getEventTemplate(initialTemplateKey)?.previewImage && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={getEventTemplate(initialTemplateKey)!.previewImage}
+                      alt=""
+                      className="mt-3 w-full max-h-[180px] object-cover rounded-lg"
+                    />
                   )}
                 </div>
               )}

@@ -18,7 +18,7 @@ describe("tip jar helpers", () => {
     else process.env.NEXT_PUBLIC_TIP_JAR_URL = prevUrl;
   });
 
-  it("defaults to GitHub Sponsors URL", () => {
+  it("defaults to Venmo tip jar URL", () => {
     delete process.env.NEXT_PUBLIC_TIP_JAR_URL;
     delete process.env.NEXT_PUBLIC_TIP_JAR_ENABLED;
     expect(resolveTipJarUrl()).toBe(DEFAULT_TIP_JAR_URL);
@@ -56,7 +56,7 @@ describe("tip jar helpers", () => {
       utm_campaign: "tip_jar",
     });
     expect(sponsors).toContain("utm_source=organizer_email");
-    expect(sponsors).toContain("github.com/sponsors");
+    expect(sponsors).toContain("venmo.com/u/jrbond");
 
     const support = supportPageOutboundUrl(
       { siteUrl: "https://wardsignup.com" },

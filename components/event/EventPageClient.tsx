@@ -1,5 +1,6 @@
 "use client";
 
+import { sessionLastDate } from "@/lib/calendar-times";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import Link from "next/link";
 import Image from "next/image";
@@ -15,6 +16,7 @@ import SignupFormModal from "@/components/event/sections/SignupFormModal";
 import { useSyncExternalStore } from "react";
 import type { PublicEventPageData } from "@/lib/public-event-page";
 import type { PublicCover } from "@/lib/use-public-cover";
+import { EVENT_NOT_FOUND_GUIDANCE } from "@/lib/public-event-copy";
 
 const noopSubscribe = () => () => {};
 
@@ -71,6 +73,7 @@ export default function EventPageClient({ eventId, initialPage, initialLoadedAt,
         <div className="bg-white rounded-2xl shadow-[0_8px_32px_rgba(8,100,126,0.10)] p-10 max-w-md w-full text-center">
           <h1 className="font-serif text-2xl text-[#0D2B35] mb-3">Event not found</h1>
           <p className="text-sm text-[#5A8399]">This event may have been removed or the link is incorrect.</p>
+          <p className="text-sm text-[#5A8399] mt-2">{EVENT_NOT_FOUND_GUIDANCE}</p>
         </div>
       </div>
     );
@@ -183,7 +186,7 @@ export default function EventPageClient({ eventId, initialPage, initialLoadedAt,
                   today.setHours(0, 0, 0, 0);
                   const allPast = sessions.every((s) => {
                     if (!s.session_date) return false;
-                    const [y, m, d] = s.session_date.split("-").map(Number);
+                    const [y, m, d] = sessionLastDate(s.session_date, s.time, s.end_time).split("-").map(Number);
                     return new Date(y, m - 1, d) < today;
                   });
                   if (allPast) return "This event has ended. All slots have passed.";

@@ -1,4 +1,4 @@
-import { addOneHour } from './ics';
+import { calendarSpan } from './calendar-times';
 
 /** HH:mm or HH:mm:ss → HH:mm:ss for Google Calendar dateTime. */
 export function toWallTime(time: string): string {
@@ -9,17 +9,34 @@ export function toWallTime(time: string): string {
   return `${h}:${m}:${s}`;
 }
 
-/** Build local dateTimes from session_date + time. Sessions have no start_time column. */
-export function googleDateTimesForSession(session: {
-  session_date: string;
-  time: string;
-  end_time: string | null;
-}): { startDateTime: string; endDateTime: string } {
+/**
+ * Build local dateTimes from session_date + time. Sessions have no start_time column.
+ * End earlier than start (or a default hour past 11 PM) lands on the next date.
+ * Pass the event's end date so a multi-day overnight event (a campout, Fri 6 PM
+ * to Sun 9 AM) syncs as one span to the last day, matching the .ics export.
+ */
+export function googleDateTimesForSession(
+  session: {
+    session_date: string;
+    time: string;
+    end_time: string | null;
+  },
+  eventEndDate?: string | null,
+): { startDateTime: string; endDateTime: string } {
   const startTime = toWallTime(session.time);
-  const endTime = toWallTime(session.end_time || addOneHour(session.time));
+  const span = calendarSpan({
+    date: session.session_date,
+    start: session.time,
+    end: session.end_time || null,
+    eventEndDate: eventEndDate ?? null,
+  });
+  if (!span) {
+    return { startDateTime: `${session.session_date}T${startTime}`, endDateTime: `${session.session_date}T${startTime}` };
+  }
+  const endTime = toWallTime(span.endTime);
   return {
     startDateTime: `${session.session_date}T${startTime}`,
-    endDateTime: `${session.session_date}T${endTime}`,
+    endDateTime: `${span.endDate}T${endTime}`,
   };
 }
 

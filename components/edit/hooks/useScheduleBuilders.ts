@@ -1,6 +1,7 @@
 "use client";
 
 import { SessionData, resolveSpotsDraft, scrollToEditSection } from "@/components/edit/edit-page-shared";
+import { focusTimeRow, startTimePanelError, TITHING_NO_SLOTS_ERROR, tithingWindowError } from "@/lib/utils";
 import { generateTithingDeclarationSessions } from "@/lib/tithing-reschedule";
 import { type EditEventState } from "./useEditEventState";
 import { type EditEventSettings } from "./useEditEventSettings";
@@ -88,8 +89,41 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
     }
   };
 
+
+  const timePanelHasPartial = (elementId: string) => {
+    if (typeof document === "undefined") return false;
+    const el = document.getElementById(elementId);
+    if (!el) return false;
+    // Panels use nativeValidity={false}, so check the data flag instead of :invalid.
+    return !!el.querySelector('[data-time-partial="true"]');
+  };
+
+  const requireStartTime = (time: string, panelId: string, open: () => void) => {
+    const message = startTimePanelError(time, timePanelHasPartial(panelId));
+    if (message) {
+      open();
+      setError(message);
+      scrollToEditSection(panelId);
+      // Focus the unfinished select (or Hour when empty) once the panel has rendered.
+      setTimeout(() => focusTimeRow(panelId), 0);
+      return false;
+    }
+    return true;
+  };
+
   const applyReschedule = () => {
     if (!rescheduleStart || !rescheduleEnd) return;
+    if (!requireStartTime(rescheduleTime, "edit-reschedule-time", () => setShowReschedule(true))) return;
+    // Tithing appointments split one same-day window into fixed slots. A
+    // missing, equal, overnight or too short window would generate 0 slots
+    // and replace the schedule with nothing, so stop here. The reason is shown
+    // under End time (tithingWindowError); move focus there.
+    if (isTithingReschedule && tithingWindowError(rescheduleTime, rescheduleEndTime, tithingDuration)) {
+      setShowReschedule(true);
+      scrollToEditSection("edit-reschedule-time");
+      setTimeout(() => focusTimeRow("edit-reschedule-time", 3), 0);
+      return;
+    }
     if (signupCount > 0) {
       setShowRescheduleConfirm(true);
       return;
@@ -99,6 +133,14 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
 
   const commitReschedule = () => {
     if (!rescheduleStart || !rescheduleEnd) return;
+    if (!requireStartTime(rescheduleTime, "edit-reschedule-time", () => setShowReschedule(true))) return;
+    // Same guard as applyReschedule (the confirm dialog calls this directly).
+    if (isTithingReschedule && tithingWindowError(rescheduleTime, rescheduleEndTime, tithingDuration)) {
+      setShowReschedule(true);
+      scrollToEditSection("edit-reschedule-time");
+      setTimeout(() => focusTimeRow("edit-reschedule-time", 3), 0);
+      return;
+    }
     if (signupCount > 0) {
       // Reschedule confirm already warned; don't double-confirm on save.
       allowDestructiveDeletesOnceRef.current = true;
@@ -149,6 +191,14 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
           return s;
         })();
 
+    // Never replace a tithing schedule with nothing (for example, no chosen
+    // weekday falls in the range). Apply is disabled for this, so this is a backstop.
+    if (isTithingReschedule && newSessions.length === 0) {
+      setShowReschedule(true);
+      setError(TITHING_NO_SLOTS_ERROR);
+      return;
+    }
+
     setTithingCapacity(tCap);
     setRescheduleCapacity(rCap);
     setTithingCapacityDraft(undefined);
@@ -196,6 +246,7 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
       scrollToEditSection("edit-bulk-days");
       return;
     }
+    if (!requireStartTime(bulkTime, "edit-bulk-time", () => setShowBulk(true))) return;
 
     const bCap = resolveSpotsDraft(bulkCapacityDraft, bulkCapacity);
 
@@ -288,6 +339,7 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
       scrollToEditSection("edit-individual-date");
       return;
     }
+    if (!requireStartTime(newSessionTime, "edit-individual-time", () => setShowAddSession(true))) return;
     setError(null);
 
     let dow = newSessionDayOfWeek;

@@ -157,11 +157,13 @@ export function buildPreset(key: TemplateKey): PresetResult {
     // ── Bring or Do (items) ──────────────────────────────────────────────
     case "ward-potluck":
     case "service-project":
-    case "moving-help": {
+    case "moving-help":
+    case "ward-christmas-party": {
       const items: ItemDraft[] =
         template.defaultItems?.map((it) => ({
           label: it.label,
           itemLimit: it.quantity,
+          ...(it.section ? { section: it.section } : {}),
         })) ?? [];
       return {
         patch: {

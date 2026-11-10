@@ -142,6 +142,13 @@ export default function Home() {
                 </svg>
                 Tithing Appointments
               </Link>
+              <Link
+                href="/use-cases/ward-christmas-party"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-full bg-white/18 border border-white/32 text-white text-sm font-medium no-underline backdrop-blur-[8px] transition-all duration-200 hover:bg-white/25 hover:border-white/40"
+              >
+                <span aria-hidden="true">⭐</span>
+                Christmas Party
+              </Link>
             </div>
 
           {/* Use Cases Card */}

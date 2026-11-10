@@ -10,7 +10,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
   const title = "Ward Signup use cases — sheets for secretaries and leaders";
-  const description = "How Latter-day Saint wards use Ward Signup: tithing declaration, secretary signup sheets, and more. Free during beta.";
+  const description = "How Latter-day Saint wards use Ward Signup: tithing declaration, Christmas party food and jobs, secretary signup sheets, and more. Free during beta.";
   const url = `${brand.siteUrl}/use-cases`;
   
   return {
@@ -82,6 +82,17 @@ export default async function UseCasesIndexPage() {
                     </h3>
                     <p className="text-[17px] text-[#2E5566] leading-[1.7]">
                       Open the bishop&apos;s windows, set household spot caps, and share one link or QR — including how one Arizona ward ran it.
+                    </p>
+                  </div>
+
+                  <div>
+                    <h3 className="text-[19px] font-semibold text-[#0D2B35] mb-2">
+                      <Link href="/use-cases/ward-christmas-party" className="text-[#0E96B0] hover:text-[#08647E]">
+                        Ward Christmas party signup sheet
+                      </Link>
+                    </h3>
+                    <p className="text-[17px] text-[#2E5566] leading-[1.7]">
+                      Soup, rolls, desserts and jobs like setup, nativity helpers and cleanup, with counts so you know what is still needed.
                     </p>
                   </div>
 

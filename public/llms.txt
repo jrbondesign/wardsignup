@@ -10,6 +10,7 @@
 - Use Cases: https://wardsignup.com/use-cases
 - Ward Secretary Guide: https://wardsignup.com/use-cases/ward-secretary-signup
 - Tithing Declaration Scheduling: https://wardsignup.com/use-cases/tithing-declaration
+- Ward Christmas Party Signup: https://wardsignup.com/use-cases/ward-christmas-party
 - Ward Signup vs SignUpGenius: https://wardsignup.com/compare/signupgenius
 - Ward Signup vs Calendly: https://wardsignup.com/compare/calendly
 - Create Event: https://wardsignup.com/create
