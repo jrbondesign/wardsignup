@@ -53,6 +53,29 @@ describe("sender allowlist", () => {
     expect(isAllowedSenderAddress(null)).toBe(false);
   });
 
+  it("edge cases: whitespace, display-name tricks, header injection, lists", () => {
+    expect(checkSender("  Ward Signup <  noreply@wardsignup.com  >  ").ok).toBe(true);
+    expect(checkSender("JONATHAN@WARDSIGNUP.COM").ok).toBe(true);
+    // A gmail address in the display name is not the sender; the angle address is.
+    expect(checkSender('"bondesign@gmail.com" <noreply@wardsignup.com>')).toEqual({
+      ok: true,
+      name: "bondesign@gmail.com",
+      email: "noreply@wardsignup.com",
+    });
+    for (const e of [
+      "noreply@wardsignup.com <bondesign@gmail.com>",
+      "Ward <noreply@wardsignup.com>, bondesign@gmail.com",
+      "noreply@wardsignup.com, bondesign@gmail.com",
+      "noreply@wardsignup.com\r\nBcc: bondesign@gmail.com",
+      "Ward <noreply@wardsignup.com>\r\nBcc: x@gmail.com",
+      "noreply@wardsignup.com.",
+      "x@foo.wardsignup.com",
+      "<noreply@wardsignup.com",
+    ]) {
+      expect(checkSender(e).ok).toBe(false);
+    }
+  });
+
   it("refusal logs the domain only, never the full address", () => {
     const err = console.error as jest.Mock;
     const r = checkSender("PFS <bondesign@gmail.com>", "welcome");

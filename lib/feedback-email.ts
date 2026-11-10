@@ -52,6 +52,7 @@ The questions:
 4. What's the #1 thing holding it back from being perfect?
 
 Can't click the link? Copy this into your browser: ${formUrl}
+Or just reply to this email. I read every reply.
 
 Thanks again,
 Jonathan
@@ -91,7 +92,8 @@ Made with ❤️ in Arizona`;
           <li>What's the #1 thing holding it back from being perfect?</li>
         </ol>
         <p style="font-size: 13px; line-height: 1.5; margin: 0 0 20px; color: #7A9AAD;">
-          Can't click the link? Copy this into your browser: <span style="word-break: break-all;">${safeUrl}</span>
+          Can't click the link? Copy this into your browser: <span style="word-break: break-all;">${safeUrl}</span><br>
+          Or just reply to this email. I read every reply.
         </p>
         <p style="font-size: 16px; line-height: 1.7; margin: 0 0 4px;">Thanks again,</p>
         <p style="font-size: 16px; line-height: 1.7; margin: 0 0 24px;">Jonathan</p>

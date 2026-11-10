@@ -30,6 +30,8 @@ it("feedback ask comes from jonathan@ with no Reply-To, and keeps the copy-into-
   expect(p.text).not.toMatch(/support@wardsignup\.com/);
   expect(p.html).not.toMatch(/support@wardsignup\.com/);
   expect(p.text).toContain("Can't click the link? Copy this into your browser: https://wardsignup.com/feedback/abc");
+  expect(p.text).toContain("Or just reply to this email.");
+  expect(p.html).toContain("Or just reply to this email.");
   expect(p.text).not.toMatch(/[\u2013\u2014]/);
 });
 

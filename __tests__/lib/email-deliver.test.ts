@@ -546,6 +546,21 @@ describe("routing by email type: bulk mail Brevo first", () => {
     expect(resendSend.mock.calls[0][1].idempotencyKey).toBe("k-2");
   });
 
+  it("production env (BREVO_SENDER_EMAIL=jonathan@): a noreply@ reminder Brevo refuses as an unknown sender falls back to Resend from noreply@, never jonathan@", async () => {
+    Object.assign(process.env, BREVO_ENV, { BREVO_SENDER_EMAIL: "jonathan@wardsignup.com", BREVO_SENDER_NAME: "" });
+    roomOnResend();
+    fetchMock().mockResolvedValue({ ok: false, status: 400, text: async () => '{"code":"invalid_parameter","message":"Sender is invalid / inactive"}' });
+    resendSend.mockResolvedValue({ error: null });
+    expect(await deliverEmail({ ...msg, kind: "reminder" }, { urgent: true })).toEqual({ ok: true, provider: "resend" });
+    const b = brevoBodies()[0];
+    expect(b.sender).toEqual({ email: "noreply@wardsignup.com", name: "Ward Signup" });
+    expect(b.replyTo).toBeUndefined();
+    expect(JSON.stringify(b)).not.toContain("jonathan@");
+    const r = resendSend.mock.calls[0][0];
+    expect(r.from).toBe("Ward Signup <noreply@wardsignup.com>");
+    expect(r.replyTo).toBeUndefined();
+  });
+
   it("bulk Brevo fails and Resend is then out of quota: Brevo is not tried a second time", async () => {
     Object.assign(process.env, BREVO_ENV);
     roomOnResend();
