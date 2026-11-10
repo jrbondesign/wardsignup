@@ -44,10 +44,12 @@ test.describe.serial('Complete Event Flow', () => {
     await expect(page.getByText('Session 1')).toBeVisible();
 
     // Update first session
-    // Weekday select by label (not TimeInput hour/minute/AM-PM)
+    // Weekday select by label (TimeInput is a button that opens a time sheet)
     await page.getByLabel(/day of (the )?week/i).first().selectOption('2'); // Tuesday
-    await page.getByLabel('Start time hour').first().selectOption('7');
-    await page.getByLabel('Start time AM or PM').first().selectOption('PM');
+    await page.getByRole('button', { name: /^Start time, / }).first().click();
+    await page.getByRole('dialog').getByRole('button', { name: "7 o'clock" }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'PM' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^Set / }).click();
     await page.locator('input[type="number"]').first().fill('2');
     await page.getByPlaceholder('e.g., Detention Center').fill('Test Location');
 
@@ -58,8 +60,10 @@ test.describe.serial('Complete Event Flow', () => {
     // Configure second session
     await page.getByLabel(/day of (the )?week/i).nth(1).selectOption('4'); // Thursday
 
-    await page.getByLabel('Start time hour').nth(1).selectOption('3');
-    await page.getByLabel('Start time AM or PM').nth(1).selectOption('PM');
+    await page.getByRole('button', { name: /^Start time, / }).nth(1).click();
+    await page.getByRole('dialog').getByRole('button', { name: "3 o'clock" }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'PM' }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^Set / }).click();
 
     const session2Capacity = page.locator('input[type="number"]').nth(1);
     await session2Capacity.fill('1');
