@@ -11,10 +11,6 @@ import { sendGuardedEmail } from "@/lib/email-send";
 import { withUtm } from "@/lib/utm";
 import { buildWelcomeEmail } from "@/lib/welcome-email";
 
-/** Welcome replies: must be an address that receives mail (e.g. Cloudflare Email Routing → your inbox). */
-const welcomeReplyTo =
-  process.env.WELCOME_REPLY_TO?.trim() || "jonathan@wardsignup.com";
-
 function alreadyWelcomedForBrand(
   meta: { welcome_sent_by_brand?: Record<string, unknown> } | undefined,
   brandId: string,
@@ -216,6 +212,7 @@ export async function POST(request: NextRequest) {
       brandName: brand.name,
       siteHost: brand.siteHost,
       siteUrlWithUtm,
+      supportEmail: brand.supportEmail,
     });
 
     // Send welcome email (must succeed before we mark welcome_sent)
@@ -226,8 +223,8 @@ export async function POST(request: NextRequest) {
       category: "transactional",
       realtime: true,
       kind: "welcome",
+      // Automated mail: noreply@ From, no Reply-To (replies bounce by design).
       from: welcomeEmailFrom(brand),
-      replyTo: welcomeReplyTo,
       to: canonicalUser.email!,
       subject: welcomeSubject,
       text: welcomeText,

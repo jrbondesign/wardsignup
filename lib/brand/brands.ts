@@ -31,7 +31,7 @@ const WARDSIGNUP: BrandDefinition = {
   email: {
     organizerFrom: "Ward Signup <noreply@wardsignup.com>",
     inviteFrom: "Ward Signup <noreply@wardsignup.com>",
-    welcomeFrom: "Jonathan <jonathan@wardsignup.com>",
+    welcomeFrom: "Ward Signup <noreply@wardsignup.com>",
     creatorNotifyFrom: "Ward Signup <noreply@wardsignup.com>",
     welcomeSubject: "You're in — a few things to know about Ward Signup",
     welcomeQuickStartBold:

@@ -50,8 +50,11 @@ export default async function FeedbackPage({
               This link isn&apos;t valid
             </h1>
             <p className="text-gray-600">
-              The feedback link may have been mistyped. You can always just
-              reply to the email instead — every message gets read.
+              The feedback link may have been mistyped. You can always email{" "}
+              <a href={`mailto:${brand.supportEmail}`} className="text-[#0E96B0] font-medium">
+                {brand.supportEmail}
+              </a>{" "}
+              instead. Every message gets read.
             </p>
           </>
         )}
@@ -61,7 +64,11 @@ export default async function FeedbackPage({
               Thanks — we already got your feedback!
             </h1>
             <p className="text-gray-600">
-              If you have more to share, just reply to the email.
+              If you have more to share, email{" "}
+              <a href={`mailto:${brand.supportEmail}`} className="text-[#0E96B0] font-medium">
+                {brand.supportEmail}
+              </a>
+              .
             </p>
           </>
         )}

@@ -286,7 +286,7 @@ export type FeedbackDigestSummary = {
 
 /**
  * DEPRECATED: Monday digest is no longer sent. Feedback now sends immediately
- * to bondesign@gmail.com when submitted. This function remains for backwards
+ * to jonathan@wardsignup.com when submitted. This function remains for backwards
  * compatibility but is not called from any active cron.
  *
  * Historical: Weekly pass (Mondays, Phoenix time): email the founder all new responses for this

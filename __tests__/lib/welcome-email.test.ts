@@ -7,6 +7,7 @@ const input = {
   brandName: "WardSignup",
   siteHost: "wardsignup.com",
   siteUrlWithUtm: "https://wardsignup.com/?utm_source=email",
+  supportEmail: "support@wardsignup.com",
 };
 
 const MEMBERS = "✨ Members don't need an account. They just open your link, pick a slot, and enter their name.";
@@ -18,7 +19,7 @@ describe("buildWelcomeEmail", () => {
     expect(text.split(WELCOME_REMINDERS_LINE)).toHaveLength(2);
     expect(text.startsWith("Hi Ann <b>,")).toBe(true);
     expect(text).toContain("Thanks for signing up. You're one of our very first users!");
-    expect(text).toContain("This is free to use. If anything feels off, just reply.");
+    expect(text).toContain("This is free to use. If anything feels off, email support@wardsignup.com. I read every message.");
   });
 
   it("adds the reminders line right after the members line in the html body", () => {
@@ -32,7 +33,13 @@ describe("buildWelcomeEmail", () => {
     expect(html).toContain("Hi Ann &lt;b&gt;,");
     expect(html).toContain('href="https://wardsignup.com/?utm_source=email"');
     expect(html).toContain("Thanks for signing up. You're one of our very first users!");
-    expect(html).toContain("This is free to use. If anything feels off, just reply.");
+    expect(html).toContain('If anything feels off, email <a href="mailto:support@wardsignup.com"');
+  });
+
+  it("never asks people to reply (it is sent from noreply@)", () => {
+    const { text, html } = buildWelcomeEmail(input);
+    expect(text).not.toMatch(/just reply|reply to this/i);
+    expect(html).not.toMatch(/just reply|reply to this/i);
   });
 
   it("has no em or en dashes in either body", () => {

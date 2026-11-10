@@ -20,7 +20,7 @@ import {
   sendViaBrevo,
 } from "@/lib/email-deliver";
 
-const brand = { id: "wardsignup", name: "Ward Signup" } as never;
+const brand = { id: "wardsignup", name: "Ward Signup", email: { organizerFrom: "Ward Signup <noreply@wardsignup.com>" } } as never;
 const msg = { brand, from: "Ward Signup <noreply@wardsignup.com>", to: "a@b.com", subject: "S", html: "<p>h</p>" };
 const BREVO_ENV = {
   EMAIL_FALLBACK_PROVIDER: "brevo",
@@ -65,6 +65,62 @@ it("sends the Brevo payload", async () => {
   const body = JSON.parse(init.body);
   expect(body.sender).toEqual({ email: "noreply@wardsignup.com", name: "Ward Signup" });
   expect(body.to).toEqual([{ email: "a@b.com" }]);
+});
+
+describe("sender guard", () => {
+  beforeEach(() => {
+    jest.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it("brevo stays off when BREVO_SENDER_EMAIL is not @wardsignup.com", () => {
+    expect(brevoConfig({ ...BREVO_ENV, BREVO_SENDER_EMAIL: "bondesign@gmail.com" })).toBeNull();
+    expect(brevoConfig({ ...BREVO_ENV, BREVO_SENDER_EMAIL: "jonathan@wardsignup.com" })?.senderEmail).toBe("jonathan@wardsignup.com");
+  });
+
+  it("Brevo uses the message's noreply@ From even when BREVO_SENDER_EMAIL is jonathan@, with no Reply-To", async () => {
+    const f = jest.fn().mockResolvedValue({ ok: true, text: async () => "" });
+    const cfg = { apiKey: "k", senderEmail: "jonathan@wardsignup.com", senderName: "Jonathan" };
+    await sendViaBrevo(msg, cfg, f as never);
+    const body = JSON.parse(f.mock.calls[0][1].body);
+    expect(body.sender).toEqual({ email: "noreply@wardsignup.com", name: "Ward Signup" });
+    expect(body.replyTo).toBeUndefined();
+  });
+
+  it("Brevo passes a Reply-To only when the caller sets one", async () => {
+    const f = jest.fn().mockResolvedValue({ ok: true, text: async () => "" });
+    const cfg = { apiKey: "k", senderEmail: "noreply@wardsignup.com", senderName: null };
+    await sendViaBrevo({ ...msg, from: "Jonathan <jonathan@wardsignup.com>" }, cfg, f as never);
+    expect(JSON.parse(f.mock.calls[0][1].body).replyTo).toBeUndefined();
+    await sendViaBrevo({ ...msg, replyTo: "leader@example.com" }, cfg, f as never);
+    expect(JSON.parse(f.mock.calls[1][1].body).replyTo).toEqual({ email: "leader@example.com" });
+  });
+
+  it("sendViaBrevo refuses a gmail From without calling Brevo", async () => {
+    const f = jest.fn();
+    const r = await sendViaBrevo({ ...msg, from: "PFS <bondesign@gmail.com>" }, { apiKey: "k", senderEmail: "noreply@wardsignup.com", senderName: null }, f as never);
+    expect(r).toEqual({ ok: false, error: expect.stringContaining("must be @wardsignup.com"), senderRefused: true });
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it("deliverEmail refuses a gmail From before any provider or budget call", async () => {
+    Object.assign(process.env, BREVO_ENV);
+    for (const opts of [{ urgent: true }, { urgent: false, bulk: true }, { urgent: false, realtime: true }]) {
+      const r = await deliverEmail({ ...msg, from: "PFS <bondesign@gmail.com>", kind: "reminder" }, opts);
+      expect(r).toEqual({ ok: false, error: expect.stringContaining("must be @wardsignup.com"), senderRefused: true });
+    }
+    expect(resendSend).not.toHaveBeenCalled();
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
+  it("bulk mail on Brevo goes out as noreply@wardsignup.com", async () => {
+    Object.assign(process.env, BREVO_ENV, { BREVO_SENDER_EMAIL: "jonathan@wardsignup.com" });
+    const r = await deliverEmail({ ...msg, kind: "reminder" }, { urgent: false });
+    expect(r).toEqual({ ok: true, provider: "brevo" });
+    const body = JSON.parse((global.fetch as jest.Mock).mock.calls[0][1].body);
+    expect(body.sender.email).toBe("noreply@wardsignup.com");
+    expect(body.replyTo).toBeUndefined();
+  });
 });
 
 it("uses Resend while under the soft limit", async () => {
@@ -370,6 +426,7 @@ describe("failover by Resend failure class", () => {
       const alerts = brevoSendsTo("jonathan@wardsignup.com");
       expect(alerts).toHaveLength(1);
       expect(alerts[0].subject).toContain("failover");
+      expect(alerts[0].sender.email).toBe("noreply@wardsignup.com");
       expect(JSON.stringify(alerts[0])).not.toContain("a@b.com");
       const alertRate = rpc.mock.calls.find((c) => c[1].p_action === "email_failover_alert")![1];
       expect(alertRate.p_max).toBe(1);
