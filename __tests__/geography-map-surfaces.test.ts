@@ -10,7 +10,7 @@ function read(rel: string): string {
 describe("geography map surfaces share one path", () => {
   it("homepage and founder metrics both render PublicGeographyMap", () => {
     const home = read("components/HomePage.tsx");
-    const metrics = read("app/admin/metrics/page.tsx");
+    const metrics = read("components/metrics/FounderMetricsPage.tsx");
     expect(home).toContain('import("@/components/PublicGeographyMap")');
     expect(home).toContain("<PublicGeographyMap");
     expect(metrics).toContain('import("@/components/PublicGeographyMap")');
