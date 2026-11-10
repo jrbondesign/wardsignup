@@ -15,7 +15,7 @@ export async function GET(request: NextRequest) {
     member_name: string;
     guest_names: string[];
     sessions: { day_of_week: number; time: string; end_time: string | null; session_date: string | null } | { day_of_week: number; time: string; end_time: string | null; session_date: string | null }[] | null;
-    campaigns: { id: string; name: string; brand_id: string | null; public_host: string | null; event_timezone: string | null; event_end_date: string | null } | { id: string; name: string; brand_id: string | null; public_host: string | null; event_timezone: string | null; event_end_date: string | null }[] | null;
+    campaigns: { id: string; name: string; brand_id: string | null; public_host: string | null; event_timezone: string | null; event_end_date: string | null; event_type?: string | null } | { id: string; name: string; brand_id: string | null; public_host: string | null; event_timezone: string | null; event_end_date: string | null; event_type?: string | null }[] | null;
   };
 
   const { data: rawData, error } = await admin
@@ -36,7 +36,8 @@ export async function GET(request: NextRequest) {
         brand_id,
         public_host,
         event_timezone,
-        event_end_date
+        event_end_date,
+        event_type
       )
     `,
     )
@@ -64,6 +65,7 @@ export async function GET(request: NextRequest) {
   const slotLabel = formatSessionSlotLabel(session as Parameters<typeof formatSessionSlotLabel>[0], {
     eventTimezone: (campaign as { event_timezone?: string | null }).event_timezone ?? null,
     eventEndDate: (campaign as { event_end_date?: string | null }).event_end_date ?? null,
+    eventType: (campaign as { event_type?: string | null }).event_type ?? null,
   });
 
   const { siteOrigin } = publicSiteOriginAndBrandForCampaign(
@@ -71,7 +73,7 @@ export async function GET(request: NextRequest) {
   );
 
   const sess = session as { day_of_week: number; time: string; end_time: string | null; session_date: string | null };
-  const camp = campaign as { id: string; name: string; event_timezone?: string | null; event_end_date?: string | null };
+  const camp = campaign as { id: string; name: string; event_timezone?: string | null; event_end_date?: string | null; event_type?: string | null };
 
   return NextResponse.json({
     member_name: data.member_name,
@@ -85,5 +87,6 @@ export async function GET(request: NextRequest) {
     session_end_time: sess.end_time ?? null,
     event_timezone: camp.event_timezone ?? null,
     event_end_date: camp.event_end_date ?? null,
+    event_type: camp.event_type ?? null,
   });
 }

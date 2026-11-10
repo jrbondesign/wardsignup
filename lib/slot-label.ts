@@ -18,10 +18,10 @@ export function formatSessionSlotLabel(
     end_time: string | null;
     session_date: string | null;
   },
-  options?: { eventTimezone?: string | null; eventEndDate?: string | null },
+  options?: { eventTimezone?: string | null; eventEndDate?: string | null; eventType?: string | null },
 ): string {
   // Multi-day RSVP: the range spans the event, so leave out "(next day)".
-  const range = { multiDay: spansMultipleDays(sess.session_date, options?.eventEndDate) };
+  const range = { multiDay: spansMultipleDays(sess.session_date, options?.eventEndDate, options?.eventType) };
   if (sess.session_date) {
     if (options !== undefined) {
       const tz = resolveEffectiveEventTimezone(options.eventTimezone);

@@ -170,7 +170,7 @@ export async function syncCampaignCalendar(campaignId: string): Promise<SyncResu
     // 3. Load campaign, sessions, and signups
     const { data: campaign, error: campaignError } = await supabase
       .from('campaigns')
-      .select('id, name, event_timezone, event_end_date, leader_name, leader_email')
+      .select('id, name, event_timezone, event_end_date, event_type, leader_name, leader_email')
       .eq('id', campaignId)
       .single();
 
@@ -418,7 +418,7 @@ function buildGoogleEvent(
     session_date: session.session_date as string,
     time: session.time,
     end_time: session.end_time,
-  }, campaign.event_end_date ?? null);
+  }, campaign.event_type === 'rsvp' ? (campaign.event_end_date ?? null) : null);
 
   // Title: event name + first signup name (or "Multiple signups")
   const firstName = signups[0]?.member_name || 'Unknown';

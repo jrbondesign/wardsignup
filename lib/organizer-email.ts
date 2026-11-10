@@ -8,7 +8,7 @@ import {
 import { buildOrganizerEmailFooterHtml } from "@/lib/site-footer";
 import { escapeHtml } from "@/lib/html-escape";
 import { formatTimeRange } from "@/lib/utils";
-import { spansMultipleDays } from "@/lib/calendar-times";
+import { spansMultipleDays, rsvpEventEndDate } from "@/lib/calendar-times";
 import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { formatInTimeZone } from "date-fns-tz";
@@ -640,7 +640,7 @@ export async function sendOrganizerMetricsEmail(
       headline: headlineForKind(kind),
       kind,
       eventTimezone: (c.event_timezone as string | null) ?? null,
-      eventEndDate: (c.event_end_date as string | null) ?? null,
+      eventEndDate: rsvpEventEndDate((c as { event_type?: string | null }).event_type, (c.event_end_date as string | null) ?? null),
     });
   }
 
@@ -709,7 +709,7 @@ export async function sendOrganizerFasterAlertEmail(
   const { data: campaign, error: cErr } = await admin
     .from("campaigns")
     .select(
-      "id, name, user_email, created_by, organizer_instant_notify_enabled, organizer_last_instant_notify_at, brand_id, public_host, event_timezone, event_end_date",
+      "id, name, user_email, created_by, organizer_instant_notify_enabled, organizer_last_instant_notify_at, brand_id, public_host, event_timezone, event_end_date, event_type",
     )
     .eq("id", campaignId)
     .single();
@@ -788,7 +788,7 @@ export async function sendOrganizerFasterAlertEmail(
       ? formatSessionWhen(
           sessionFieldsToRow(sess),
           (c.event_timezone as string | null) ?? null,
-          (c.event_end_date as string | null) ?? null,
+          rsvpEventEndDate((c as { event_type?: string | null }).event_type, (c.event_end_date as string | null) ?? null),
         )
       : "Slot";
     return {
@@ -846,7 +846,7 @@ export async function sendOrganizerFasterAlertEmail(
     kind: "faster",
     fasterNewSignups,
     eventTimezone: (c.event_timezone as string | null) ?? null,
-    eventEndDate: (c.event_end_date as string | null) ?? null,
+    eventEndDate: rsvpEventEndDate((c as { event_type?: string | null }).event_type, (c.event_end_date as string | null) ?? null),
   });
 
   try {

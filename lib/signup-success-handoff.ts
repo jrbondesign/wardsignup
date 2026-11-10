@@ -16,6 +16,7 @@ export type SignupSuccessInfo = {
   session_end_time: string | null;
   event_timezone: string | null;
   event_end_date: string | null;
+  event_type?: string | null;
 };
 
 const PREFIX = "signup_success:";
