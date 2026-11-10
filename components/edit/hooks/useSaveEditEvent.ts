@@ -2,6 +2,7 @@
 
 import { SessionData, mapDbSessionsToState, scrollToEditSection } from "@/components/edit/edit-page-shared";
 import { createClientComponentClient } from "@/lib/auth";
+import { expirePublicEventPage } from "@/lib/event-page-expire-client";
 import { groupSessionsForDisplay } from "@/lib/edit-session-classes";
 import { isMissingSortOrderError, stripSortOrder } from "@/lib/session-sort-order";
 import { type EditEventState } from "./useEditEventState";
@@ -55,9 +56,15 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
     setSaving(true);
     setError(null);
 
+    // Set once a slot write is sent. The finally block then expires the public
+    // event page cache, even when a later step fails after some rows changed.
+    let slotWriteAttempted = false;
+    let accessToken: string | undefined;
+
     try {
       const supabase = createClientComponentClient();
       const { data: { session } } = await supabase.auth.getSession();
+      accessToken = session?.access_token;
 
       // Assign sort_order from the current display order so drag-reordering (and
       // freshly added slots) persist a stable, explicit order.
@@ -139,6 +146,7 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
         }));
 
       if (toUpsert.length > 0) {
+        slotWriteAttempted = true;
         let { error: upsertError } = await supabase
           .from("sessions")
           .upsert(toUpsert as any, { onConflict: "id" });
@@ -167,6 +175,7 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
         }));
 
       if (toInsert.length > 0) {
+        slotWriteAttempted = true;
         let { error: insertError } = await supabase.from("sessions").insert(toInsert as any);
         if (insertError && isMissingSortOrderError(insertError)) {
           ({ error: insertError } = await supabase
@@ -177,6 +186,7 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
       }
 
       if (toDeleteIds.length > 0) {
+        slotWriteAttempted = true;
         const { error: deleteError } = await supabase.from("sessions").delete().in("id", toDeleteIds);
         if (deleteError) throw new Error("Failed to delete removed sessions");
       }
@@ -226,6 +236,10 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
     } catch (error: any) {
       setError(error.message || "Failed to update event");
       setSaving(false);
+    } finally {
+      // Slot rows were written from the browser, which no server route sees.
+      // Fire and forget: the save result never depends on it.
+      if (slotWriteAttempted) void expirePublicEventPage(eventId, accessToken);
     }
   };
 

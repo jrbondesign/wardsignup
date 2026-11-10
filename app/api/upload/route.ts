@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
@@ -186,6 +187,8 @@ export async function POST(request: NextRequest) {
       // Persist confirmed (one campaign row returned) — do not roll back the new
       // cover if later old-object cleanup throws.
       uploadedCoverUrlToRollback = null;
+      // The public event page caches the cover row: show the new cover next load.
+      revalidateEventPage(eventId);
       // Clean up the old object if it lived at a different path (other
       // format, other uploader, or a file shared from a duplicated event).
       if (eventMediaPath(previousCoverUrl) !== storagePath) {
@@ -269,6 +272,7 @@ export async function DELETE(request: NextRequest) {
         .from("campaigns")
         .update({ cover_image_url: null, cover_position: null } as never)
         .eq("id", eventId!);
+      revalidateEventPage(eventId);
       // Remove the actual stored object (may belong to another admin's folder
       // or be shared with a duplicated event — the helper checks references).
       await removeCoverIfUnreferenced(admin, previousCoverUrl);

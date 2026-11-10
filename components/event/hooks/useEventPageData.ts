@@ -6,6 +6,7 @@ import { supabase } from "@/lib/supabase";
 import { loadPublicEventPage, type PublicEventClient } from "@/lib/public-event-page";
 import { type SessionWithSignups } from "@/components/event/event-page-shared";
 import { type EventPageInit, type EventPageState } from "./useEventPageState";
+import { EVENT_PAGE_CACHE_SECONDS } from "@/lib/event-page-cache-config";
 
 /** First calendar month with an upcoming dated slot, in the visitor's local date. */
 export function firstUpcomingMonth(sessions: SessionWithSignups[], now: Date = new Date()): Date | null {
@@ -27,11 +28,15 @@ export function firstUpcomingMonth(sessions: SessionWithSignups[], now: Date = n
 }
 
 /**
- * Server data younger than this is shown as is: no background refresh. The
- * server cache is EVENT_PAGE_CACHE_SECONDS (30 s) and every signup/cancel
- * route expires it, so a fresh page load is already current.
+ * Server data younger than this is shown as is: no background refresh. Every
+ * signup, cancel and organizer edit expires the server cache on demand, so
+ * data inside the server window (EVENT_PAGE_CACHE_SECONDS) is already
+ * current. Older data means the server served a stale entry while it
+ * refreshes (first view after a quiet spell), so the browser reloads it.
+ * Matching the window keeps the browser from re-reading Postgres on views the
+ * server cache already answered.
  */
-export const BACKGROUND_REFRESH_AFTER_MS = 60_000;
+export const BACKGROUND_REFRESH_AFTER_MS = EVENT_PAGE_CACHE_SECONDS * 1000;
 /** Allowed browser clock skew; beyond it the age is unknown and we refresh as before. */
 const CLOCK_SKEW_MS = 5 * 60_000;
 
