@@ -32,16 +32,20 @@
     max-width: 100%;
     box-sizing: border-box;
   }
+  /* WebKit + coarse pointer is iPhone/iPad. Desktop Safari also supports
+   * -webkit-touch-callout, and must keep its native date chrome. */
   @supports (-webkit-touch-callout: none) {
-    input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"]) {
-      -webkit-appearance: none;
-      appearance: none;
-      display: block;
-      min-height: 2.75rem;
-    }
-    input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-date-and-time-value {
-      text-align: left;
-      min-height: 1.25rem;
+    @media (hover: none) and (pointer: coarse) {
+      input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"]) {
+        -webkit-appearance: none;
+        appearance: none;
+        display: block;
+        min-height: 2.75rem;
+      }
+      input:is([type="date"], [type="time"], [type="datetime-local"], [type="month"], [type="week"])::-webkit-date-and-time-value {
+        text-align: left;
+        min-height: 1.25rem;
+      }
     }
   }
 }

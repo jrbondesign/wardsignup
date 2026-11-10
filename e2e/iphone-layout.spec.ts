@@ -137,3 +137,20 @@ for (const width of WIDTHS) {
     });
   });
 }
+
+test('create-layout fixture does not POST a new event', async ({ page }) => {
+  const posts: string[] = [];
+  await page.route('**/api/events', async (route) => {
+    if (route.request().method() === 'POST') {
+      posts.push(route.request().url());
+      await route.fulfill({ status: 599, body: 'blocked-by-test' });
+      return;
+    }
+    await route.continue();
+  });
+  await openCreateForm(page);
+  await page.locator('form').evaluate((form) => (form as HTMLFormElement).requestSubmit());
+  await page.waitForTimeout(300);
+  expect(posts).toEqual([]);
+  await expect(page).toHaveURL(/\/demo\/create-layout/);
+});

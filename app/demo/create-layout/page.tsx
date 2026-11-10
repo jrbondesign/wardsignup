@@ -14,11 +14,15 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false, googleBot: { index: false, follow: false } },
 };
 
-export default function Page() {
-  const env = process.env;
-  const enabled =
+/** True when the unauthenticated create-form fixture may be served. */
+export function isCreateLayoutFixtureEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (
     env.VERCEL_ENV !== "production" &&
-    (env.VERCEL_ENV === "preview" || env.NODE_ENV !== "production" || env.LAYOUT_FIXTURE === "1");
-  if (!enabled) notFound();
+    (env.VERCEL_ENV === "preview" || env.NODE_ENV !== "production" || env.LAYOUT_FIXTURE === "1")
+  );
+}
+
+export default function Page() {
+  if (!isCreateLayoutFixtureEnabled()) notFound();
   return <CreateLayoutFixture />;
 }

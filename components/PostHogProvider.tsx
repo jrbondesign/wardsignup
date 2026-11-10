@@ -5,6 +5,7 @@ import { PostHogProvider as PHProvider } from "posthog-js/react";
 import { useEffect } from "react";
 import { initAttributionTracking } from "@/lib/attribution";
 import { scrubExceptionEvent } from "@/lib/pii-scrub";
+import { isDemoAnalyticsPath } from "@/lib/posthog-client";
 
 if (typeof window !== "undefined") {
   posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
@@ -21,7 +22,17 @@ if (typeof window !== "undefined") {
     capture_exceptions: true,
     // Error messages can echo an email or a token; scrub $exception events
     // before they leave the browser (same rules as the server side).
-    before_send: scrubExceptionEvent,
+    before_send: (event) => {
+      const scrubbed = scrubExceptionEvent(event);
+      if (!scrubbed) return null;
+      const url =
+        (scrubbed.properties && (scrubbed.properties.$current_url as string | undefined)) ||
+        (typeof window !== "undefined" ? window.location.href : "");
+      if (isDemoAnalyticsPath(url) || (typeof window !== "undefined" && isDemoAnalyticsPath(window.location.pathname))) {
+        return null;
+      }
+      return scrubbed;
+    },
   });
 }
 
