@@ -316,14 +316,14 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
                 if (!rescheduleTime) return "Choose a start time to generate slots.";
                 if (tithingError) return "Fix the end time above to generate slots.";
                 return total > 0
-                  ? `${total} slot${total !== 1 ? "s" : ""} will be created: ${tithingDuration}-min appointments, ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
+                  ? `${total} slot${total !== 1 ? "s" : ""} will be created: ${tithingDuration}-min appointments, ${formatTimeRange(rescheduleTime, rescheduleEndTime, { clock: "12h" })}.`
                   : "Configure the schedule above to auto-generate slots.";
               }
 
               if (rescheduleDays.length === 0) return "Choose days of week to generate slots.";
               const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, rescheduleDays);
               return dayCount > 0
-                ? `${dayCount} session${dayCount !== 1 ? "s" : ""} will be created: ${formatTimeRange(rescheduleTime, rescheduleEndTime)}.`
+                ? `${dayCount} session${dayCount !== 1 ? "s" : ""} will be created: ${formatTimeRange(rescheduleTime, rescheduleEndTime, { clock: "12h" })}.`
                 : "Choose a date range and days of week to generate slots.";
             })()
           : "Choose a date range to see a preview."}

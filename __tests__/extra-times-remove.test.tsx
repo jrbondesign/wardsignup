@@ -31,8 +31,14 @@ function renderStateful(extraTimes: CreateFormState["extraTimes"]) {
   return latest;
 }
 
-const pick = (name: string, value: string) =>
-  fireEvent.change(screen.getByRole("combobox", { name }), { target: { value } });
+/** Set a time through the sheet: open the field, pick hour and AM/PM, then Set. */
+const setTime = (fieldName: string, hour: string, meridiem: "AM" | "PM") => {
+  fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${fieldName}, `) }));
+  const sheet = screen.getByRole("dialog");
+  fireEvent.click(within(sheet).getByRole("button", { name: `${hour} o'clock` }));
+  fireEvent.click(within(sheet).getByRole("button", { name: meridiem }));
+  fireEvent.click(within(sheet).getByRole("button", { name: /^Set / }));
+};
 
 describe("Additional times remove button", () => {
   it("gives each Remove a distinct name and removes only its own row", () => {
@@ -67,10 +73,10 @@ describe("Additional times remove button", () => {
       "Remove Dinner time",
     ]);
     expect(new Set(names).size).toBe(names.length);
-    expect(screen.getByRole("combobox", { name: "Meet at church time (row 1) hour" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Meet at church time (row 1), 5:30 PM" })).toBeInTheDocument();
   });
 
-  it("sits on the label line, outside the time selects group", () => {
+  it("sits on the label line, outside the time field group", () => {
     renderRsvp([{ label: "", time: "" }]);
     const button = screen.getByRole("button", { name: "Remove additional time 1" });
     const group = screen.getByRole("group", { name: "Time" });
@@ -80,45 +86,38 @@ describe("Additional times remove button", () => {
     expect(button.parentElement).toBe(labelInput.parentElement);
     expect(button.className).toMatch(/\bh-11\b/);
     expect(button.className).toMatch(/\bw-11\b/);
-    expect(within(group).getByRole("combobox", { name: "Additional time 1 AM or PM" })).toBeInTheDocument();
+    expect(within(group).getByRole("button", { name: "Additional time 1, not set" })).toBeInTheDocument();
   });
 });
 
-describe("Additional times keep their own unfinished picks when a row is removed", () => {
-  it("QA repro: unfinished Choir removed, Clean up keeps hour 3 and saves 15:00", () => {
+describe("Additional times keep their own values when a row is removed", () => {
+  it("unfinished Choir removed, Clean up set to 3 PM saves 15:00", () => {
     const latest = renderStateful([
       { label: "Meet at church", time: "09:00" },
       { label: "Choir", time: "" },
       { label: "Clean up", time: "" },
     ]);
-    pick("Choir time hour", "6");
-    pick("Clean up time hour", "3");
+    setTime("Clean up time", "3", "PM");
     fireEvent.click(screen.getByRole("button", { name: "Remove Choir time" }));
 
-    expect(screen.queryByRole("combobox", { name: "Choir time hour" })).toBeNull();
-    expect(screen.getByRole("combobox", { name: "Clean up time hour" })).toHaveValue("3");
-    expect(screen.getByRole("combobox", { name: "Clean up time minute" })).toHaveValue("00");
-
-    pick("Clean up time AM or PM", "PM");
+    expect(screen.queryByRole("button", { name: /^Choir time, / })).toBeNull();
+    expect(screen.getByRole("button", { name: "Clean up time, 3:00 PM" })).toBeInTheDocument();
     expect(latest.state?.extraTimes).toEqual([
       { label: "Meet at church", time: "09:00" },
       { label: "Clean up", time: "15:00" },
     ]);
   });
 
-  it("variant: finished Choir removed, Clean up keeps its unfinished hour 3", () => {
+  it("finished Choir removed, Clean up keeps its own time", () => {
     const latest = renderStateful([
       { label: "Choir", time: "" },
       { label: "Clean up", time: "" },
     ]);
-    pick("Choir time hour", "6");
-    pick("Choir time AM or PM", "PM");
+    setTime("Choir time", "6", "PM");
     expect(latest.state?.extraTimes[0]).toEqual({ label: "Choir", time: "18:00" });
-    pick("Clean up time hour", "3");
+    setTime("Clean up time", "3", "PM");
     fireEvent.click(screen.getByRole("button", { name: "Remove Choir time" }));
-
-    expect(screen.getByRole("combobox", { name: "Clean up time hour" })).toHaveValue("3");
-    pick("Clean up time AM or PM", "PM");
+    expect(screen.getByRole("button", { name: "Clean up time, 3:00 PM" })).toBeInTheDocument();
     expect(latest.state?.extraTimes).toEqual([{ label: "Clean up", time: "15:00" }]);
   });
 });

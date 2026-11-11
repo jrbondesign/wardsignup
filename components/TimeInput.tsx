@@ -1,6 +1,17 @@
 "use client";
 
-import { useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type ReactNode,
+} from "react";
+import { createPortal } from "react-dom";
+import { formatTime12h } from "@/lib/utils";
 
 interface TimeInputProps {
   value: string;
@@ -19,15 +30,15 @@ interface TimeInputProps {
    */
   nativeValidity?: boolean;
   /**
-   * Visible legend text, e.g. "Start time". When set, the three selects are wrapped
-   * in a fieldset with this legend so the pair is labelled on screen and for screen readers.
+   * Visible legend text, e.g. "Start time". When set, the field is wrapped in a
+   * fieldset with this legend so it is labelled on screen and for screen readers.
    */
   label?: string;
   /** Lighter sublabel after the legend, e.g. "(required)" or "(optional)". */
   labelNote?: string;
   /** "micro" matches the small uppercase labels in the sessions list. */
   labelVariant?: "default" | "micro";
-  /** Inline error shown under the selects (e.g. End before Start); marks the selects invalid. */
+  /** Inline error shown under the field (e.g. End before Start); marks it invalid. */
   error?: string;
 }
 
@@ -83,32 +94,21 @@ export function isPartialTime(parts: TimeParts): boolean {
 }
 
 const HOURS = Array.from({ length: 12 }, (_, i) => String(i + 1));
-const MINUTES = Array.from({ length: 60 }, (_, i) => String(i).padStart(2, "0"));
+const QUARTER_MINUTES = ["00", "15", "30", "45"];
+const FIVE_MINUTES = Array.from({ length: 12 }, (_, i) => String(i * 5).padStart(2, "0"));
 
 /**
- * 44px tall on phones, 40px from sm up, 12px radius, 14px text.
- * Phones share the row (flex-1); from sm up each select has a fixed width so the
- * group stays compact instead of stretching across the card. The native arrow is
- * replaced by a small chevron so placeholders like "Minute" and "AM/PM" fit and
- * the control looks the same in iOS Safari and Chrome.
- * Phone padding and min widths are as tight as the placeholders allow so a group
- * fits in 212px (the narrowest panel at 320); sm and up get roomier padding.
- * Every sm: size is repeated as @min-[35rem]: so a TimeRangeRow that goes side by
- * side below sm (cards 560px+ on 600 to 639px screens) gets the same compact sizing.
- * On phones each select shares the row but stops at 96px so wide phones and small
- * tablets do not stretch them across the card. Minute stays 80px from sm up because
- * its "Minute" placeholder (about 45px) would clip at 76px with the chevron padding.
+ * Minute buttons for the sheet. Quarter hours by default, every 5 minutes on
+ * request. A saved minute that is on neither list (for example 7:07) is added
+ * so it shows as selected and is kept unless the person picks another one.
  */
-const selectBase =
-  "appearance-none bg-no-repeat bg-[position:right_5px_center] sm:bg-[position:right_8px_center] @min-[35rem]:bg-[position:right_8px_center] min-w-0 h-11 sm:h-10 @min-[35rem]:h-10 py-0 pl-1.5 pr-[18px] sm:pl-2.5 @min-[35rem]:pl-2.5 sm:pr-[22px] @min-[35rem]:pr-[22px] text-sm text-[#0D2B35] rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] focus:border-[#0E96B0] focus:shadow-[0_0_0_3px_rgba(14,150,176,0.12)] aria-invalid:border-red-400 disabled:opacity-60 flex-1 max-w-24 sm:flex-none @min-[35rem]:flex-none sm:max-w-none @min-[35rem]:max-w-none";
+export function minuteChoices(current: string, showAll: boolean): string[] {
+  const base = showAll ? FIVE_MINUTES : QUARTER_MINUTES;
+  if (!current || base.includes(current)) return base;
+  return [...base, current].sort((a, b) => Number(a) - Number(b));
+}
 
-const CHEVRON_STYLE = {
-  backgroundImage:
-    "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 8' fill='none' stroke='%235A8399' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M1 1.5l5 5 5-5'/%3E%3C/svg%3E\")",
-  backgroundSize: "10px 7px",
-} as const;
-
-/** Shared legend styles so every time pair reads the same. */
+/** Shared legend styles so every time field reads the same. */
 export const TIME_LABEL_CLASS: Record<"default" | "micro", string> = {
   default: "block text-[13px] leading-5 font-semibold text-[#2E5566] tracking-[0.2px] mb-1",
   micro: "block text-[11px] leading-4 font-semibold text-[#5A8399] uppercase tracking-[0.4px] mb-1",
@@ -117,9 +117,93 @@ export const TIME_LABEL_NOTE_CLASS = "font-normal normal-case tracking-normal te
 
 const PARTIAL_MESSAGE = "Finish choosing hour, minute, and AM or PM.";
 
+/** Large header clock: "7:00", or "--:--" when that part has not been picked yet. */
+export function draftClockLabel(parts: TimeParts): string {
+  return `${parts.hour12 || "--"}:${parts.minute || "--"}`;
+}
+
 /**
- * Time picker with hour (1–12), minute, and AM/PM dropdown.
- * Stores the same 24-hour "HH:MM" string the rest of the app expects.
+ * The closed field: one button sized like the other inputs (44px on phones,
+ * 40px from sm up). Width is fixed from sm up so a Start and End pair fits on
+ * one line in a 560px card.
+ */
+const triggerBase =
+  "group/time flex items-center gap-2 w-full sm:w-[11.5rem] @min-[35rem]:w-[11.5rem] min-w-0 h-11 sm:h-10 @min-[35rem]:h-10 pl-3 pr-2 text-left text-sm rounded-xl bg-white outline-none transition-all border-[1.5px] border-[rgba(14,150,176,0.22)] hover:border-[#0E96B0] focus-visible:border-[#0E96B0] focus-visible:shadow-[0_0_0_3px_rgba(14,150,176,0.18)] aria-invalid:border-red-400 disabled:opacity-60 disabled:cursor-not-allowed touch-manipulation";
+
+/**
+ * Chip used for AM/PM, hours and minutes. Selected = light fill, never the solid primary.
+ * Grid chips pass fill so they take their column width (min-w-0) instead of a
+ * 44px minimum: six 44px columns plus gaps are wider than a 320px phone.
+ */
+function chipClass(selected: boolean, extra = "", fill = false): string {
+  return [
+    `relative inline-flex items-center justify-center min-h-11 ${fill ? "min-w-0 w-full" : "min-w-11"} rounded-xl border-[1.5px] text-[15px] tabular-nums transition-colors touch-manipulation outline-none focus-visible:shadow-[0_0_0_3px_rgba(14,150,176,0.25)]`,
+    selected
+      ? "bg-[#E6F7FB] border-[#0E96B0] text-[#08647E] font-semibold"
+      : "bg-white border-[rgba(14,150,176,0.22)] text-[#0D2B35] hover:border-[#0E96B0]",
+    extra,
+  ].join(" ");
+}
+
+function Check() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 16 16" className="w-3.5 h-3.5 mr-1 shrink-0" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 8.5l3 3 7-7" />
+    </svg>
+  );
+}
+
+function ClockIcon() {
+  return (
+    <svg aria-hidden="true" viewBox="0 0 20 20" className="w-4 h-4 shrink-0 text-[#5A8399]" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round">
+      <circle cx="10" cy="10" r="7.25" />
+      <path d="M10 6v4l2.5 1.5" />
+    </svg>
+  );
+}
+
+/**
+ * Overlay box that covers exactly the visible part of the page (the visual
+ * viewport), drawn at normal size even when the page is zoomed. Exported for tests.
+ */
+export function visualViewportOverlayStyle(vv: {
+  offsetLeft: number;
+  offsetTop: number;
+  width: number;
+  height: number;
+  scale: number;
+}): CSSProperties {
+  const scale = vv.scale > 0 ? vv.scale : 1;
+  return {
+    left: vv.offsetLeft,
+    top: vv.offsetTop,
+    right: "auto",
+    bottom: "auto",
+    width: vv.width * scale,
+    height: vv.height * scale,
+    transform: scale === 1 ? undefined : `scale(${1 / scale})`,
+    transformOrigin: "0 0",
+  };
+}
+
+/** Focusable elements inside the sheet, in DOM order, for the focus trap. */
+function focusables(root: HTMLElement | null): HTMLElement[] {
+  if (!root) return [];
+  return Array.from(
+    root.querySelectorAll<HTMLElement>('button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])')
+  );
+}
+
+/**
+ * Time field that opens a bottom sheet (Option A): a large header clock
+ * (for example 7:00, or --:-- when nothing is picked) next to the AM/PM
+ * toggle, hour buttons 1 to 12, minutes at :00 :15 :30 :45 (every 5 on
+ * request), and one Set button. Nothing is typed and no native picker opens.
+ *
+ * Stores the same 24-hour "HH:MM" string the rest of the app expects. Picks
+ * inside the sheet are a draft; only Set changes the value, so the saved value
+ * is never half filled. While a draft is incomplete the wrapper carries
+ * data-time-partial="true" (the same flag edit forms check before saving).
  */
 export default function TimeInput({
   value,
@@ -136,134 +220,378 @@ export default function TimeInput({
 }: TimeInputProps) {
   const autoId = useId();
   const baseId = id || autoId;
-  const meridiemRef = useRef<HTMLSelectElement>(null);
-  const [parts, setParts] = useState<TimeParts>(() => hhmmToParts(value));
-  const [syncedValue, setSyncedValue] = useState(value);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const validityRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<TimeParts>(() => hhmmToParts(value));
+  const [showAllMinutes, setShowAllMinutes] = useState(false);
+  const [missing, setMissing] = useState(false);
+  const [overlayStyle, setOverlayStyle] = useState<CSSProperties | undefined>(undefined);
 
-  // Sync from parent during render (avoids set-state-in-effect lint).
-  const fromParts = partsToHhmm(parts.hour12, parts.minute, parts.meridiem);
-  const incomplete =
-    !!(parts.hour12 || parts.minute || parts.meridiem) && fromParts === "";
-  if (value !== syncedValue) {
-    setSyncedValue(value);
-    if (value !== fromParts) {
-      if (!(value === "" && incomplete)) {
-        setParts(hhmmToParts(value));
-      }
-    }
-  }
-
-  const showPartial = isPartialTime(parts);
-
-  useLayoutEffect(() => {
-    const el = meridiemRef.current;
-    if (!el) return;
-    if (!nativeValidity) {
-      el.setCustomValidity("");
-      return;
-    }
-    el.setCustomValidity(showPartial ? PARTIAL_MESSAGE : "");
-  }, [showPartial, nativeValidity]);
-
-  const emit = (next: Partial<TimeParts>) => {
-    let merged: TimeParts = {
-      hour12: next.hour12 !== undefined ? next.hour12 : parts.hour12,
-      minute: next.minute !== undefined ? next.minute : parts.minute,
-      meridiem: next.meridiem !== undefined ? next.meridiem : parts.meridiem,
-    };
-    if (next.hour12 === "") {
-      merged = { hour12: "", minute: "", meridiem: "" };
-    } else if (next.hour12 && !merged.minute) {
-      merged = { ...merged, minute: "00" };
-    }
-    setParts(merged);
-    const hhmm = partsToHhmm(merged.hour12, merged.minute, merged.meridiem);
-    if (hhmm !== value) onChange(hhmm);
-  };
-
+  const draftHhmm = partsToHhmm(draft.hour12, draft.minute, draft.meridiem);
+  const showPartial = open && isPartialTime(draft);
+  const display = value ? formatTime12h(value) : "";
   const groupLabel = ariaLabel || label || "Time";
+  const sheetTitle = label || ariaLabel || "Time";
+  const titleId = `${baseId}-sheet-title`;
+  const previewId = `${baseId}-sheet-preview`;
   const hintId = `${baseId}-hint`;
   const errorId = `${baseId}-error`;
-  const describedBy = [showPartial ? hintId : "", error ? errorId : ""].filter(Boolean).join(" ") || undefined;
+  const missingId = `${baseId}-missing`;
+  const showMissing = missing && !value && !!required;
 
-  const selects = (
-      <div
-        // With a label the fieldset is the group (named by its legend); without one this div is.
-        role={label ? undefined : "group"}
-        aria-label={label ? undefined : groupLabel}
-        aria-describedby={!label ? describedBy : undefined}
-        data-time-partial={showPartial ? "true" : undefined}
-        className="flex gap-1 min-w-0 w-full sm:w-auto @min-[35rem]:w-auto items-stretch"
+  // Keep the hidden validity input in step: partial draft → custom message,
+  // blank + required → native valueMissing (set by the required attribute).
+  useLayoutEffect(() => {
+    const el = validityRef.current;
+    if (!el) return;
+    el.setCustomValidity(nativeValidity && showPartial ? PARTIAL_MESSAGE : "");
+  }, [showPartial, nativeValidity]);
+
+  const openSheet = () => {
+    if (disabled) return;
+    const parts = hhmmToParts(value);
+    setDraft(parts);
+    // Start on the 5 minute grid when the saved minute is not a quarter hour.
+    setShowAllMinutes(!!parts.minute && !QUARTER_MINUTES.includes(parts.minute) && FIVE_MINUTES.includes(parts.minute));
+    setOpen(true);
+  };
+
+  const close = () => {
+    setOpen(false);
+    // Return focus to the field the sheet came from.
+    triggerRef.current?.focus();
+  };
+
+  const cancel = () => {
+    setDraft(hhmmToParts(value));
+    close();
+  };
+
+  const commit = () => {
+    if (!draftHhmm) return;
+    if (draftHhmm !== value) onChange(draftHhmm);
+    setMissing(false);
+    close();
+  };
+
+  const clear = () => {
+    if (value !== "") onChange("");
+    setDraft({ hour12: "", minute: "", meridiem: "" });
+    close();
+  };
+
+  const pickHour = (h: string) =>
+    setDraft((d) => ({ ...d, hour12: h, minute: d.minute || "00" }));
+  const pickMinute = (m: string) => setDraft((d) => ({ ...d, minute: m }));
+  const pickMeridiem = (m: Meridiem) => setDraft((d) => ({ ...d, meridiem: m }));
+
+  // Focus the selected hour (or the first hour) when the sheet opens; lock the page behind it.
+  useEffect(() => {
+    if (!open) return;
+    const root = dialogRef.current;
+    const target =
+      root?.querySelector<HTMLElement>('[data-sheet-hour][aria-pressed="true"]') ??
+      root?.querySelector<HTMLElement>("[data-sheet-hour]");
+    target?.focus();
+    const body = document.body;
+    const html = document.documentElement;
+    const prevBody = body.style.overflow;
+    const prevHtml = html.style.overflow;
+    body.style.overflow = "hidden";
+    html.style.overflow = "hidden";
+    return () => {
+      body.style.overflow = prevBody;
+      html.style.overflow = prevHtml;
+    };
+  }, [open]);
+
+  // Pin the overlay to the part of the page that is actually on screen. On an
+  // iPhone the fixed layout viewport can be wider than the screen (any page
+  // content that sticks out widens it, and pinch zoom shrinks the visible part),
+  // so inset-0 alone made the sheet wider than the phone and clipped both
+  // sides. visualViewport is the visible rectangle; scaling by its zoom keeps
+  // the sheet at its normal size. Browsers without it keep inset-0.
+  useLayoutEffect(() => {
+    if (!open) return;
+    const vv = typeof window !== "undefined" ? window.visualViewport : null;
+    if (!vv) return;
+    const update = () => setOverlayStyle(visualViewportOverlayStyle(vv));
+    update();
+    vv.addEventListener("resize", update);
+    vv.addEventListener("scroll", update);
+    return () => {
+      vv.removeEventListener("resize", update);
+      vv.removeEventListener("scroll", update);
+      setOverlayStyle(undefined);
+    };
+  }, [open]);
+
+  const onSheetKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (e.key === "Escape") {
+      e.preventDefault();
+      e.stopPropagation();
+      cancel();
+      return;
+    }
+    if (e.key === "Tab") {
+      const items = focusables(dialogRef.current);
+      if (items.length === 0) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      const active = document.activeElement;
+      if (e.shiftKey && (active === first || !dialogRef.current?.contains(active))) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && (active === last || !dialogRef.current?.contains(active))) {
+        e.preventDefault();
+        first.focus();
+      }
+      return;
+    }
+    // Arrow keys move inside a group (AM/PM, hours, minutes).
+    if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(e.key)) {
+      const active = document.activeElement as HTMLElement | null;
+      const group = active?.closest<HTMLElement>("[data-sheet-group]");
+      if (!group) return;
+      const buttons = Array.from(group.querySelectorAll<HTMLElement>("button"));
+      const i = buttons.indexOf(active as HTMLElement);
+      if (i < 0) return;
+      e.preventDefault();
+      const step = e.key === "ArrowLeft" || e.key === "ArrowUp" ? -1 : 1;
+      buttons[(i + step + buttons.length) % buttons.length]?.focus();
+      return;
+    }
+    // Quick keys on desktop: "a" or "p" picks AM or PM.
+    if (!e.metaKey && !e.ctrlKey && !e.altKey) {
+      const k = e.key.toLowerCase();
+      if (k === "a") pickMeridiem("AM");
+      else if (k === "p") pickMeridiem("PM");
+    }
+  };
+
+  const describedBy =
+    [showPartial ? hintId : "", error ? errorId : "", showMissing ? missingId : ""].filter(Boolean).join(" ") ||
+    undefined;
+
+  const previewClock = draftClockLabel(draft);
+  const previewHasTime = !!(draft.hour12 || draft.minute);
+  const minutes = minuteChoices(draft.minute, showAllMinutes);
+
+  // open only turns true from a click, so document exists when the portal renders.
+  const sheet = open
+    ? createPortal(
+        <div className="fixed inset-0 z-[300] overflow-hidden" data-time-sheet="" style={overlayStyle}>
+          <div
+            aria-hidden="true"
+            data-testid="time-sheet-backdrop"
+            className="absolute inset-0 bg-[rgba(13,43,53,0.45)] animate-fade-in"
+            onClick={cancel}
+          />
+          <div
+            ref={dialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={titleId}
+            aria-describedby={previewId}
+            onKeyDown={onSheetKeyDown}
+            className="absolute inset-x-0 bottom-0 max-h-[90%] overflow-x-hidden overflow-y-auto overscroll-contain bg-white rounded-t-[20px] shadow-[0_-8px_28px_rgba(8,100,126,0.22)] pl-[max(16px,env(safe-area-inset-left))] pr-[max(16px,env(safe-area-inset-right))] pt-3 pb-[max(16px,env(safe-area-inset-bottom))] sm:inset-x-auto sm:left-1/2 sm:bottom-auto sm:top-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 sm:w-[24rem] sm:max-w-[calc(100%-2rem)] sm:px-4 sm:rounded-[20px] sm:pb-4"
+          >
+            <div aria-hidden="true" className="mx-auto mb-2 h-1 w-10 rounded-full bg-[rgba(14,150,176,0.22)] sm:hidden" />
+            <div className="flex items-center justify-between gap-3">
+              <h2 id={titleId} className="text-[15px] font-semibold text-[#0D2B35] truncate">
+                {sheetTitle}
+              </h2>
+              <button
+                type="button"
+                onClick={cancel}
+                className="min-h-11 px-2 -mr-2 text-sm font-semibold text-[#0E96B0] rounded-lg touch-manipulation outline-none focus-visible:shadow-[0_0_0_3px_rgba(14,150,176,0.25)]"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div className="mt-3 flex items-center gap-3">
+              <p
+                id={previewId}
+                data-testid="time-sheet-preview"
+                aria-live="polite"
+                aria-label={previewHasTime ? `Selected time ${previewClock}` : "No time selected yet"}
+                className={`flex-1 min-w-0 text-[40px] leading-none font-semibold tabular-nums tracking-tight ${previewHasTime ? "text-[#0D2B35]" : "text-[#5A8399]"}`}
+              >
+                {previewClock}
+              </p>
+              <div role="group" aria-label="AM or PM" data-sheet-group="" className="grid grid-cols-2 gap-2 shrink-0">
+                {(["AM", "PM"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={draft.meridiem === m}
+                    onClick={() => pickMeridiem(m)}
+                    className={chipClass(draft.meridiem === m, "h-11 min-w-[3.25rem] px-3")}
+                  >
+                    {draft.meridiem === m && <Check />}
+                    {m}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <p className="mt-4 mb-1.5 text-[11px] font-semibold uppercase tracking-[0.4px] text-[#5A8399]" aria-hidden="true">
+              Hour
+            </p>
+            <div role="group" aria-label="Hour" data-sheet-group="" className="grid grid-cols-6 gap-1.5">
+              {HOURS.map((h) => (
+                <button
+                  key={h}
+                  type="button"
+                  data-sheet-hour=""
+                  aria-pressed={draft.hour12 === h}
+                  aria-label={`${h} o'clock`}
+                  onClick={() => pickHour(h)}
+                  className={chipClass(draft.hour12 === h, "px-0", true)}
+                >
+                  {h}
+                </button>
+              ))}
+            </div>
+
+            <p className="mt-4 mb-1.5 text-[11px] font-semibold uppercase tracking-[0.4px] text-[#5A8399]" aria-hidden="true">
+              Minute
+            </p>
+            <div
+              role="group"
+              aria-label="Minute"
+              data-sheet-group=""
+              className={`grid gap-1.5 ${minutes.length > 5 ? "grid-cols-6" : minutes.length === 5 ? "grid-cols-5" : "grid-cols-4"}`}
+            >
+              {minutes.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={draft.minute === m}
+                  aria-label={`${m} minutes`}
+                  onClick={() => pickMinute(m)}
+                  className={chipClass(draft.minute === m, "px-0", true)}
+                >
+                  :{m}
+                </button>
+              ))}
+            </div>
+            <div className="mt-1 flex items-center justify-between gap-3">
+              <button
+                type="button"
+                aria-expanded={showAllMinutes}
+                onClick={() => setShowAllMinutes((s) => !s)}
+                className="min-h-11 text-[13px] font-semibold text-[#0E96B0] underline-offset-2 hover:underline touch-manipulation outline-none focus-visible:underline"
+              >
+                {showAllMinutes ? "Show quarter hours" : "Show every 5 minutes"}
+              </button>
+              {!required && value ? (
+                <button
+                  type="button"
+                  onClick={clear}
+                  className="min-h-11 text-[13px] font-semibold text-[#5A8399] underline-offset-2 hover:underline touch-manipulation outline-none focus-visible:underline"
+                >
+                  Clear time
+                </button>
+              ) : null}
+            </div>
+
+            {showPartial && (
+              <p className="mt-1 text-[12px] text-amber-800">
+                {draft.hour12 && !draft.meridiem ? "Choose AM or PM to set this time." : PARTIAL_MESSAGE}
+              </p>
+            )}
+
+            <button
+              type="button"
+              onClick={commit}
+              disabled={!draftHhmm}
+              className="mt-3 w-full min-h-12 text-base font-semibold px-4 rounded-xl text-white bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] shadow-[0_4px_14px_rgba(14,150,176,0.30)] touch-manipulation disabled:opacity-50 disabled:shadow-none outline-none focus-visible:shadow-[0_0_0_3px_rgba(14,150,176,0.35)]"
+            >
+              {draftHhmm ? `Set ${formatTime12h(draftHhmm)}` : "Set time"}
+            </button>
+          </div>
+        </div>,
+        document.body
+      )
+    : null;
+
+  const field = (
+    <div
+      // With a label the fieldset is the group (named by its legend); without one this div is.
+      role={label ? undefined : "group"}
+      aria-label={label ? undefined : groupLabel}
+      data-time-partial={showPartial ? "true" : undefined}
+      data-time-value={value || ""}
+      className="relative min-w-0 w-full sm:w-auto @min-[35rem]:w-auto"
+    >
+      <button
+        ref={triggerRef}
+        id={baseId}
+        type="button"
+        data-time-trigger=""
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-label={`${groupLabel}, ${display || "not set"}`}
+        aria-invalid={error || showMissing ? true : undefined}
+        aria-describedby={describedBy}
+        disabled={disabled}
+        onClick={openSheet}
+        className={triggerBase}
       >
-        <select
-          id={baseId}
-          aria-label={`${groupLabel} hour`}
-          value={parts.hour12}
-          disabled={disabled}
-          required={required}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-          onChange={(e) => emit({ hour12: e.target.value })}
-          style={CHEVRON_STYLE}
-          className={`${selectBase} min-w-[3.625rem] sm:w-[4.75rem] @min-[35rem]:w-[4.75rem]`}
-        >
-          <option value="">Hour</option>
-          {HOURS.map((h) => (
-            <option key={h} value={h}>
-              {h}
-            </option>
-          ))}
-        </select>
-        <select
-          id={`${baseId}-minute`}
-          aria-label={`${groupLabel} minute`}
-          value={parts.minute}
-          disabled={disabled}
-          required={required}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-          onChange={(e) => emit({ minute: e.target.value })}
-          style={CHEVRON_STYLE}
-          className={`${selectBase} min-w-[4.5rem] sm:w-[5rem] @min-[35rem]:w-[5rem]`}
-        >
-          <option value="">Minute</option>
-          {MINUTES.map((m) => (
-            <option key={m} value={m}>
-              {m}
-            </option>
-          ))}
-        </select>
-        <select
-          ref={meridiemRef}
-          id={`${baseId}-meridiem`}
-          aria-label={`${groupLabel} AM or PM`}
-          value={parts.meridiem}
-          disabled={disabled}
-          required={required}
-          aria-invalid={error ? true : undefined}
-          aria-describedby={error ? errorId : undefined}
-          onChange={(e) => emit({ meridiem: e.target.value as Meridiem })}
-          style={CHEVRON_STYLE}
-          className={`${selectBase} min-w-[4.625rem] sm:w-[5.5rem] @min-[35rem]:w-[5.5rem]`}
-        >
-          <option value="">AM/PM</option>
-          <option value="AM">AM</option>
-          <option value="PM">PM</option>
-        </select>
-      </div>
+        <ClockIcon />
+        <span className={`flex-1 min-w-0 truncate tabular-nums ${display ? "text-[#0D2B35]" : "text-[#5A8399]"}`}>
+          {display || "Choose time"}
+        </span>
+        <span aria-hidden="true" className="shrink-0 text-[12px] font-semibold text-[#0E96B0]">
+          {display ? "Change" : "Set"}
+        </span>
+      </button>
+      {/*
+        Hidden stand-in for native form validation: required + blank blocks a
+        native submit, and a partial draft sets a custom message. Matches the
+        old select:invalid behavior that edit forms check before saving.
+      */}
+      <input
+        ref={validityRef}
+        type="text"
+        tabIndex={-1}
+        aria-hidden="true"
+        data-time-validity=""
+        value={value}
+        onChange={() => {}}
+        required={required}
+        disabled={disabled}
+        onInvalid={(e) => {
+          // Native form submit hit a blank required time: show our own note on
+          // the field instead of a browser bubble on this hidden input.
+          e.preventDefault();
+          if (open) return;
+          if (!value) setMissing(true);
+          triggerRef.current?.focus();
+        }}
+        className="sr-only"
+      />
+    </div>
   );
 
-  // sm:w-0 + min-w-full keeps the hint from widening the group and pushing End to a new line.
+  // sm:w-0 + min-w-full keeps a note from widening the field and pushing End to a new line.
+  const noteWidth = "sm:w-0 @min-[35rem]:w-0 sm:min-w-full @min-[35rem]:min-w-full";
   const hint = showPartial && (
-        <p id={hintId} className="mt-1 text-[12px] text-amber-800 sm:w-0 @min-[35rem]:w-0 sm:min-w-full @min-[35rem]:min-w-full">
-          {required
-            ? "Pick hour, minute, and AM or PM to set this time."
-            : "This time is incomplete. Pick hour, minute, and AM or PM, or clear the hour."}
-        </p>
+    <p id={hintId} className={`sr-only`}>
+      {PARTIAL_MESSAGE}
+    </p>
   );
-
+  const missingNote = showMissing ? (
+    <p id={missingId} className={`mt-1 text-[12px] text-red-700 ${noteWidth}`}>
+      Choose a {(label || "time").toLowerCase()}.
+    </p>
+  ) : null;
   const errorNote = error ? (
-    <p id={errorId} className="mt-1 text-[12px] text-red-700 sm:w-0 @min-[35rem]:w-0 sm:min-w-full @min-[35rem]:min-w-full">
+    <p id={errorId} className={`mt-1 text-[12px] text-red-700 ${noteWidth}`}>
       {error}
     </p>
   ) : null;
@@ -271,9 +599,11 @@ export default function TimeInput({
   if (!label) {
     return (
       <div className="min-w-0 w-full sm:w-auto @min-[35rem]:w-auto">
-        {selects}
+        {field}
         {hint}
+        {missingNote}
         {errorNote}
+        {sheet}
       </div>
     );
   }
@@ -287,9 +617,11 @@ export default function TimeInput({
         {label}
         {labelNote ? <> <span className={TIME_LABEL_NOTE_CLASS}>{labelNote}</span></> : null}
       </legend>
-      {selects}
+      {field}
       {hint}
+      {missingNote}
       {errorNote}
+      {sheet}
     </fieldset>
   );
 }
