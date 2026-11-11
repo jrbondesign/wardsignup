@@ -12,10 +12,6 @@ import { cutoverOperationKey } from "@/lib/email-operation-key";
 import { withUtm } from "@/lib/utm";
 import { buildWelcomeEmail } from "@/lib/welcome-email";
 
-/** Welcome replies: must be an address that receives mail (e.g. Cloudflare Email Routing → your inbox). */
-const welcomeReplyTo =
-  process.env.WELCOME_REPLY_TO?.trim() || "jonathan@wardsignup.com";
-
 function alreadyWelcomedForBrand(
   meta: { welcome_sent_by_brand?: Record<string, unknown> } | undefined,
   brandId: string,
@@ -227,8 +223,9 @@ export async function POST(request: NextRequest) {
       category: "transactional",
       realtime: true,
       kind: "welcome",
+      // From is Jonathan <jonathan@wardsignup.com> by default, so replies
+      // reach him. No Reply-To is set; the old welcome reply-to env override is not read.
       from: welcomeEmailFrom(brand),
-      replyTo: welcomeReplyTo,
       to: canonicalUser.email!,
       subject: welcomeSubject,
       text: welcomeText,

@@ -9,9 +9,8 @@ beforeEach(() => {
 });
 
 describe("event page cache", () => {
-  it("keeps the shared cache between 30 and 60 seconds", () => {
-    expect(EVENT_PAGE_CACHE_SECONDS).toBeGreaterThanOrEqual(30);
-    expect(EVENT_PAGE_CACHE_SECONDS).toBeLessThanOrEqual(60);
+  it("keeps the shared cache for 5 minutes as a safety net behind on-demand expiry", () => {
+    expect(EVENT_PAGE_CACHE_SECONDS).toBe(300);
   });
 
   it("expires the per-event tag immediately", () => {

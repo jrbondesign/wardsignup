@@ -2,7 +2,7 @@
 
 This is not turned on in production by deploying the code. The live path stays the one in [EMAIL_FAILOVER.md](./EMAIL_FAILOVER.md) until `EMAIL_PROVIDER_CUTOVER=brevo` is set on purpose.
 
-The cutover sends Ward Signup mail through Brevo first, From `jonathan@wardsignup.com` only. Resend is a single fallback after Brevo **definitively rejects** a message for quota or auth, and only inside the existing Resend UTC-day cap (at most 100). A timeout, a 5xx, a 2xx without a message id, or Brevo's `duplicate_request` is ambiguous: the other provider is not called, and the same idempotency key is not sent again.
+The cutover sends Ward Signup mail through Brevo first. Each message keeps its own From: automated mail is From `Ward Signup <noreply@wardsignup.com>`, and the welcome email and the feedback ask are From `Jonathan <jonathan@wardsignup.com>`. Any other sender (anything outside @wardsignup.com, or an @wardsignup.com address that is not one of those two verified Brevo senders) is refused before any provider is called. The Resend fallback uses the same From. Resend is a single fallback after Brevo **definitively rejects** a message for quota or auth, and only inside the existing Resend UTC-day cap (at most 100). A timeout, a 5xx, a 2xx without a message id, or Brevo's `duplicate_request` is ambiguous: the other provider is not called, and the same idempotency key is not sent again.
 
 App code cannot promise the Brevo account will not be charged. The free plan checked on 8 Nov 2026 was $0/month, 300 emails/day shared by marketing and transactional mail, with 288 of 300 still showing at 9:05 AM MST. That 288 figure is a snapshot, not a remaining balance this app stores. Reset time, prepaid balance, and auto-recharge were not shown. There is no saved card or paid plan in that check. This code does not upgrade the plan.
 
@@ -42,7 +42,7 @@ Hard bounces and complaints are checked before every cutover send, including mag
 ## Cutover
 
 1. Apply the migration to the database you intend to send from. Do not do this against production until you mean to.
-2. Confirm the Brevo sender `jonathan@wardsignup.com` is still verified. Do not buy a plan or add a card.
+2. Confirm both Brevo senders, `noreply@wardsignup.com` and `jonathan@wardsignup.com`, are still verified. Do not buy a plan or add a card.
 3. Set `WARDSIGNUP_BREVO_API_KEY` to the regular sending key stored for this purpose. Leave `BREVO_API_KEY` as it is.
 4. Set `BREVO_WEBHOOK_TOKEN` and register the webhook with bearer auth. Do not point it at a preview URL.
 5. Read the Brevo dashboard at that moment. Set `BREVO_DAILY_RECIPIENT_CAP` to the plan ceiling (300 on the free plan checked 8 Nov 2026) and `BREVO_QUOTA_USED_AT_OPEN` to the used count on screen, including marketing. Remaining room is ceiling minus used. Do not put the remainder, or the stale 288 figure, in the cap. Freeze every other Brevo sender for that window. Do not enable the gate before this migration is applied: a failed uncertainty lookup blocks a new gated sign-in rather than sending a second link.

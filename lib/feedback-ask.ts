@@ -8,7 +8,7 @@ import {
   sendFeedbackAskEmail,
   type FeedbackDigestRow,
 } from "@/lib/feedback-email";
-import { feedbackEmailFrom } from "@/lib/brand/email-from";
+import { organizerEmailFrom } from "@/lib/brand/email-from";
 import { parseMetricsAdminEmails } from "@/lib/metrics-admin";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { cutoverOperationKey } from "@/lib/email-operation-key";
@@ -292,7 +292,7 @@ export type FeedbackDigestSummary = {
 
 /**
  * DEPRECATED: Monday digest is no longer sent. Feedback now sends immediately
- * to bondesign@gmail.com when submitted. This function remains for backwards
+ * to jonathan@wardsignup.com when submitted. This function remains for backwards
  * compatibility but is not called from any active cron.
  *
  * Historical: Weekly pass (Mondays, Phoenix time): email the founder all new responses for this
@@ -337,7 +337,7 @@ export async function runFeedbackDigestPass(
     deferrable: true,
       kind: "feedback_summary",
       category: "transactional",
-    from: feedbackEmailFrom(brand),
+    from: organizerEmailFrom(brand),
     to: creatorNotifyTo,
     subject: `${brand.name}: ${rows.length} creator feedback response${rows.length === 1 ? "" : "s"} this week`,
     html: buildFeedbackDigestEmailHtml({ brand, responses: rows }),

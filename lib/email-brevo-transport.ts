@@ -1,5 +1,5 @@
 import { idempotencyTag } from "@/lib/email-cutover-config";
-import { WARD_SIGNUP_FROM_EMAIL } from "@/lib/email-from-policy";
+import { isCutoverSenderEmail } from "@/lib/email-from-policy";
 import type { ProviderHttpResult } from "@/lib/email-brevo-classify";
 
 const BREVO_URL = "https://api.brevo.com/v3/smtp/email";
@@ -22,15 +22,15 @@ export type BrevoSendInput = {
 /**
  * POST /v3/smtp/email. The api-key header is only the value passed in
  * (WARDSIGNUP_BREVO_API_KEY). This function does not read SMTP passwords,
- * MCP tokens, or BREVO_API_KEY. A sender other than jonathan@wardsignup.com
- * is refused before fetch.
+ * MCP tokens, or BREVO_API_KEY. A sender other than noreply@wardsignup.com or
+ * jonathan@wardsignup.com (the two verified Brevo senders) is refused before fetch.
  */
 export async function postBrevoTransactional(
   input: BrevoSendInput,
   fetchImpl: typeof fetch = fetch,
 ): Promise<ProviderHttpResult> {
   const senderEmail = input.senderEmail.trim().toLowerCase();
-  if (senderEmail !== WARD_SIGNUP_FROM_EMAIL) {
+  if (!isCutoverSenderEmail(senderEmail)) {
     return { status: null, body: "refused from", messageId: null, localRefusal: "from" };
   }
   const body: Record<string, unknown> = {

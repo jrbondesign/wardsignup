@@ -116,7 +116,7 @@ export async function POST(
     email_lower: string;
   };
 
-  // Send immediate notification to bondesign@gmail.com. This must not block
+  // Send immediate notification to jonathan@wardsignup.com. This must not block
   // the response or fail the request — feedback is already saved.
   try {
     const { brand } = publicSiteOriginAndBrandForCampaign({

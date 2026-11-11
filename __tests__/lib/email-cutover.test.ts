@@ -123,18 +123,25 @@ describe("cutover config", () => {
 });
 
 describe("From and credential boundary", () => {
-  it("posts only as jonathan@wardsignup.com and only with the passed sending key", async () => {
-    const fetchImpl = jest.fn().mockResolvedValue({
+  function okFetch() {
+    return jest.fn().mockResolvedValue({
       ok: true,
       status: 201,
       text: async () => JSON.stringify({ messageId: "<id@brevo>" }),
       headers: { get: () => null },
     });
+  }
+
+  it.each([
+    ["noreply@wardsignup.com", "Ward Signup"],
+    ["jonathan@wardsignup.com", "Jonathan"],
+  ])("posts as the verified sender %s with only the passed sending key", async (email, name) => {
+    const fetchImpl = okFetch();
     await postBrevoTransactional(
       {
         apiKey: "xkeysib-test-key",
-        senderEmail: "jonathan@wardsignup.com",
-        senderName: "Jonathan",
+        senderEmail: email,
+        senderName: name,
         to: ["person@example.com"],
         subject: "Hello",
         html: "<p>Hi</p>",
@@ -147,30 +154,76 @@ describe("From and credential boundary", () => {
     expect(init.headers["api-key"]).toBe("xkeysib-test-key");
     expect(init.headers["api-key"]).not.toBe("mcp-token-not-for-http");
     const body = JSON.parse(init.body);
-    expect(body.sender).toEqual({ email: "jonathan@wardsignup.com", name: "Jonathan" });
+    expect(body.sender).toEqual({ email, name });
+    expect(body.replyTo).toBeUndefined();
     expect(body.tags).toContain(idempotencyTag("email-queue/1"));
-    expect(JSON.stringify(init)).not.toContain("noreply@");
   });
 
-  it("refuses a different From before fetch", async () => {
-    const fetchImpl = jest.fn();
-    const result = await postBrevoTransactional(
-      {
-        apiKey: "xkeysib-test-key",
-        senderEmail: "noreply@wardsignup.com",
-        senderName: "Ward Signup",
-        to: ["person@example.com"],
-        subject: "Hello",
-        html: "<p>Hi</p>",
-        idempotencyKey: "k",
-      },
-      fetchImpl as never,
+  it.each(["bondesign@gmail.com", "hello@wardsignup.com", "noreply@wardsignup.com.evil.com"])(
+    "refuses sender %s before fetch",
+    async (senderEmail) => {
+      const fetchImpl = jest.fn();
+      const result = await postBrevoTransactional(
+        {
+          apiKey: "xkeysib-test-key",
+          senderEmail,
+          senderName: "X",
+          to: ["person@example.com"],
+          subject: "Hello",
+          html: "<p>Hi</p>",
+          idempotencyKey: "k",
+        },
+        fetchImpl as never,
+      );
+      expect(result.localRefusal).toBe("from");
+      expect(fetchImpl).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps a noreply From as noreply on Brevo and on the Resend fallback", async () => {
+    const { deps, brevo } = harness();
+    const ok = await send(deps, { kind: "reminder", idempotencyKey: "noreply-brevo" });
+    expect(ok).toMatchObject({ ok: true, provider: "brevo" });
+    expect(brevo).toHaveBeenCalledWith(
+      expect.objectContaining({ senderEmail: "noreply@wardsignup.com", senderName: "Ward Signup" }),
     );
-    expect(result.localRefusal).toBe("from");
-    expect(fetchImpl).not.toHaveBeenCalled();
+
+    const fb = harness();
+    fb.brevo.mockResolvedValueOnce({ status: 401, body: JSON.stringify({ code: "unauthorized" }), messageId: null });
+    const r = await send(fb.deps, { kind: "reminder", idempotencyKey: "noreply-fallback" });
+    expect(r).toMatchObject({ ok: true, provider: "resend" });
+    expect(fb.resend).toHaveBeenCalledWith(expect.objectContaining({ from: "Ward Signup <noreply@wardsignup.com>" }));
   });
 
-  it("rewrites a noreply From on the cutover path and does not read BREVO_API_KEY", async () => {
+  it("keeps the welcome and feedback-ask From as jonathan@ on Brevo and on the Resend fallback", async () => {
+    for (const kind of ["welcome", "feedback"]) {
+      const { deps, brevo } = harness();
+      await send(deps, { kind, from: "Jonathan <jonathan@wardsignup.com>", idempotencyKey: `j-${kind}` });
+      expect(brevo).toHaveBeenCalledWith(
+        expect.objectContaining({ senderEmail: "jonathan@wardsignup.com", senderName: "Jonathan" }),
+      );
+      const fb = harness();
+      fb.brevo.mockResolvedValueOnce({ status: 401, body: JSON.stringify({ code: "unauthorized" }), messageId: null });
+      await send(fb.deps, { kind, from: "Jonathan <jonathan@wardsignup.com>", idempotencyKey: `jf-${kind}` });
+      expect(fb.resend).toHaveBeenCalledWith(expect.objectContaining({ from: "Jonathan <jonathan@wardsignup.com>" }));
+    }
+  });
+
+  it.each([
+    "PFS <bondesign@gmail.com>",
+    "bondesign@gmail.com",
+    "Hello <hello@wardsignup.com>",
+    "noreply@wardsignup.com, bondesign@gmail.com",
+    "",
+  ])("refuses From %p on the cutover path before any provider", async (from) => {
+    const { deps, brevo, resend } = harness();
+    const result = await send(deps, { from, idempotencyKey: `bad-${from}` });
+    expect(result).toMatchObject({ ok: false, terminal: true });
+    expect(brevo).not.toHaveBeenCalled();
+    expect(resend).not.toHaveBeenCalled();
+  });
+
+  it("sends Brevo-first with only WARDSIGNUP_BREVO_API_KEY and does not read BREVO_API_KEY", async () => {
     const { deps, brevo, resend } = harness();
     const result = await send(deps);
     expect(result).toMatchObject({ ok: true, provider: "brevo", messageId: "<accepted@brevo>" });

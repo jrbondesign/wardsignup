@@ -18,6 +18,13 @@ export default defineConfig({
     {
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
+      testIgnore: /iphone-layout\.spec\.ts/,
+    },
+    {
+      // iPhone layout checks (time sheet width, fields inside cards) in WebKit.
+      name: 'webkit-iphone',
+      use: { ...devices['iPhone 13'] },
+      testMatch: /iphone-layout\.spec\.ts/,
     },
   ],
   ...(remoteBaseURL

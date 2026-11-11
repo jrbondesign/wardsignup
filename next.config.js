@@ -88,6 +88,12 @@ const nextConfig = {
         source: "/w/:path*",
         headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
       },
+      {
+        // Review fixtures under /demo. The pages 404 on production, but keep
+        // this header so a missed gate cannot put them in a search index.
+        source: "/demo/:path*",
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      },
     ];
   },
   async rewrites() {

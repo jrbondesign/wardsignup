@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
 import { emailOutboundBlock } from "@/lib/email-outbound";
+import { checkSender } from "@/lib/email-sender-guard";
 import { enqueueEmail } from "@/lib/email-queue";
 import { deferEnabled, deferSendWindowHours, inPostResetWindow, nextResetSendAfter } from "@/lib/email-queue-time";
 import type { PublicBrand } from "@/lib/brand/types";
@@ -191,6 +192,10 @@ export async function sendGuardedEmail(params: GuardedSendParams): Promise<Guard
   const emailLower = to.trim().toLowerCase();
   const urgent = Boolean(params.urgent);
   const realtime = !urgent && Boolean(params.realtime);
+
+  // Refuse a non @wardsignup.com From before anything else, so it is never queued either.
+  const sender = checkSender(from, params.kind);
+  if (!sender.ok) return { ok: false, error: sender.error };
 
   if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, skipped: "no_resend_key", error: `Resend API key missing for brand ${brand.id}` };

@@ -15,7 +15,7 @@ import {
 } from "@/lib/email-cutover-config";
 import { consumeSharedResendBudget } from "@/lib/email-deliver";
 import { emailOutboundBlock } from "@/lib/email-outbound";
-import { WARD_SIGNUP_FROM_EMAIL, wardSignupFrom } from "@/lib/email-from-policy";
+import { cutoverSender } from "@/lib/email-from-policy";
 import {
   applyClaim,
   applyExhaust,
@@ -66,6 +66,9 @@ export type CutoverDeps = {
   recipientBlock: (email: string, kind: string) => Promise<"allow" | "hard" | "unsubscribe" | "unknown">;
   sendBrevo: (input: {
     apiKey: string;
+    /** The message's own From address (noreply@ or jonathan@). */
+    senderEmail: string;
+    senderName: string;
     to: string[];
     subject: string;
     html: string;
@@ -156,6 +159,7 @@ async function sendFallback(
   idempotencyKey: string,
   count: number,
   alreadyClaimed: boolean,
+  sender: { from: string },
 ): Promise<DeliverResult> {
   if (!alreadyClaimed) {
     const again = await deps.claim({
@@ -207,7 +211,7 @@ async function sendFallback(
   let http: ProviderHttpResult;
   try {
     http = await deps.sendResend({
-      from: `Jonathan <${WARD_SIGNUP_FROM_EMAIL}>`,
+      from: sender.from,
       to: recipients,
       subject: params.subject,
       html: params.html,
@@ -287,8 +291,10 @@ export async function runBrevoCutover(
   _opts: { urgent: boolean; realtime?: boolean },
   deps: CutoverDeps,
 ): Promise<DeliverResult> {
-  const from = wardSignupFrom(params.brand.id);
-  if (!from.ok) return { ok: false, error: from.error, terminal: true };
+  // Keep the message's own From: noreply@ for automated mail, jonathan@ for
+  // the welcome email and the feedback ask. Never rewritten to another address.
+  const sender = cutoverSender(params.brand.id, params.from, params.kind);
+  if (!sender.ok) return { ok: false, error: sender.error, terminal: true };
 
   const apiKey = wardsignupBrevoApiKey(deps.env);
   if (!apiKey) {
@@ -362,7 +368,7 @@ export async function runBrevoCutover(
   }
   if (claimed.action === "stop") return stopResult(claimed.row);
   if (claimed.action === "send_fallback") {
-    return sendFallback(params, deps, recipients, idempotencyKey, count, true);
+    return sendFallback(params, deps, recipients, idempotencyKey, count, true, sender);
   }
 
   const windowKey = brevoWindowKey(deps.env);
@@ -387,7 +393,7 @@ export async function runBrevoCutover(
         return { ok: false, error: "Brevo quota state could not be recorded. No provider was called.", retryable: true };
       }
       if (slot.result === "full" || slot.result === "exhausted") {
-        return sendFallback(params, deps, recipients, idempotencyKey, count, false);
+        return sendFallback(params, deps, recipients, idempotencyKey, count, false, sender);
       }
       return {
         ok: false,
@@ -413,6 +419,8 @@ export async function runBrevoCutover(
   try {
     http = await deps.sendBrevo({
       apiKey,
+      senderEmail: sender.email,
+      senderName: sender.name,
       to: recipients,
       subject: params.subject,
       html: params.html,
@@ -541,7 +549,7 @@ export async function runBrevoCutover(
   }
   if (classified.kind === "quota") await deps.exhaust("brevo", windowKey);
   logCutover(params.kind, "brevo", rejectionClass);
-  return sendFallback(params, deps, recipients, idempotencyKey, count, false);
+  return sendFallback(params, deps, recipients, idempotencyKey, count, false, sender);
 }
 
 type MemoryState = {
@@ -688,8 +696,8 @@ export function productionCutoverDeps(env: Env = process.env): CutoverDeps {
     sendBrevo: async (input) =>
       postBrevoTransactional({
         apiKey: input.apiKey,
-        senderEmail: WARD_SIGNUP_FROM_EMAIL,
-        senderName: "Jonathan",
+        senderEmail: input.senderEmail,
+        senderName: input.senderName,
         to: input.to,
         subject: input.subject,
         html: input.html,

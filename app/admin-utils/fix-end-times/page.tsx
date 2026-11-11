@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClientComponentClient } from "@/lib/auth";
+import { expirePublicEventPage } from "@/lib/event-page-expire-client";
 
 export default function FixEndTimesPage() {
   const [loading, setLoading] = useState(false);
@@ -47,6 +48,11 @@ export default function FixEndTimesPage() {
 
       const results = await Promise.all(updates);
       const errors = results.filter(r => r.error);
+
+      // Public event pages are cached on the server; expire each touched event.
+      const { data: { session: authSession } } = await supabase.auth.getSession();
+      const campaignIds = Array.from(new Set(sessions.map((s: any) => s.campaign_id as string | null).filter(Boolean)));
+      await Promise.all(campaignIds.map((id) => expirePublicEventPage(id, authSession?.access_token)));
 
       if (errors.length > 0) {
         setResult(`Updated ${sessions.length - errors.length} sessions, but ${errors.length} failed.`);

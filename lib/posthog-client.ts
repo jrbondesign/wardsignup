@@ -28,3 +28,20 @@ export function resetPostHogOnSignOut(): void {
     // analytics must never block sign out
   }
 }
+
+/**
+ * Review-only /demo fixtures must not send pageviews or other events into the
+ * live PostHog project. Matches /demo and /demo/..., not /democracy.
+ */
+export function isDemoAnalyticsPath(pathnameOrUrl: string | null | undefined): boolean {
+  if (!pathnameOrUrl) return false;
+  let path = pathnameOrUrl;
+  try {
+    if (/^[a-z][a-z0-9+.-]*:/i.test(pathnameOrUrl)) {
+      path = new URL(pathnameOrUrl).pathname;
+    }
+  } catch {
+    return false;
+  }
+  return path === "/demo" || path.startsWith("/demo/");
+}

@@ -103,6 +103,8 @@ describe("/api/signups", () => {
 
       expect(response.status).toBe(400);
       expect(data.error).toBe("This slot is already full");
+      // No row was created: nothing to expire.
+      expect(mockRevalidateEventPage).not.toHaveBeenCalled();
     });
 
     it("should return 400 if required fields are missing", async () => {

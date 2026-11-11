@@ -210,7 +210,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
                 </div>
               )}
               <div className={`text-xs text-[#5A8399] whitespace-nowrap ${classTitle ? "mt-1" : "text-[14px] font-semibold text-[#0D2B35] leading-tight"}`}>
-                {formatTimeRange(session.time, session.end_time, { multiDay: spansMultipleDays(session.session_date, eventEndDate) })}
+                {formatTimeRange(session.time, session.end_time, { multiDay: spansMultipleDays(session.session_date, eventEndDate), clock: "12h" })}
               </div>
               <div className="text-[11px] text-[#5A8399] mt-1">
                 {session.id ? (

@@ -6,6 +6,7 @@ import { publicCoverForCampaign } from "@/lib/event-media";
 import { isCoverImageEnabledForOrg } from "@/lib/cover-image-feature";
 import { isValidCoverPosition } from "@/lib/cover-position";
 import type { Campaign } from "@/lib/types";
+import { revalidateEventPage } from "@/lib/event-page-cache";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -62,5 +63,6 @@ export async function PATCH(
     console.error("cover_position update error:", error);
     return NextResponse.json({ error: "Failed to save position" }, { status: 500 });
   }
+  revalidateEventPage(id);
   return NextResponse.json({ ok: true });
 }

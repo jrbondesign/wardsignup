@@ -180,6 +180,10 @@ export async function POST(request: Request) {
       if (signupId) successfulSignupIds.push(signupId);
     }
 
+    // Rows exist now: expire the page cache right away so counts update even
+    // if the note save below throws. Expired again at the end for the note.
+    if (successfulSignupIds.length > 0) revalidateEventPage(campaign_id);
+
     // Persist the optional note on every successful signup (best-effort).
     const signupNote = typeof rawNote === "string" ? rawNote.trim() : "";
     if (signupNote && admin && successfulSignupIds.length > 0) {
@@ -343,7 +347,9 @@ export async function POST(request: Request) {
       }
     });
 
-    revalidateEventPage(campaign_id);
+    // Notes (if any) are on the rows now; expire again. Skip when nothing landed
+    // so a failed-only attempt does not throw away a warm cache.
+    if (successfulSignupIds.length > 0) revalidateEventPage(campaign_id);
     return NextResponse.json({
       results,
       primary_cancel_token: successfulCancelTokens[0] ?? null,
