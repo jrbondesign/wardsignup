@@ -6,11 +6,12 @@ import {
 } from "@/lib/email-brevo-classify";
 import { postBrevoTransactional } from "@/lib/email-brevo-transport";
 import {
-  brevoQuotaSeed,
   brevoRecipientCap,
   brevoWindowKey,
+  brevoWindowSeed,
   countEnvelopeRecipients,
   isBrevoCutoverEnabled,
+  isDailyBrevoWindow,
   wardsignupBrevoApiKey,
 } from "@/lib/email-cutover-config";
 import { consumeSharedResendBudget } from "@/lib/email-deliver";
@@ -371,10 +372,29 @@ export async function runBrevoCutover(
     return sendFallback(params, deps, recipients, idempotencyKey, count, true, sender);
   }
 
-  const windowKey = brevoWindowKey(deps.env);
+  // The window is fixed once per attempt. Every release or exhaust below
+  // uses this same key, so a send that crosses 00:00 UTC refunds or latches
+  // the day it reserved on, never the next one.
+  const windowKey = brevoWindowKey(deps.env, deps.now());
   const cap = brevoRecipientCap(deps.env);
-  const seed = brevoQuotaSeed(deps.env);
+  const seed = brevoWindowSeed(deps.env, windowKey);
   let held = claimed.row.quotaHeld;
+  if (held && isDailyBrevoWindow(deps.env)) {
+    // A hold left by an earlier invocation may sit on a previous UTC day's
+    // row, and the attempt does not record which. Refunding today's row for
+    // it could undercount today, so clear the flag without a refund and
+    // reserve again on today's row. Worst case is one attempt counted twice
+    // on the same day, which errs toward Resend, not past Brevo's limit.
+    const cleared = await deps.releaseHeld(idempotencyKey, "brevo", windowKey, 0);
+    if (cleared === "unavailable" || cleared === "missing") {
+      return {
+        ok: false,
+        error: "An earlier Brevo reservation could not be cleared. No provider was called.",
+        retryable: true,
+      };
+    }
+    held = false;
+  }
   if (!held) {
     const slot = knownReserve(await deps.reserve("brevo", windowKey, count, cap, seed));
     if (slot.result !== "reserved") {

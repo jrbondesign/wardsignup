@@ -20,6 +20,7 @@ import {
   brevoQuotaSeed,
   brevoRecipientCap,
   brevoWindowKey,
+  brevoWindowSeed,
   countEnvelopeRecipients,
   idempotencyTag,
   isBrevoCutoverEnabled,
@@ -28,6 +29,10 @@ import { deliverEmail } from "@/lib/email-deliver";
 import { applyReserve } from "@/lib/email-quota-state";
 import type { CutoverDeps } from "@/lib/email-cutover";
 import type { ProviderHttpResult } from "@/lib/email-brevo-classify";
+
+/** Harness clock is 2026-11-08T16:05Z, so the derived daily row is that UTC date. */
+const DAY_KEY = "brevo:utc-2026-11-08";
+const LEGACY_KEY = "brevo:unconfirmed-reset";
 
 const brand = { id: "wardsignup", name: "Ward Signup" } as never;
 
@@ -107,7 +112,7 @@ describe("cutover config", () => {
     expect(brevoRecipientCap({ BREVO_DAILY_RECIPIENT_CAP: "unknown" })).toBeNull();
     expect(brevoRecipientCap({ BREVO_DAILY_RECIPIENT_CAP: "0" })).toBeNull();
     expect(brevoRecipientCap({ BREVO_DAILY_RECIPIENT_CAP: "1.5" })).toBeNull();
-    expect(brevoWindowKey({})).toBe("unconfirmed-reset");
+    expect(brevoWindowKey({}, new Date("2026-11-11T03:00:00Z"))).toBe("utc-2026-11-11");
     expect(brevoQuotaSeed({})).toBeNull();
     expect(brevoQuotaSeed({ BREVO_QUOTA_USED_AT_OPEN: "0" })).toBe(0);
     expect(brevoQuotaSeed({ BREVO_QUOTA_USED_AT_OPEN: "12" })).toBe(12);
@@ -263,7 +268,7 @@ describe("quota", () => {
     const ok = await send(held.deps, { to: "a@example.com, b@example.com", idempotencyKey: "batch" });
     expect(ok).toMatchObject({ ok: true, provider: "brevo" });
     expect(held.brevo).toHaveBeenCalledWith(expect.objectContaining({ to: ["a@example.com", "b@example.com"] }));
-    expect(held.deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(2);
+    expect(held.deps.state.quotas.get(DAY_KEY)?.reserved).toBe(2);
 
     const blocked = harness({ ...baseEnv, BREVO_DAILY_RECIPIENT_CAP: "1", RESEND_UTC_DAY_CAP: "1" });
     const refused = await send(blocked.deps, { to: "a@example.com, b@example.com", idempotencyKey: "too-big" });
@@ -281,11 +286,15 @@ describe("quota", () => {
     expect(resend).toHaveBeenCalledTimes(1);
     expect(results.filter((result) => result.ok).length).toBe(3);
     expect(results.filter((result) => !result.ok && "overBudget" in result && result.overBudget).length).toBe(2);
-    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(2);
+    expect(deps.state.quotas.get(DAY_KEY)?.reserved).toBe(2);
   });
 
-  it("does not refill a Brevo window when the clock moves; a new window uses the same explicit seed", async () => {
-    const { deps, brevo, resend, setClock } = harness({ ...baseEnv, BREVO_DAILY_RECIPIENT_CAP: "1" });
+  it("does not refill an override window when the clock moves; a new override uses the same explicit seed", async () => {
+    const { deps, brevo, resend, setClock } = harness({
+      ...baseEnv,
+      BREVO_DAILY_RECIPIENT_CAP: "1",
+      BREVO_QUOTA_WINDOW_ID: "unconfirmed-reset",
+    });
     expect(await send(deps, { idempotencyKey: "day-1" })).toMatchObject({ ok: true, provider: "brevo" });
     setClock(new Date("2026-11-10T18:00:00Z"));
     expect(await send(deps, { idempotencyKey: "day-2", to: "other@example.com" })).toMatchObject({
@@ -294,7 +303,7 @@ describe("quota", () => {
     });
     expect(brevo).toHaveBeenCalledTimes(1);
     expect(resend).toHaveBeenCalledTimes(1);
-    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(1);
+    expect(deps.state.quotas.get(LEGACY_KEY)?.reserved).toBe(1);
 
     deps.env.BREVO_QUOTA_WINDOW_ID = "confirmed-2026-11-10";
     expect(await send(deps, { idempotencyKey: "day-3", to: "third@example.com" })).toMatchObject({
@@ -323,6 +332,144 @@ describe("quota", () => {
   });
 });
 
+describe("daily UTC window", () => {
+  it("derives the window from the UTC date, not Arizona time, and honors a valid override", () => {
+    // 4:59 PM MST on 10 Nov is still 10 Nov UTC; 5:00 PM MST is 11 Nov UTC.
+    expect(brevoWindowKey({}, new Date("2026-11-10T23:59:59.999Z"))).toBe("utc-2026-11-10");
+    expect(brevoWindowKey({}, new Date("2026-11-11T00:00:00.000Z"))).toBe("utc-2026-11-11");
+    expect(brevoWindowKey({ BREVO_QUOTA_WINDOW_ID: "  " }, new Date("2026-11-11T00:00:00Z"))).toBe("utc-2026-11-11");
+    expect(brevoWindowKey({ BREVO_QUOTA_WINDOW_ID: "manual-1" }, new Date("2026-11-11T00:00:00Z"))).toBe("manual-1");
+    expect(brevoWindowKey({ BREVO_QUOTA_WINDOW_ID: "bad id!" }, new Date("2026-11-11T00:00:00Z"))).toBe(
+      "unconfirmed-reset",
+    );
+  });
+
+  it("seeds a daily row from the used count only on its dated day, and still refuses a missing seed", () => {
+    const env = { BREVO_QUOTA_USED_AT_OPEN: "23", BREVO_QUOTA_USED_AT_OPEN_DATE: "2026-11-11" };
+    expect(brevoWindowSeed(env, "utc-2026-11-11")).toBe(23);
+    expect(brevoWindowSeed(env, "utc-2026-11-12")).toBe(0);
+    expect(brevoWindowSeed({ BREVO_QUOTA_USED_AT_OPEN: "23" }, "utc-2026-11-11")).toBe(0);
+    expect(brevoWindowSeed({ BREVO_QUOTA_USED_AT_OPEN: "23", BREVO_QUOTA_USED_AT_OPEN_DATE: "11/11/2026" }, "utc-2026-11-11")).toBe(0);
+    expect(brevoWindowSeed({}, "utc-2026-11-11")).toBeNull();
+    expect(brevoWindowSeed({ BREVO_QUOTA_USED_AT_OPEN: "unknown" }, "utc-2026-11-11")).toBeNull();
+    expect(brevoWindowSeed({ BREVO_QUOTA_USED_AT_OPEN: "23", BREVO_QUOTA_WINDOW_ID: "manual-1" }, "manual-1")).toBe(23);
+  });
+
+  it("opens a fresh row at 00:00 UTC after a full day, then enforces the cap on the new day", async () => {
+    const { deps, brevo, resend, setClock } = harness(
+      { ...baseEnv, BREVO_DAILY_RECIPIENT_CAP: "2", RESEND_UTC_DAY_CAP: "1" },
+      new Date("2026-11-10T23:59:00Z"),
+    );
+    expect(await send(deps, { idempotencyKey: "d1-a", to: "a@example.com" })).toMatchObject({ provider: "brevo" });
+    expect(await send(deps, { idempotencyKey: "d1-b", to: "b@example.com" })).toMatchObject({ provider: "brevo" });
+    // Day full: Resend takes one, then nothing.
+    expect(await send(deps, { idempotencyKey: "d1-c", to: "c@example.com" })).toMatchObject({ ok: true, provider: "resend" });
+    expect(await send(deps, { idempotencyKey: "d1-d", to: "d@example.com" })).toMatchObject({ ok: false, overBudget: true });
+    expect(deps.state.quotas.get("brevo:utc-2026-11-10")?.reserved).toBe(2);
+
+    setClock(new Date("2026-11-11T00:00:00Z"));
+    expect(await send(deps, { idempotencyKey: "d2-a", to: "e@example.com" })).toMatchObject({ provider: "brevo" });
+    expect(await send(deps, { idempotencyKey: "d2-b", to: "f@example.com" })).toMatchObject({ provider: "brevo" });
+    expect(await send(deps, { idempotencyKey: "d2-c", to: "g@example.com" })).toMatchObject({ ok: true, provider: "resend" });
+    expect(deps.state.quotas.get("brevo:utc-2026-11-11")?.reserved).toBe(2);
+    expect(deps.state.quotas.get("brevo:utc-2026-11-10")?.reserved).toBe(2);
+    expect(brevo).toHaveBeenCalledTimes(4);
+    expect(resend).toHaveBeenCalledTimes(2);
+  });
+
+  it("serializes concurrent sends on both sides of midnight without crossing rows", async () => {
+    const { deps, brevo, setClock } = harness(
+      { ...baseEnv, BREVO_DAILY_RECIPIENT_CAP: "3", RESEND_UTC_DAY_CAP: "0", RESEND_DAILY_SOFT_LIMIT: "0" },
+      new Date("2026-11-10T23:59:59Z"),
+    );
+    // Flip the clock back and forth across 00:00 UTC on every read so the
+    // eight concurrent attempts land on both days in an interleaved order.
+    let reads = 0;
+    const real = deps.now;
+    deps.now = () => {
+      reads += 1;
+      setClock(new Date(reads % 2 ? "2026-11-10T23:59:59Z" : "2026-11-11T00:00:01Z"));
+      return real();
+    };
+    const ids = ["a", "b", "c", "d", "e", "f", "g", "h"];
+    await Promise.all(ids.map((id) => send(deps, { idempotencyKey: `x-${id}`, to: `${id}@example.com` })));
+    const d10 = deps.state.quotas.get("brevo:utc-2026-11-10")?.reserved ?? 0;
+    const d11 = deps.state.quotas.get("brevo:utc-2026-11-11")?.reserved ?? 0;
+    expect(d10).toBeLessThanOrEqual(3);
+    expect(d11).toBeLessThanOrEqual(3);
+    expect(d10).toBeGreaterThan(0);
+    expect(d11).toBeGreaterThan(0);
+    // Every Brevo call is backed by exactly one reservation on one row.
+    expect(brevo.mock.calls.length).toBe(d10 + d11);
+  });
+
+  it("refunds a release to the day it reserved on when the send finishes after midnight", async () => {
+    const { deps, brevo, setClock } = harness(
+      { ...baseEnv, BREVO_DAILY_RECIPIENT_CAP: "5" },
+      new Date("2026-11-10T23:59:59Z"),
+    );
+    deps.state.quotas.set("brevo:utc-2026-11-11", { reserved: 1, exhausted: false, seed: 0 });
+    brevo.mockImplementationOnce(async () => {
+      setClock(new Date("2026-11-11T00:00:02Z"));
+      return { status: 429, body: JSON.stringify({ code: "too_many_requests", message: "rate" }) };
+    });
+    expect(await send(deps, { idempotencyKey: "cross" })).toMatchObject({ ok: false, retryable: true });
+    expect(deps.state.quotas.get("brevo:utc-2026-11-10")?.reserved).toBe(0);
+    expect(deps.state.quotas.get("brevo:utc-2026-11-11")?.reserved).toBe(1);
+  });
+
+  it("latches a quota rejection only on its own day; the next UTC day is Brevo again", async () => {
+    const { deps, brevo, resend, setClock } = harness(
+      { ...baseEnv, BREVO_DAILY_RECIPIENT_CAP: "300", RESEND_UTC_DAY_CAP: "5", RESEND_DAILY_SOFT_LIMIT: "5" },
+      new Date("2026-11-10T20:00:00Z"),
+    );
+    brevo.mockResolvedValueOnce({
+      status: 400,
+      body: JSON.stringify({ code: "not_enough_credits", message: "Not enough credits to send this email" }),
+    });
+    expect(await send(deps, { idempotencyKey: "q1" })).toMatchObject({ ok: true, provider: "resend" });
+    expect(await send(deps, { idempotencyKey: "q2", to: "two@example.com" })).toMatchObject({ ok: true, provider: "resend" });
+    expect(brevo).toHaveBeenCalledTimes(1);
+    expect(deps.state.quotas.get("brevo:utc-2026-11-10")?.exhausted).toBe(true);
+
+    setClock(new Date("2026-11-11T00:00:00Z"));
+    expect(await send(deps, { idempotencyKey: "q3", to: "three@example.com" })).toMatchObject({ ok: true, provider: "brevo" });
+    expect(deps.state.quotas.get("brevo:utc-2026-11-11")).toMatchObject({ reserved: 1, exhausted: false });
+    expect(resend).toHaveBeenCalledTimes(2);
+  });
+
+  it("re-reserves on today's row when an earlier hold may sit on yesterday's", async () => {
+    const { deps, brevo, resend, setClock } = harness(baseEnv, new Date("2026-11-10T23:59:30Z"));
+    await deps.claim({
+      key: "email-queue/9",
+      brandId: "wardsignup",
+      kind: "magic_link",
+      toAddress: "person@example.com",
+      recipientCount: 1,
+    });
+    await deps.reserve("brevo", "utc-2026-11-10", 1, 5, 0);
+    await deps.markQuotaHeld("email-queue/9", true);
+    setClock(new Date("2026-11-11T00:05:00Z"));
+    const row = deps.state.attempts.get("email-queue/9")!;
+    deps.state.attempts.set("email-queue/9", { ...row, updatedAt: row.updatedAt - 120_000 });
+    expect(await send(deps, { idempotencyKey: "email-queue/9" })).toMatchObject({ ok: true, provider: "brevo" });
+    expect(brevo).toHaveBeenCalledTimes(1);
+    expect(resend).not.toHaveBeenCalled();
+    // Yesterday keeps its count (no refund guessed onto the wrong row); today counts this send.
+    expect(deps.state.quotas.get("brevo:utc-2026-11-10")?.reserved).toBe(1);
+    expect(deps.state.quotas.get("brevo:utc-2026-11-11")?.reserved).toBe(1);
+    expect(deps.state.attempts.get("email-queue/9")).toMatchObject({ phase: "primary_accepted", quotaHeld: true });
+  });
+
+  it("still refuses Brevo on a daily window when the used-count seed is unset (kill switch)", async () => {
+    const { BREVO_QUOTA_USED_AT_OPEN: _seed, ...noSeed } = baseEnv;
+    const { deps, brevo, resend } = harness(noSeed, new Date("2026-11-11T01:00:00Z"));
+    expect(await send(deps)).toMatchObject({ ok: false, retryable: true });
+    expect(brevo).not.toHaveBeenCalled();
+    expect(resend).not.toHaveBeenCalled();
+  });
+});
+
 describe("provider outcomes", () => {
   it("retries a 429 on Brevo and does not call Resend", async () => {
     const { deps, brevo, resend } = harness();
@@ -336,7 +483,7 @@ describe("provider outcomes", () => {
     const first = await send(deps);
     expect(first).toMatchObject({ ok: false, retryable: true });
     expect(resend).not.toHaveBeenCalled();
-    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(0);
+    expect(deps.state.quotas.get(DAY_KEY)?.reserved).toBe(0);
     const second = await send(deps);
     expect(second).toMatchObject({ ok: true, provider: "brevo", messageId: "<second@brevo>" });
     expect(brevo).toHaveBeenCalledTimes(2);
@@ -348,6 +495,7 @@ describe("provider outcomes", () => {
       ...baseEnv,
       BREVO_DAILY_RECIPIENT_CAP: "300",
       BREVO_QUOTA_USED_AT_OPEN: "12",
+      BREVO_QUOTA_WINDOW_ID: "unconfirmed-reset",
     });
     const real = deps.releaseHeld.bind(deps);
     let releases = 0;
@@ -363,14 +511,14 @@ describe("provider outcomes", () => {
     const first = await send(deps, { idempotencyKey: "seed-release" });
     expect(first).toMatchObject({ ok: false, retryable: true });
     expect(resend).not.toHaveBeenCalled();
-    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(13);
+    expect(deps.state.quotas.get(LEGACY_KEY)?.reserved).toBe(13);
     const second = await send(deps, { idempotencyKey: "seed-release" });
     expect(second).toMatchObject({ ok: false, retryable: true });
     expect(brevo).toHaveBeenCalledTimes(2);
-    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(12);
+    expect(deps.state.quotas.get(LEGACY_KEY)?.reserved).toBe(12);
     const replay = await deps.releaseHeld("seed-release", "brevo", "unconfirmed-reset", 1);
     expect(replay).toBe("already_released");
-    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(12);
+    expect(deps.state.quotas.get(LEGACY_KEY)?.reserved).toBe(12);
   });
 
   it("blocks a new login when the uncertainty lookup fails", async () => {
@@ -405,7 +553,7 @@ describe("provider outcomes", () => {
     expect(first).toMatchObject({ ok: true, provider: "resend", messageId: "re_123" });
     expect(brevo).toHaveBeenCalledTimes(1);
     expect(resend).toHaveBeenCalledTimes(1);
-    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.exhausted).toBe(true);
+    expect(deps.state.quotas.get(DAY_KEY)?.exhausted).toBe(true);
     const second = await send(deps, { idempotencyKey: "q2", to: "two@example.com" });
     expect(second).toMatchObject({ ok: false, overBudget: true });
     expect(brevo).toHaveBeenCalledTimes(1);
@@ -463,8 +611,8 @@ describe("provider outcomes", () => {
     expect(brevo).not.toHaveBeenCalled();
   });
 
-  it("retries a pre-HTTP row after it is stale and does not reserve twice", async () => {
-    const { deps, brevo, resend } = harness();
+  it("retries a pre-HTTP row after it is stale and does not reserve twice on an override window", async () => {
+    const { deps, brevo, resend } = harness({ ...baseEnv, BREVO_QUOTA_WINDOW_ID: "unconfirmed-reset" });
     await deps.claim({
       key: "email-queue/1",
       brandId: "wardsignup",
@@ -475,19 +623,24 @@ describe("provider outcomes", () => {
     const row = deps.state.attempts.get("email-queue/1");
     if (!row) throw new Error("missing attempt");
     deps.state.attempts.set("email-queue/1", { ...row, httpStarted: false, quotaHeld: true, updatedAt: Date.now() - 120_000 });
-    deps.state.quotas.set("brevo:unconfirmed-reset", { reserved: 1, exhausted: false });
+    deps.state.quotas.set(LEGACY_KEY, { reserved: 1, exhausted: false });
     const result = await send(deps);
     expect(result).toMatchObject({ ok: true, provider: "brevo" });
     expect(brevo).toHaveBeenCalledTimes(1);
     expect(resend).not.toHaveBeenCalled();
-    expect(deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(1);
+    expect(deps.state.quotas.get(LEGACY_KEY)?.reserved).toBe(1);
     expect(deps.state.attempts.get("email-queue/1")?.phase).toBe("primary_accepted");
   });
 
   it("seeds the first reservation with dashboard usage and refuses a missing seed", async () => {
-    const seeded = harness({ ...baseEnv, BREVO_DAILY_RECIPIENT_CAP: "300", BREVO_QUOTA_USED_AT_OPEN: "12" });
+    const seeded = harness({
+      ...baseEnv,
+      BREVO_DAILY_RECIPIENT_CAP: "300",
+      BREVO_QUOTA_USED_AT_OPEN: "12",
+      BREVO_QUOTA_WINDOW_ID: "unconfirmed-reset",
+    });
     expect(await send(seeded.deps, { idempotencyKey: "seeded" })).toMatchObject({ ok: true, provider: "brevo" });
-    expect(seeded.deps.state.quotas.get("brevo:unconfirmed-reset")?.reserved).toBe(13);
+    expect(seeded.deps.state.quotas.get(LEGACY_KEY)?.reserved).toBe(13);
 
     const { BREVO_QUOTA_USED_AT_OPEN: _seed, ...noSeed } = baseEnv;
     const missing = harness(noSeed);
@@ -495,7 +648,7 @@ describe("provider outcomes", () => {
     expect(refused).toMatchObject({ ok: false, retryable: true });
     expect(missing.brevo).not.toHaveBeenCalled();
     expect(missing.resend).not.toHaveBeenCalled();
-    expect(missing.deps.state.quotas.has("brevo:unconfirmed-reset")).toBe(false);
+    expect(missing.deps.state.quotas.size).toBe(0);
   });
 
   it("does not give the Resend fallback a fresh budget when today's counter is already full", async () => {
