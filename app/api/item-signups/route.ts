@@ -40,6 +40,17 @@ export async function POST(request: Request) {
       );
     }
 
+    const idempotencyKey = parseSignupIdempotencyKey(body.idempotency_key);
+    const isRetry = body.signup_retry === true;
+    const store = memoryIdempotencyStore();
+    const storeKey = idempotencyKey ? `item:${idempotencyKey}` : null;
+    if (storeKey) {
+      const cached = await store.get(storeKey);
+      if (cached && typeof cached === "object") {
+        return NextResponse.json(cached);
+      }
+    }
+
     // Rate limiting — same bucket as session signups to share quota across both types
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -98,17 +109,6 @@ export async function POST(request: Request) {
     }
 
     const admin = createClient(supabaseUrl, serviceKey);
-
-    const idempotencyKey = parseSignupIdempotencyKey(body.idempotency_key);
-    const isRetry = body.signup_retry === true;
-    const store = memoryIdempotencyStore();
-    const storeKey = idempotencyKey ? `item:${idempotencyKey}` : null;
-    if (storeKey) {
-      const cached = await store.get(storeKey);
-      if (cached && typeof cached === "object") {
-        return NextResponse.json(cached);
-      }
-    }
 
     if (isRetry) {
       const reused = await reuseEmailItemSignup(admin, campaign_id, item_id || null, rawCustomLabel || null, member_email);
@@ -243,24 +243,22 @@ async function reuseEmailItemSignup(
   customLabel: string | null,
   memberEmail: unknown,
 ): Promise<Record<string, unknown> | null> {
-  try {
-    const q = admin
-      .from("item_signups")
-      .select("id, item_id, custom_label, member_email, signed_up_at, member_name")
-      .eq("campaign_id", campaignId)
-      .gte("signed_up_at", new Date(Date.now() - 30 * 60_000).toISOString());
-    const { data } = await withSupabaseTimeout<{ data: unknown[] | null }>(
-      (signal) => q.abortSignal(signal),
-      "item_signups email dedupe",
-    );
-    const row = findReusableEmailItemSignup((data ?? []) as Array<{
-      item_id?: string | null;
-      custom_label?: string | null;
-      member_email?: string | null;
-      signed_up_at: string;
-    }>, { itemId, customLabel, memberEmail });
-    return row ? (row as unknown as Record<string, unknown>) : null;
-  } catch {
-    return null;
-  }
+  // A timeout or lookup error must not fall through to another insert: the
+  // first attempt may already have committed. The route catch returns 503.
+  const q = admin
+    .from("item_signups")
+    .select("id, item_id, custom_label, member_email, signed_up_at, member_name")
+    .eq("campaign_id", campaignId)
+    .gte("signed_up_at", new Date(Date.now() - 30 * 60_000).toISOString());
+  const { data } = await withSupabaseTimeout<{ data: unknown[] | null }>(
+    (signal) => q.abortSignal(signal),
+    "item_signups email dedupe",
+  );
+  const row = findReusableEmailItemSignup((data ?? []) as Array<{
+    item_id?: string | null;
+    custom_label?: string | null;
+    member_email?: string | null;
+    signed_up_at: string;
+  }>, { itemId, customLabel, memberEmail });
+  return row ? (row as unknown as Record<string, unknown>) : null;
 }

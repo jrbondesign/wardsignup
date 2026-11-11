@@ -444,33 +444,30 @@ async function reuseEmailSignup(
   campaignId: string,
   memberEmail: unknown,
 ): Promise<ReusedSlot | null> {
-  try {
-    const { data } = await withSupabaseTimeout(
-      (signal) =>
-        admin
-          .from("signups")
-          .select("id, session_id, member_email, cancel_token, signed_up_at")
-          .eq("session_id", sessionId)
-          .eq("campaign_id", campaignId)
-          .gte("signed_up_at", new Date(Date.now() - 30 * 60_000).toISOString())
-          .abortSignal(signal),
-      "signups email dedupe",
-    );
-    const row = findReusableEmailSignup((data ?? []) as Array<{
-      id: string;
-      session_id: string;
-      member_email?: string | null;
-      cancel_token?: string | null;
-      signed_up_at: string;
-    }>, { sessionId, memberEmail });
-    if (!row) return null;
-    return {
-      session_id: sessionId,
-      signup_id: row.id,
-      cancel_token: row.cancel_token ?? null,
-    };
-  } catch {
-    // Dedupe is best-effort: a timeout here should not hide a retryable insert.
-    return null;
-  }
+  // A timeout or lookup error must not fall through to another insert: the
+  // first attempt may already have committed. The route catch returns 503.
+  const { data } = await withSupabaseTimeout(
+    (signal) =>
+      admin
+        .from("signups")
+        .select("id, session_id, member_email, cancel_token, signed_up_at")
+        .eq("session_id", sessionId)
+        .eq("campaign_id", campaignId)
+        .gte("signed_up_at", new Date(Date.now() - 30 * 60_000).toISOString())
+        .abortSignal(signal),
+    "signups email dedupe",
+  );
+  const row = findReusableEmailSignup((data ?? []) as Array<{
+    id: string;
+    session_id: string;
+    member_email?: string | null;
+    cancel_token?: string | null;
+    signed_up_at: string;
+  }>, { sessionId, memberEmail });
+  if (!row) return null;
+  return {
+    session_id: sessionId,
+    signup_id: row.id,
+    cancel_token: row.cancel_token ?? null,
+  };
 }
