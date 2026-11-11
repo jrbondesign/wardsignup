@@ -28,8 +28,23 @@ export function wardsignupBrevoApiKey(env: Env = process.env): string | null {
  */
 export const BREVO_FREE_PLAN_DAILY_RECIPIENTS = 300;
 
-/** Window id until someone confirms Brevo's reset and chooses a new one. */
+/**
+ * Legacy cumulative window id from #147. Still used when BREVO_QUOTA_WINDOW_ID
+ * is set but malformed, so a bad override keeps counting against a known row
+ * instead of opening a fresh one.
+ */
 export const BREVO_QUOTA_WINDOW_UNCONFIRMED = "unconfirmed-reset";
+
+/**
+ * Prefix for the derived daily window. Brevo's free-plan daily limit resets
+ * at 00:00 UTC (17:00 MST), so the window is the UTC calendar date.
+ */
+export const BREVO_DAILY_WINDOW_PREFIX = "utc-";
+
+/** UTC calendar date as YYYY-MM-DD. */
+export function utcDateString(now: Date): string {
+  return now.toISOString().slice(0, 10);
+}
 
 export function brevoRecipientCap(env: Env = process.env): number | null {
   const raw = env.BREVO_DAILY_RECIPIENT_CAP?.trim().toLowerCase();
@@ -41,7 +56,10 @@ export function brevoRecipientCap(env: Env = process.env): number | null {
 
 /**
  * Recipients already consumed on this Brevo account when the window opens,
- * including marketing and any other sender. Unset does not mean zero.
+ * including marketing and any other sender. Unset does not mean zero: it
+ * refuses Brevo sends (the kill switch in docs/EMAIL_CUTOVER.md) for every
+ * window, daily or overridden. This is the raw validated value. Use
+ * `brevoWindowSeed` for the figure applied to a given window.
  */
 export function brevoQuotaSeed(env: Env = process.env): number | null {
   const raw = env.BREVO_QUOTA_USED_AT_OPEN?.trim().toLowerCase();
@@ -51,10 +69,52 @@ export function brevoQuotaSeed(env: Env = process.env): number | null {
   return n;
 }
 
-export function brevoWindowKey(env: Env = process.env): string {
-  const id = env.BREVO_QUOTA_WINDOW_ID?.trim() || BREVO_QUOTA_WINDOW_UNCONFIRMED;
-  if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(id)) return BREVO_QUOTA_WINDOW_UNCONFIRMED;
-  return id;
+/** Valid BREVO_QUOTA_WINDOW_ID override, or null when unset or malformed. */
+function windowOverride(env: Env): { set: boolean; id: string | null } {
+  const id = env.BREVO_QUOTA_WINDOW_ID?.trim();
+  if (!id) return { set: false, id: null };
+  if (!/^[A-Za-z0-9_.:-]{1,80}$/.test(id)) return { set: true, id: null };
+  return { set: true, id };
+}
+
+/**
+ * Quota window for a send at `now`.
+ * - BREVO_QUOTA_WINDOW_ID set and valid: that id, cumulative, never rolls.
+ * - Set but malformed: the legacy `unconfirmed-reset` row (fail toward counting).
+ * - Unset: `utc-YYYY-MM-DD`, so a new UTC day opens a new row at Brevo's reset.
+ */
+export function brevoWindowKey(env: Env = process.env, now: Date = new Date()): string {
+  const o = windowOverride(env);
+  if (o.id) return o.id;
+  if (o.set) return BREVO_QUOTA_WINDOW_UNCONFIRMED;
+  return `${BREVO_DAILY_WINDOW_PREFIX}${utcDateString(now)}`;
+}
+
+/** True when the window key comes from the UTC date rather than an override. */
+export function isDailyBrevoWindow(env: Env = process.env): boolean {
+  return !windowOverride(env).set;
+}
+
+/**
+ * Seed applied when `windowKey`'s row is first written.
+ * - Override or legacy window: BREVO_QUOTA_USED_AT_OPEN, exactly as in #147.
+ * - Daily window: BREVO_QUOTA_USED_AT_OPEN only on the UTC date named by
+ *   BREVO_QUOTA_USED_AT_OPEN_DATE (YYYY-MM-DD). Every other day starts at 0,
+ *   because Brevo's counter has just reset. Other senders on the account
+ *   later that day stay invisible until Brevo rejects for quota, which
+ *   latches only that day's row.
+ * Either way, a missing or invalid BREVO_QUOTA_USED_AT_OPEN returns null and
+ * the send is refused.
+ */
+export function brevoWindowSeed(env: Env, windowKey: string): number | null {
+  const seed = brevoQuotaSeed(env);
+  if (seed === null) return null;
+  if (!isDailyBrevoWindow(env)) return seed;
+  const day = env.BREVO_QUOTA_USED_AT_OPEN_DATE?.trim();
+  if (day && /^\d{4}-\d{2}-\d{2}$/.test(day) && windowKey === `${BREVO_DAILY_WINDOW_PREFIX}${day}`) {
+    return seed;
+  }
+  return 0;
 }
 
 /** One API call must not be able to consume the day. */

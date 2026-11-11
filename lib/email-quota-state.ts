@@ -6,9 +6,10 @@ import { idempotencyTag } from "@/lib/email-cutover-config";
  * The database functions in
  * supabase/migrations/20261108183000_email_provider_cutover.sql are the
  * durable copy of these transitions (row locks). Tests drive this module
- * directly and through the in-memory store. Brevo's daily reset clock is
- * not known, so a window never expires by time. A new BREVO_QUOTA_WINDOW_ID
- * is a new row. Exhaustion stays latched on the current window.
+ * directly and through the in-memory store. A row never expires by time.
+ * The daily reset comes from the key: with BREVO_QUOTA_WINDOW_ID unset the
+ * key is the UTC date (utc-YYYY-MM-DD), so 00:00 UTC opens a new row. An
+ * override id is one cumulative row. Exhaustion stays latched on its row.
  */
 
 export type QuotaRow = {
