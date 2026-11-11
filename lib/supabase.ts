@@ -46,9 +46,10 @@ export function getPublicOrgCampaigns(slug: string) {
   return getSupabase().rpc("get_public_org_campaigns", { p_slug: slug } as never);
 }
 
-export function createSignupIfCapacityRpc(args: RpcSignupArgs) {
+export function createSignupIfCapacityRpc(args: RpcSignupArgs, signal?: AbortSignal) {
   const client = createAnonSupabaseClient();
-  return client.rpc("create_signup_if_capacity", args as never);
+  const query = client.rpc("create_signup_if_capacity", args as never);
+  return signal ? query.abortSignal(signal) : query;
 }
 
 /**

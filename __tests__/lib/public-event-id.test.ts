@@ -5,6 +5,7 @@ jest.mock("@/lib/supabase/middleware", () => {
   const { NextResponse } = require("next/server");
   return {
     isProtectedPath: () => false,
+    needsAuthSession: () => false,
     updateSession: async () => ({ response: NextResponse.next(), user: null, timedOut: false }),
   };
 });

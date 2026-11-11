@@ -17,4 +17,17 @@ describe("withSupabaseTimeout", () => {
     await jest.advanceTimersByTimeAsync(10_000);
     await check;
   });
+
+  it("aborts the signal when the call is a function and the limit passes", async () => {
+    jest.useFakeTimers();
+    let seen: AbortSignal | undefined;
+    const p = withSupabaseTimeout((signal) => {
+      seen = signal;
+      return new Promise(() => {});
+    }, "slow", 10_000);
+    const check = expect(p).rejects.toBeInstanceOf(SupabaseTimeoutError);
+    await jest.advanceTimersByTimeAsync(10_000);
+    await check;
+    expect(seen?.aborted).toBe(true);
+  });
 });

@@ -14,6 +14,14 @@ import { getPostHogClient } from "@/lib/posthog-server";
 import { orgIdForCampaign } from "@/lib/analytics-context";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
+import { SIGNUP_TIMEOUT_MESSAGE, SupabaseTimeoutError, withSupabaseTimeout } from "@/lib/supabase-timeout";
+import {
+  findReusableEmailSignup,
+  memoryIdempotencyStore,
+  parseSignupIdempotencyKey,
+} from "@/lib/signup-idempotency";
+
+export const maxDuration = 30;
 
 function hashIp(ip: string): string {
   const salt = process.env.RATE_LIMIT_IP_SALT || "wardsignup_signup_rate";
@@ -65,23 +73,19 @@ export async function POST(request: Request) {
           .slice(0, 10)
       : [];
 
-    // Check whether this campaign allows guests before accepting them.
-    // We fetch allow_guests alongside the campaign — a missing/null value defaults to true
-    // so that existing events (pre-migration) are unaffected.
-    let guest_names = sanitizedGuests;
-    if (sanitizedGuests.length > 0) {
-      const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-      const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-      if (serviceKey && url) {
-        const { createClient: sc } = await import("@supabase/supabase-js");
-        const adminCheck = sc(url, serviceKey);
-        const { data: campaignData } = await adminCheck
-          .from("campaigns")
-          .select("allow_guests")
-          .eq("id", campaign_id)
-          .single();
-        const allowGuests = campaignData == null || (campaignData as { allow_guests?: boolean }).allow_guests !== false;
-        if (!allowGuests) guest_names = [];
+    // Guest names are already omitted by the event page when allow_guests is
+    // off. Skipping the extra campaigns.allow_guests read avoids a stall-prone
+    // query on submit (Nov 9 503s).
+    const guest_names = sanitizedGuests;
+
+    const idempotencyKey = parseSignupIdempotencyKey(body.idempotency_key);
+    const isRetry = body.signup_retry === true;
+    const store = memoryIdempotencyStore();
+    const storeKey = idempotencyKey ? `signup:${idempotencyKey}` : null;
+    if (storeKey) {
+      const cached = await store.get(storeKey);
+      if (cached && typeof cached === "object") {
+        return NextResponse.json(cached);
       }
     }
 
@@ -96,13 +100,17 @@ export async function POST(request: Request) {
       const ipHash = hashIp(ip);
       const maxPerHour = getSignupRateLimitPerIpPerHour();
 
-      const { data: allowed, error: rateErr } = await admin.rpc(
+      const { data: allowed, error: rateErr } = await withSupabaseTimeout(
+        (signal) =>
+          admin!.rpc(
+            "try_consume_signup_rate",
+            {
+              p_ip_hash: ipHash,
+              p_bucket: bucket.toISOString(),
+              p_max: maxPerHour,
+            } as never,
+          ).abortSignal(signal),
         "try_consume_signup_rate",
-        {
-          p_ip_hash: ipHash,
-          p_bucket: bucket.toISOString(),
-          p_max: maxPerHour,
-        } as never,
       );
 
       if (rateErr) {
@@ -115,14 +123,27 @@ export async function POST(request: Request) {
       }
     }
 
-    const { data, error } = await createSignupIfCapacityRpc({
-      p_session_id: session_id,
-      p_campaign_id: campaign_id,
-      p_member_name: member_name.trim(),
-      p_member_email: member_email ?? null,
-      p_member_phone: member_phone ?? null,
-      p_guest_names: guest_names,
-    });
+    if (isRetry && admin) {
+      const reused = await reuseEmailSignup(admin, session_id, campaign_id, member_email);
+      if (reused) {
+        const payload = { signup: reused, cancel_token: reused.cancel_token ?? null };
+        if (storeKey) await store.set(storeKey, payload);
+        return NextResponse.json(payload);
+      }
+    }
+
+    const { data, error } = await withSupabaseTimeout(
+      (signal) =>
+        createSignupIfCapacityRpc({
+          p_session_id: session_id,
+          p_campaign_id: campaign_id,
+          p_member_name: member_name.trim(),
+          p_member_email: member_email ?? null,
+          p_member_phone: member_phone ?? null,
+          p_guest_names: guest_names,
+        }, signal),
+      "create_signup_if_capacity",
+    );
 
     if (error) {
       const mapped = mapSignupRpcError(error);
@@ -260,13 +281,53 @@ export async function POST(request: Request) {
 
     const cancelToken = (data as Record<string, unknown>).cancel_token as string | null | undefined;
     revalidateEventPage(campaign_id);
-    return NextResponse.json({ signup: data, cancel_token: cancelToken ?? null });
+    const payload = { signup: data, cancel_token: cancelToken ?? null };
+    if (storeKey) await store.set(storeKey, payload);
+    return NextResponse.json(payload);
   } catch (error) {
+    if (error instanceof SupabaseTimeoutError) {
+      console.error("Signup timed out:", error.message);
+      captureServerException(error, {
+        route: "/api/signups",
+        properties: { kind: "supabase_timeout" },
+      });
+      return NextResponse.json({ error: SIGNUP_TIMEOUT_MESSAGE }, { status: 503 });
+    }
     console.error("Error creating signup:", error);
     captureServerException(error, { route: "/api/signups" });
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
     );
+  }
+}
+
+async function reuseEmailSignup(
+  admin: ReturnType<typeof createClient>,
+  sessionId: string,
+  campaignId: string,
+  memberEmail: unknown,
+): Promise<(Record<string, unknown> & { cancel_token?: string | null }) | null> {
+  try {
+    const { data } = await withSupabaseTimeout(
+      (signal) =>
+        admin
+          .from("signups")
+          .select("*")
+          .eq("session_id", sessionId)
+          .eq("campaign_id", campaignId)
+          .gte("signed_up_at", new Date(Date.now() - 30 * 60_000).toISOString())
+          .abortSignal(signal),
+      "signups email dedupe",
+    );
+    const row = findReusableEmailSignup((data ?? []) as Array<{
+      session_id: string;
+      member_email?: string | null;
+      signed_up_at: string;
+      cancel_token?: string | null;
+    }>, { sessionId, memberEmail });
+    return row ? (row as unknown as Record<string, unknown> & { cancel_token?: string | null }) : null;
+  } catch {
+    return null;
   }
 }

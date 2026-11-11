@@ -14,7 +14,12 @@ import { getPostHogClient } from "@/lib/posthog-server";
 import { analyticsContextForCampaign } from "@/lib/analytics-context";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
-import { SupabaseTimeoutError, withSupabaseTimeout } from "@/lib/supabase-timeout";
+import { SIGNUP_TIMEOUT_MESSAGE, SupabaseTimeoutError, withSupabaseTimeout } from "@/lib/supabase-timeout";
+import {
+  findReusableEmailSignup,
+  memoryIdempotencyStore,
+  parseSignupIdempotencyKey,
+} from "@/lib/signup-idempotency";
 
 // Each Supabase call is capped at ~10s, so a healthy request finishes well
 // inside this; a stalled database now fails fast instead of hanging to 300s.
@@ -88,23 +93,27 @@ export async function POST(request: Request) {
           .slice(0, 10)
       : [];
 
-    let guest_names = sanitizedGuests;
+    // Guest names are already omitted by the event page when allow_guests is
+    // off. Skipping the extra campaigns.allow_guests read avoids a stall-prone
+    // query on submit (Nov 9 503s). A crafted request can still send guests.
+    const guest_names = sanitizedGuests;
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     let admin: ReturnType<typeof createClient> | null = null;
 
+    const idempotencyKey = parseSignupIdempotencyKey(body.idempotency_key);
+    const isRetry = body.signup_retry === true;
+    const store = memoryIdempotencyStore();
+    const storeKey = idempotencyKey ? `bulk:${idempotencyKey}` : null;
+    if (storeKey) {
+      const cached = await store.get(storeKey);
+      if (cached && typeof cached === "object") {
+        return NextResponse.json(cached);
+      }
+    }
+
     if (serviceKey && url) {
       admin = createClient(url, serviceKey);
-
-      // Honor allow_guests just like the single-signup route.
-      if (sanitizedGuests.length > 0) {
-        const { data: campaignData } = await withSupabaseTimeout(
-          admin.from("campaigns").select("allow_guests").eq("id", campaign_id).single(),
-          "campaigns allow_guests",
-        );
-        const allowGuests = campaignData == null || (campaignData as { allow_guests?: boolean }).allow_guests !== false;
-        if (!allowGuests) guest_names = [];
-      }
 
       // One rate-limit consume per batch (not per slot).
       const ip = getClientIp(request);
@@ -114,14 +123,15 @@ export async function POST(request: Request) {
       const maxPerHour = getSignupRateLimitPerIpPerHour();
 
       const { data: allowed, error: rateErr } = await withSupabaseTimeout(
-        admin.rpc(
-          "try_consume_signup_rate",
-          {
-            p_ip_hash: ipHash,
-            p_bucket: bucket.toISOString(),
-            p_max: maxPerHour,
-          } as never,
-        ),
+        (signal) =>
+          admin!.rpc(
+            "try_consume_signup_rate",
+            {
+              p_ip_hash: ipHash,
+              p_bucket: bucket.toISOString(),
+              p_max: maxPerHour,
+            } as never,
+          ).abortSignal(signal),
         "try_consume_signup_rate",
       );
 
@@ -142,15 +152,27 @@ export async function POST(request: Request) {
 
     // Sequential to surface per-slot capacity errors cleanly.
     for (const sessionId of sessionIds) {
+      if (isRetry && admin && normalizeEmail(member_email)) {
+        const reused = await reuseEmailSignup(admin, sessionId, campaign_id, member_email);
+        if (reused) {
+          results.push(reused);
+          successfulSessionIds.push(sessionId);
+          if (reused.cancel_token) successfulCancelTokens.push(reused.cancel_token);
+          successfulSignupIds.push(reused.signup_id);
+          continue;
+        }
+      }
+
       const { data, error } = await withSupabaseTimeout(
-        createSignupIfCapacityRpc({
-          p_session_id: sessionId,
-          p_campaign_id: campaign_id,
-          p_member_name: member_name.trim(),
-          p_member_email: member_email ?? null,
-          p_member_phone: member_phone ?? null,
-          p_guest_names: guest_names,
-        }),
+        (signal) =>
+          createSignupIfCapacityRpc({
+            p_session_id: sessionId,
+            p_campaign_id: campaign_id,
+            p_member_name: member_name.trim(),
+            p_member_email: member_email ?? null,
+            p_member_phone: member_phone ?? null,
+            p_guest_names: guest_names,
+          }, signal),
         "create_signup_if_capacity",
       );
 
@@ -191,10 +213,12 @@ export async function POST(request: Request) {
       // reported as a failed signup.
       try {
         await withSupabaseTimeout(
-          admin
-            .from("signups")
-            .update({ signup_note: signupNote } as never)
-            .in("id", successfulSignupIds),
+          (signal) =>
+            admin
+              .from("signups")
+              .update({ signup_note: signupNote } as never)
+              .in("id", successfulSignupIds)
+              .abortSignal(signal),
           "signups note update",
         );
       } catch (e) {
@@ -212,18 +236,22 @@ export async function POST(request: Request) {
       after(async () => {
         try {
           const { data: campaign, error: cErr } = await withSupabaseTimeout(
-            admin!
-              .from("campaigns")
-              .select("id, name, brand_id, public_host, event_timezone, event_end_date, event_type, leader_name, leader_email, user_email, organizer_instant_notify_enabled, leader_signup_email_enabled")
-              .eq("id", campaign_id)
-              .single(),
+            (signal) =>
+              admin!
+                .from("campaigns")
+                .select("id, name, brand_id, public_host, event_timezone, event_end_date, event_type, leader_name, leader_email, user_email, organizer_instant_notify_enabled, leader_signup_email_enabled")
+                .eq("id", campaign_id)
+                .abortSignal(signal)
+                .single(),
             "campaigns confirmation fetch",
           );
           const { data: sessions, error: sErr } = await withSupabaseTimeout(
-            admin!
-              .from("sessions")
-              .select("id, day_of_week, time, end_time, session_date")
-              .in("id", successfulSessionIds),
+            (signal) =>
+              admin!
+                .from("sessions")
+                .select("id, day_of_week, time, end_time, session_date")
+                .in("id", successfulSessionIds)
+                .abortSignal(signal),
             "sessions confirmation fetch",
           );
           if (cErr || sErr || !campaign || !sessions) {
@@ -350,16 +378,22 @@ export async function POST(request: Request) {
     // Notes (if any) are on the rows now; expire again. Skip when nothing landed
     // so a failed-only attempt does not throw away a warm cache.
     if (successfulSignupIds.length > 0) revalidateEventPage(campaign_id);
-    return NextResponse.json({
+    const payload = {
       results,
       primary_cancel_token: successfulCancelTokens[0] ?? null,
       success_count: successfulSessionIds.length,
-    });
+    };
+    if (storeKey) await store.set(storeKey, payload);
+    return NextResponse.json(payload);
   } catch (error) {
     if (error instanceof SupabaseTimeoutError) {
       console.error("Bulk signup timed out:", error.message);
+      captureServerException(error, {
+        route: "/api/signups/bulk",
+        properties: { kind: "supabase_timeout" },
+      });
       return NextResponse.json(
-        { error: "Signups are taking longer than usual. Please try again in a moment." },
+        { error: SIGNUP_TIMEOUT_MESSAGE },
         { status: 503 },
       );
     }
@@ -369,5 +403,50 @@ export async function POST(request: Request) {
       { error: "Internal server error" },
       { status: 500 },
     );
+  }
+}
+
+function normalizeEmail(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const email = raw.trim().toLowerCase();
+  return email.length > 0 ? email : null;
+}
+
+type ReusedSlot = { session_id: string; signup_id: string; cancel_token: string | null };
+
+async function reuseEmailSignup(
+  admin: ReturnType<typeof createClient>,
+  sessionId: string,
+  campaignId: string,
+  memberEmail: unknown,
+): Promise<ReusedSlot | null> {
+  try {
+    const { data } = await withSupabaseTimeout(
+      (signal) =>
+        admin
+          .from("signups")
+          .select("id, session_id, member_email, cancel_token, signed_up_at")
+          .eq("session_id", sessionId)
+          .eq("campaign_id", campaignId)
+          .gte("signed_up_at", new Date(Date.now() - 30 * 60_000).toISOString())
+          .abortSignal(signal),
+      "signups email dedupe",
+    );
+    const row = findReusableEmailSignup((data ?? []) as Array<{
+      id: string;
+      session_id: string;
+      member_email?: string | null;
+      cancel_token?: string | null;
+      signed_up_at: string;
+    }>, { sessionId, memberEmail });
+    if (!row) return null;
+    return {
+      session_id: sessionId,
+      signup_id: row.id,
+      cancel_token: row.cancel_token ?? null,
+    };
+  } catch {
+    // Dedupe is best-effort: a timeout here should not hide a retryable insert.
+    return null;
   }
 }

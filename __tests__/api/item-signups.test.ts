@@ -8,10 +8,23 @@ import { createClient } from "@supabase/supabase-js";
 
 const mockRpc = jest.fn();
 
+function withAbort(value: unknown) {
+  const p = Promise.resolve(value);
+  const q: { abortSignal: () => unknown; then: typeof p.then } = {
+    abortSignal: () => q,
+    then: p.then.bind(p),
+  };
+  return q;
+}
 jest.mock("@supabase/supabase-js", () => ({
   createClient: jest.fn(() => ({
-    rpc: (...args: unknown[]) => mockRpc(...args),
-    from: jest.fn(),
+    rpc: (...args: unknown[]) => withAbort(mockRpc(...args)),
+    from: jest.fn(() => {
+      const q: Record<string, unknown> = {};
+      for (const m of ["select", "eq", "gte", "abortSignal"]) q[m] = () => q;
+      q.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(res);
+      return q;
+    }),
   })),
 }));
 
@@ -22,6 +35,7 @@ jest.mock("next/server", () => {
 
 jest.mock("@/lib/posthog-server", () => ({
   getPostHogClient: () => ({ capture: jest.fn() }),
+  captureServerException: jest.fn(),
 }));
 
 describe("/api/item-signups", () => {

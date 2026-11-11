@@ -10,7 +10,7 @@ jest.mock("@supabase/ssr", () => ({
   createServerClient: () => ({ auth: { getClaims: mockGetClaims, getUser: mockGetUser } }),
 }));
 
-import { hasAuthCookie, isProtectedPath, updateSession, userFromClaims } from "@/lib/supabase/middleware";
+import { hasAuthCookie, isProtectedPath, needsAuthSession, updateSession, userFromClaims } from "@/lib/supabase/middleware";
 
 describe("isProtectedPath", () => {
   it("marks organizer routes as protected", () => {
@@ -89,5 +89,17 @@ describe("updateSession", () => {
     expect((await updateSession(req)).user).toBeNull();
     mockGetClaims.mockRejectedValue(new Error("network"));
     expect((await updateSession(req)).user).toBeNull();
+  });
+});
+
+describe("needsAuthSession", () => {
+  it("runs the sign-in check only on routes that need it", () => {
+    expect(needsAuthSession("/dashboard")).toBe(true);
+    expect(needsAuthSession("/create")).toBe(true);
+    expect(needsAuthSession("/login")).toBe(true);
+    expect(needsAuthSession("/orgs/accept")).toBe(true);
+    expect(needsAuthSession("/event/abc")).toBe(false);
+    expect(needsAuthSession("/")).toBe(false);
+    expect(needsAuthSession("/privacy")).toBe(false);
   });
 });

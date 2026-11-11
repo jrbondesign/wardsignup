@@ -28,6 +28,7 @@ jest.mock("@/lib/participant-email", () => ({
 
 jest.mock("@/lib/posthog-server", () => ({
   getPostHogClient: () => ({ capture: jest.fn(), flush: jest.fn() }),
+  captureServerException: jest.fn(),
 }));
 
 // Loosely typed: the RPC's generated return type doesn't model the mocked payloads.
@@ -73,14 +74,17 @@ describe("/api/signups", () => {
       expect(data.signup.member_name).toBe("John Doe");
       // Public event page cache expires right away so counts are fresh.
       expect(mockRevalidateEventPage).toHaveBeenCalledWith("campaign-123");
-      expect(mockRpc).toHaveBeenCalledWith({
-        p_session_id: "session-123",
-        p_campaign_id: "campaign-123",
-        p_member_name: "John Doe",
-        p_member_email: "john@test.com",
-        p_member_phone: "555-1234",
-        p_guest_names: [],
-      });
+      expect(mockRpc).toHaveBeenCalledWith(
+        {
+          p_session_id: "session-123",
+          p_campaign_id: "campaign-123",
+          p_member_name: "John Doe",
+          p_member_email: "john@test.com",
+          p_member_phone: "555-1234",
+          p_guest_names: [],
+        },
+        expect.any(AbortSignal),
+      );
     });
 
     it("should return 400 if session is full", async () => {

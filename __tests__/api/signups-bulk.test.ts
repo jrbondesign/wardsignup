@@ -6,6 +6,7 @@ import { POST, maxDuration } from "@/app/api/signups/bulk/route";
 import { NextRequest } from "next/server";
 import { createSignupIfCapacityRpc } from "@/lib/supabase";
 import { analyticsContextForCampaign } from "@/lib/analytics-context";
+import { clearSignupIdempotencyMemory } from "@/lib/signup-idempotency";
 
 // Queue after() callbacks so tests can check what runs before vs after the response.
 const afterQueue: Array<() => unknown> = [];
@@ -27,9 +28,11 @@ jest.mock("@/lib/leader-email", () => ({
 }));
 
 const mockCapture = jest.fn();
+const mockCaptureException = jest.fn();
 const mockFlush = jest.fn().mockResolvedValue(undefined);
 jest.mock("@/lib/posthog-server", () => ({
   getPostHogClient: () => ({ capture: mockCapture, flush: mockFlush }),
+  captureServerException: (...a: unknown[]) => mockCaptureException(...a),
 }));
 
 jest.mock("@/lib/analytics-context", () => ({
@@ -38,16 +41,27 @@ jest.mock("@/lib/analytics-context", () => ({
 
 // Minimal admin client: every query resolves empty unless a test overrides rpc.
 const adminRpc = jest.fn();
+function withAbort(value: unknown) {
+  const p = Promise.resolve(value);
+  const q: { abortSignal: () => unknown; then: typeof p.then } = {
+    abortSignal: () => q,
+    then: p.then.bind(p),
+  };
+  return q;
+}
 const query = () => {
   const q: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "in", "update"]) q[m] = () => q;
+  for (const m of ["select", "eq", "in", "update", "gte", "abortSignal"]) q[m] = () => q;
   q.single = () => Promise.resolve({ data: null, error: null });
   q.maybeSingle = q.single;
   q.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(res);
   return q;
 };
 jest.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({ from: () => query(), rpc: (...a: unknown[]) => adminRpc(...a) }),
+  createClient: () => ({
+    from: () => query(),
+    rpc: (...a: unknown[]) => withAbort(adminRpc(...a)),
+  }),
 }));
 
 const mockRpc = createSignupIfCapacityRpc as unknown as jest.Mock;
@@ -76,6 +90,7 @@ describe("/api/signups/bulk", () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    clearSignupIdempotencyMemory();
     afterQueue.length = 0;
     process.env = { ...env, SUPABASE_SERVICE_ROLE_KEY: "svc", NEXT_PUBLIC_SUPABASE_URL: "http://sb" };
     adminRpc.mockResolvedValue({ data: true, error: null });
@@ -145,6 +160,13 @@ describe("/api/signups/bulk", () => {
     expect(response.status).toBe(503);
     expect((await response.json()).error).toMatch(/try again/i);
     expect(mockCapture).not.toHaveBeenCalled();
+    expect(mockCaptureException).toHaveBeenCalledWith(
+      expect.objectContaining({ name: "SupabaseTimeoutError" }),
+      expect.objectContaining({
+        route: "/api/signups/bulk",
+        properties: { kind: "supabase_timeout" },
+      }),
+    );
   });
 
   it("returns a 503 JSON error when the rate limit RPC hangs", async () => {
@@ -157,5 +179,18 @@ describe("/api/signups/bulk", () => {
 
     expect(response.status).toBe(503);
     expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("does not insert again when the same idempotency key is retried", async () => {
+    const key = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    const first = await POST(bulkRequest({ idempotency_key: key }));
+    expect(first.status).toBe(200);
+    const rpcCalls = mockRpc.mock.calls.length;
+    expect(rpcCalls).toBeGreaterThan(0);
+
+    const second = await POST(bulkRequest({ idempotency_key: key, signup_retry: true }));
+    expect(second.status).toBe(200);
+    expect((await second.json()).primary_cancel_token).toBe("tok-s-1");
+    expect(mockRpc).toHaveBeenCalledTimes(rpcCalls);
   });
 });

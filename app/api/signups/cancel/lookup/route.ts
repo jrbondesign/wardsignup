@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { formatSessionSlotLabel } from "@/lib/organizer-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
+import { captureServerException } from "@/lib/posthog-server";
+import { SIGNUP_TIMEOUT_MESSAGE, SupabaseTimeoutError, withSupabaseTimeout } from "@/lib/supabase-timeout";
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token")?.trim() ?? "";
@@ -11,6 +13,8 @@ export async function GET(request: NextRequest) {
 
   const admin = createServiceRoleClient();
 
+  try {
+
   type LookupRow = {
     member_name: string;
     guest_names: string[];
@@ -18,7 +22,9 @@ export async function GET(request: NextRequest) {
     campaigns: { id: string; name: string; brand_id: string | null; public_host: string | null; event_timezone: string | null; event_end_date: string | null; event_type?: string | null } | { id: string; name: string; brand_id: string | null; public_host: string | null; event_timezone: string | null; event_end_date: string | null; event_type?: string | null }[] | null;
   };
 
-  const { data: rawData, error } = await admin
+  const { data: rawData, error } = await withSupabaseTimeout(
+    (signal) =>
+      admin
     .from("signups")
     .select(
       `
@@ -42,7 +48,10 @@ export async function GET(request: NextRequest) {
     `,
     )
     .eq("cancel_token", token)
-    .maybeSingle();
+    .abortSignal(signal)
+        .maybeSingle(),
+    "signups cancel lookup",
+  );
 
   if (error) {
     console.error("cancel/lookup:", error);
@@ -89,4 +98,18 @@ export async function GET(request: NextRequest) {
     event_end_date: camp.event_end_date ?? null,
     event_type: camp.event_type ?? null,
   });
+  } catch (error) {
+    if (error instanceof SupabaseTimeoutError) {
+      console.error("cancel/lookup timed out:", error.message);
+      captureServerException(error, {
+        route: "/api/signups/cancel/lookup",
+        properties: { kind: "supabase_timeout" },
+      });
+      return NextResponse.json({ error: SIGNUP_TIMEOUT_MESSAGE }, { status: 503 });
+    }
+    console.error("cancel/lookup:", error);
+    captureServerException(error, { route: "/api/signups/cancel/lookup" });
+    return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
+  }
+
 }
