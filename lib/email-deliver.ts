@@ -4,6 +4,10 @@ import { getResendForBrand } from "@/lib/resend-for-brand";
 import type { PublicBrand } from "@/lib/brand/types";
 import { phoenixDayStartUtc } from "@/lib/phoenix-time";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { allowedEnvSender, checkSender, parseFrom } from "@/lib/email-sender-guard";
+import { organizerEmailFrom } from "@/lib/brand/email-from";
+
+export { parseFrom };
 
 /**
  * Low level delivery: Resend first, Brevo as a free fallback.
@@ -41,6 +45,12 @@ import { getPostHogClient } from "@/lib/posthog-server";
  * invites and signup confirmations. If Brevo refuses or errors, the email
  * falls back to the normal Resend path above (budget, retry, idempotency key).
  * With no Brevo configured, or EMAIL_BULK_PROVIDER=resend, nothing changes.
+ *
+ * Sender guard (lib/email-sender-guard.ts): deliverEmail and sendViaBrevo both
+ * refuse any From that is not @wardsignup.com, before calling a provider.
+ * Brevo always gets an explicit sender: the message's own From address. It
+ * never falls back to the Brevo account's default sender, and it never copies
+ * the From into Reply-To. A Reply-To is set only when the caller passes one.
  */
 
 export type DeliverParams = {
@@ -71,6 +81,8 @@ export type DeliverResult =
       overBudget?: boolean;
       /** Brevo was tried (Resend out of budget or 429) and refused or errored. */
       brevoFailed?: boolean;
+      /** The From address is not @wardsignup.com. Nothing was sent anywhere. */
+      senderRefused?: boolean;
     };
 
 type Env = Record<string, string | undefined>;
@@ -92,7 +104,8 @@ export function brevoConfig(env: Env = process.env):
   | null {
   if (env.EMAIL_FALLBACK_PROVIDER?.trim().toLowerCase() !== "brevo") return null;
   const apiKey = env.BREVO_API_KEY?.trim();
-  const senderEmail = env.BREVO_SENDER_EMAIL?.trim();
+  // Must be @wardsignup.com: anything else keeps Brevo off rather than risk it.
+  const senderEmail = allowedEnvSender("BREVO_SENDER_EMAIL", env.BREVO_SENDER_EMAIL);
   if (!apiKey || !senderEmail) return null;
   return { apiKey, senderEmail, senderName: env.BREVO_SENDER_NAME?.trim() || null };
 }
@@ -120,13 +133,6 @@ export function bulkProvider(env: Env = process.env): "resend" | "brevo" {
   const v = env.EMAIL_BULK_PROVIDER?.trim().toLowerCase() || "auto";
   if (v !== "auto" && v !== "brevo") return "resend";
   return brevoConfig(env) ? "brevo" : "resend";
-}
-
-/** "Ward Signup <noreply@x.com>" to { name, email }. */
-export function parseFrom(from: string): { name: string | null; email: string } {
-  const m = from.match(/^\s*"?([^"<]*?)"?\s*<([^>]+)>\s*$/);
-  if (m) return { name: m[1].trim() || null, email: m[2].trim() };
-  return { name: null, email: from.trim() };
 }
 
 /** Start of the current UTC day, the bucket Resend's own daily quota uses (safety cap only). */
@@ -269,7 +275,7 @@ async function noteFailover(
     await sendViaBrevo(
       {
         brand: p.brand,
-        from: `${p.brand.name} <${brevo.senderEmail}>`,
+        from: organizerEmailFrom(p.brand),
         to,
         subject: `${p.brand.name} email failover to Brevo`,
         text: `Emails are going out through Brevo instead of Resend.\n\nReason: ${why}\nFirst email: ${p.kind ?? "other"}\n\nThis alert is sent at most once per Arizona day. Count today's failovers with the PostHog event email_failover.`,
@@ -291,10 +297,13 @@ export async function sendViaBrevo(
   fetchImpl: typeof fetch = fetch,
   timeoutMs: number = BREVO_TIMEOUT_MS,
 ): Promise<DeliverResult> {
-  const parsed = parseFrom(p.from);
-  const replyTo = p.replyTo ?? (parsed.email !== cfg.senderEmail ? parsed.email : undefined);
+  // From wins: the sender is the message's own @wardsignup.com address.
+  // BREVO_SENDER_EMAIL only switches Brevo on (and is itself allowlisted).
+  const sender = checkSender(p.from, p.kind);
+  if (!sender.ok) return { ok: false, error: sender.error, senderRefused: true };
+  const replyTo = p.replyTo;
   const body: Record<string, unknown> = {
-    sender: { email: cfg.senderEmail, name: cfg.senderName ?? parsed.name ?? p.brand.name },
+    sender: { email: sender.email, name: sender.name ?? cfg.senderName ?? p.brand.name },
     to: [{ email: p.to }],
     subject: p.subject,
     htmlContent: p.html,
@@ -349,6 +358,8 @@ export async function deliverEmail(
   opts: { urgent: boolean; realtime?: boolean; bulk?: boolean },
 ): Promise<DeliverResult> {
   const p: DeliverParams = { ...params, idempotencyKey: params.idempotencyKey ?? `ws/${randomUUID()}` };
+  const sender = checkSender(p.from, p.kind);
+  if (!sender.ok) return { ok: false, error: sender.error, senderRefused: true };
   const brevoOk = opts.urgent || Boolean(opts.realtime);
   let brevo = brevoConfig();
 

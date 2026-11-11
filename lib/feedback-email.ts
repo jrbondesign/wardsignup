@@ -15,13 +15,12 @@ function formatPhoenixDateTime(iso: string): string {
     timeZoneName: "short",
   });
 }
-import { feedbackEmailFrom } from "@/lib/brand/email-from";
+import { feedbackEmailFrom, organizerEmailFrom } from "@/lib/brand/email-from";
 import { escapeHtml } from "@/lib/html-escape";
 import { sendGuardedEmail } from "@/lib/email-send";
 
-/** Replies should reach a real inbox, same as the welcome email. */
-const feedbackReplyTo =
-  process.env.WELCOME_REPLY_TO?.trim() || "jonathan@wardsignup.com";
+/** Founder inbox for feedback responses. Never a personal Gmail address. */
+export const FEEDBACK_RESPONSE_TO = "jonathan@wardsignup.com";
 
 export type FeedbackSendResult =
   | { ok: true }
@@ -40,7 +39,7 @@ export async function sendFeedbackAskEmail(params: {
 
   const text = `Hi ${first},
 
-Thanks for trying ${brand.name} — I saw you created an event and people actually signed up. That's exactly what I built this for, so thank you.
+Thanks for trying ${brand.name}. I saw you created an event and people actually signed up. That's exactly what I built this for, so thank you.
 
 I'd love your quick feedback. Takes less than a minute:
 
@@ -52,7 +51,8 @@ The questions:
 3. What's the single most valuable part of it for you?
 4. What's the #1 thing holding it back from being perfect?
 
-Can't click the link? Reply to this email and I'll still get it.
+Can't click the link? Copy this into your browser: ${formUrl}
+Or just reply to this email. I read every reply.
 
 Thanks again,
 Jonathan
@@ -65,8 +65,9 @@ Made with ❤️ in Arizona`;
     deferrable: true,
       kind: "feedback",
       category: "notification",
+    // From is Jonathan <jonathan@wardsignup.com> by default, so replies
+    // reach him. No Reply-To is set; the old welcome reply-to env override is not read.
     from: feedbackEmailFrom(brand),
-    replyTo: feedbackReplyTo,
     to,
     subject: `Quick question about your ${brand.name} event`,
     text,
@@ -74,7 +75,7 @@ Made with ❤️ in Arizona`;
       <div style="font-family: Georgia, 'Times New Roman', serif; max-width: 560px; margin: 0 auto; padding: 40px 20px; color: #0D2B35;">
         <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">Hi ${safeFirst},</p>
         <p style="font-size: 16px; line-height: 1.7; margin: 0 0 16px;">
-          Thanks for trying ${escapeHtml(brand.name)} — I saw you created an event and people actually signed up.
+          Thanks for trying ${escapeHtml(brand.name)}. I saw you created an event and people actually signed up.
           That's exactly what I built this for, so thank you.
         </p>
         <p style="font-size: 16px; line-height: 1.7; margin: 0 0 20px;">
@@ -91,7 +92,8 @@ Made with ❤️ in Arizona`;
           <li>What's the #1 thing holding it back from being perfect?</li>
         </ol>
         <p style="font-size: 13px; line-height: 1.5; margin: 0 0 20px; color: #7A9AAD;">
-          Can't click the link? Reply to this email and I'll still get it.
+          Can't click the link? Copy this into your browser: <span style="word-break: break-all;">${safeUrl}</span><br>
+          Or just reply to this email. I read every reply.
         </p>
         <p style="font-size: 16px; line-height: 1.7; margin: 0 0 4px;">Thanks again,</p>
         <p style="font-size: 16px; line-height: 1.7; margin: 0 0 24px;">Jonathan</p>
@@ -123,7 +125,7 @@ export type FeedbackDigestRow = {
 };
 
 /**
- * Send immediate notification to bondesign@gmail.com when a creator submits
+ * Send immediate notification to jonathan@wardsignup.com when a creator submits
  * feedback. This runs inline with the submission route so the founder sees it
  * right away instead of waiting for the Monday digest.
  */
@@ -193,9 +195,10 @@ Q4. What's the #1 thing holding it back from being perfect?
     realtime: true,
     kind: "feedback_response",
     category: "transactional",
-    from: feedbackEmailFrom(brand),
+    from: organizerEmailFrom(brand),
+    // Reply-To is the creator so Jonathan can answer them directly.
     replyTo: creatorEmail,
-    to: "bondesign@gmail.com",
+    to: FEEDBACK_RESPONSE_TO,
     subject: `New ${brand.name} feedback from ${creatorEmail}`,
     text,
     html,

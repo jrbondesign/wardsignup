@@ -1,8 +1,12 @@
 import type { PublicBrand } from "./types";
+import { allowedEnvSender } from "@/lib/email-sender-guard";
 
+/**
+ * From override from the environment. Only @wardsignup.com addresses are
+ * honored; anything else is ignored (and logged) so the brand default wins.
+ */
 function env(key: string): string | undefined {
-  const v = process.env[key]?.trim();
-  return v || undefined;
+  return allowedEnvSender(key, process.env[key]);
 }
 
 /**
@@ -25,8 +29,9 @@ export function creatorNotifyEmailFrom(brand: PublicBrand): string {
 }
 
 /**
- * Creator feedback ask + founder feedback digest. Personal-sounding, so it
- * defaults to the brand's welcome address rather than the noreply organizer one.
+ * Creator feedback ask. Same address as the welcome email
+ * (Jonathan <jonathan@wardsignup.com> by default). No Reply-To is set;
+ * From is already jonathan@, so replies reach him.
  */
 export function feedbackEmailFrom(brand: PublicBrand): string {
   return env("FEEDBACK_EMAIL_FROM") ?? env("WELCOME_EMAIL_FROM") ?? brand.email.welcomeFrom;

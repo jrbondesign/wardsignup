@@ -51,7 +51,7 @@ export default async function FeedbackPage({
             </h1>
             <p className="text-gray-600">
               The feedback link may have been mistyped. You can always just
-              reply to the email instead — every message gets read.
+              reply to the email instead. Every message gets read.
             </p>
           </>
         )}
