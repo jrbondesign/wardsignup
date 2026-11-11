@@ -4,7 +4,7 @@ import {
   normalizeHost,
   preferredBrandApexHost,
 } from "@/lib/brand";
-import { isProtectedPath, updateSession } from "@/lib/supabase/middleware";
+import { isProtectedPath, needsAuthSession, updateSession } from "@/lib/supabase/middleware";
 import { publicEventRedirectTarget } from "@/lib/public-event-id";
 
 function copyCookies(from: NextResponse, to: NextResponse) {
@@ -68,8 +68,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(eventDest, 308);
   }
 
-  const { response, user, timedOut } = await updateSession(request);
   const path = request.nextUrl.pathname;
+  // Public pages (home, event, docs) skip the sign-in check. Session refresh
+  // still runs on login, invite accept, and organizer routes.
+  if (!needsAuthSession(path)) {
+    return NextResponse.next();
+  }
+
+  const { response, user, timedOut } = await updateSession(request);
 
   // When Supabase is slow we don't know who the user is: let the page render
   // (protected pages check auth themselves) rather than hang or bounce to /login.

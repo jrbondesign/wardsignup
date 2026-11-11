@@ -9,6 +9,14 @@ import { getClientIp } from "@/lib/request-ip";
 import { verifyTurnstile, turnstileRejectionMessage } from "@/lib/turnstile";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
+import { SIGNUP_TIMEOUT_MESSAGE, SupabaseTimeoutError, withSupabaseTimeout } from "@/lib/supabase-timeout";
+import {
+  findReusableEmailItemSignup,
+  memoryIdempotencyStore,
+  parseSignupIdempotencyKey,
+} from "@/lib/signup-idempotency";
+
+export const maxDuration = 30;
 
 function hashIp(ip: string): string {
   const salt = process.env.RATE_LIMIT_IP_SALT || "wardsignup_signup_rate";
@@ -32,6 +40,17 @@ export async function POST(request: Request) {
       );
     }
 
+    const idempotencyKey = parseSignupIdempotencyKey(body.idempotency_key);
+    const isRetry = body.signup_retry === true;
+    const store = memoryIdempotencyStore();
+    const storeKey = idempotencyKey ? `item:${idempotencyKey}` : null;
+    if (storeKey) {
+      const cached = await store.get(storeKey);
+      if (cached && typeof cached === "object") {
+        return NextResponse.json(cached);
+      }
+    }
+
     // Rate limiting — same bucket as session signups to share quota across both types
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -40,11 +59,15 @@ export async function POST(request: Request) {
       const ip = getClientIp(request);
       const bucket = new Date();
       bucket.setMinutes(0, 0, 0);
-      const { data: allowed, error: rateErr } = await admin.rpc("try_consume_signup_rate", {
-        p_ip_hash: hashIp(ip),
-        p_bucket: bucket.toISOString(),
-        p_max: getSignupRateLimitPerIpPerHour(),
-      } as never);
+      const { data: allowed, error: rateErr } = await withSupabaseTimeout(
+        (signal) =>
+          admin.rpc("try_consume_signup_rate", {
+            p_ip_hash: hashIp(ip),
+            p_bucket: bucket.toISOString(),
+            p_max: getSignupRateLimitPerIpPerHour(),
+          } as never).abortSignal(signal),
+        "try_consume_signup_rate",
+      );
       if (rateErr) {
         console.error("Item signup rate limit RPC error:", rateErr);
       } else if (allowed === false) {
@@ -86,15 +109,29 @@ export async function POST(request: Request) {
     }
 
     const admin = createClient(supabaseUrl, serviceKey);
-    const { data, error } = await admin.rpc("create_item_signup_if_capacity", {
-      p_campaign_id: campaign_id,
-      p_member_name: member_name.trim(),
-      p_item_id: item_id || null,
-      p_member_email: member_email?.trim() || null,
-      p_signup_note: typeof signup_note === "string" && signup_note.trim() ? signup_note.trim() : null,
-      p_quantity: quantity,
-      p_custom_label: rawCustomLabel || null,
-    } as never);
+
+    if (isRetry) {
+      const reused = await reuseEmailItemSignup(admin, campaign_id, item_id || null, rawCustomLabel || null, member_email);
+      if (reused) {
+        const payload = { signup: reused };
+        if (storeKey) await store.set(storeKey, payload);
+        return NextResponse.json(payload);
+      }
+    }
+
+    const { data, error } = await withSupabaseTimeout(
+      (signal) =>
+        admin.rpc("create_item_signup_if_capacity", {
+          p_campaign_id: campaign_id,
+          p_member_name: member_name.trim(),
+          p_item_id: item_id || null,
+          p_member_email: member_email?.trim() || null,
+          p_signup_note: typeof signup_note === "string" && signup_note.trim() ? signup_note.trim() : null,
+          p_quantity: quantity,
+          p_custom_label: rawCustomLabel || null,
+        } as never).abortSignal(signal),
+      "create_item_signup_if_capacity",
+    );
 
     if (error) {
       const msg = `${error.message ?? ""} ${error.details ?? ""} ${error.hint ?? ""}`;
@@ -117,6 +154,9 @@ export async function POST(request: Request) {
     // The item signup exists now: expire the page cache right away so counts
     // update even if a later step throws. Expired again below after PostHog.
     revalidateEventPage(campaign_id);
+
+    const payload = { signup: data };
+    if (storeKey) await store.set(storeKey, payload);
 
     // Assigned-leader notification (fire-and-forget; never fails the signup).
     if (serviceKey && supabaseUrl) {
@@ -180,9 +220,45 @@ export async function POST(request: Request) {
     });
 
     revalidateEventPage(campaign_id);
-    return NextResponse.json({ signup: data });
+    return NextResponse.json(payload);
   } catch (err) {
+    if (err instanceof SupabaseTimeoutError) {
+      console.error("Item signup timed out:", err.message);
+      captureServerException(err, {
+        route: "/api/item-signups",
+        properties: { kind: "supabase_timeout" },
+      });
+      return NextResponse.json({ error: SIGNUP_TIMEOUT_MESSAGE }, { status: 503 });
+    }
     console.error(err);
+    captureServerException(err, { route: "/api/item-signups" });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
+}
+
+async function reuseEmailItemSignup(
+  admin: { from: (table: string) => any },
+  campaignId: string,
+  itemId: string | null,
+  customLabel: string | null,
+  memberEmail: unknown,
+): Promise<Record<string, unknown> | null> {
+  // A timeout or lookup error must not fall through to another insert: the
+  // first attempt may already have committed. The route catch returns 503.
+  const q = admin
+    .from("item_signups")
+    .select("id, item_id, custom_label, member_email, signed_up_at, member_name")
+    .eq("campaign_id", campaignId)
+    .gte("signed_up_at", new Date(Date.now() - 30 * 60_000).toISOString());
+  const { data } = await withSupabaseTimeout<{ data: unknown[] | null }>(
+    (signal) => q.abortSignal(signal),
+    "item_signups email dedupe",
+  );
+  const row = findReusableEmailItemSignup((data ?? []) as Array<{
+    item_id?: string | null;
+    custom_label?: string | null;
+    member_email?: string | null;
+    signed_up_at: string;
+  }>, { itemId, customLabel, memberEmail });
+  return row ? (row as unknown as Record<string, unknown>) : null;
 }

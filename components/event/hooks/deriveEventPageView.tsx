@@ -13,6 +13,8 @@ import {
 } from "@/lib/email-nudge";
 import { formatSessionSlotLabel } from "@/lib/slot-label";
 import { saveSignupSuccessInfo } from "@/lib/signup-success-handoff";
+import { fetchRetryOn503 } from "@/lib/fetch-retry-503";
+import { newSignupIdempotencyKey } from "@/lib/signup-idempotency";
 
 export type LoadedEventPageCtx = Omit<EventPageCtx, "event"> & { event: NonNullable<EventPageCtx["event"]> };
 
@@ -30,6 +32,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     formData,
     funnelCtx,
     guestNames,
+    allowGuests,
     itemCaptcha,
     itemFormData,
     nudgeShownRef,
@@ -91,23 +94,32 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setItemError("");
     let captchaUsed = false;
     try {
-      const captchaToken = await itemCaptcha.getToken();
-      if (itemCaptcha.enabled && !captchaToken) throw new Error(itemCaptcha.missingMessage);
-      captchaUsed = itemCaptcha.enabled;
       const { getAttributionForSubmission } = await import("@/lib/attribution");
-      const res = await fetch("/api/item-signups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
-        body: JSON.stringify({
-          ...(captchaToken ? { captchaToken } : {}),
-          item_id: itemId,
-          campaign_id: eventId,
-          member_name: itemFormData.name,
-          member_email: itemFormData.email,
-          signup_note: itemFormData.note,
-          quantity: itemFormData.quantity,
-          ...(getAttributionForSubmission() || {}),
-        }),
+      const idempotencyKey = newSignupIdempotencyKey();
+      let attempt = 0;
+      const res = await fetchRetryOn503(async () => {
+        if (attempt > 0 && itemCaptcha.enabled) itemCaptcha.reset();
+        const captchaToken = await itemCaptcha.getToken();
+        if (itemCaptcha.enabled && !captchaToken) throw new Error(itemCaptcha.missingMessage);
+        captchaUsed = itemCaptcha.enabled;
+        const isRetry = attempt > 0;
+        attempt += 1;
+        return fetch("/api/item-signups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
+          body: JSON.stringify({
+            ...(captchaToken ? { captchaToken } : {}),
+            item_id: itemId,
+            campaign_id: eventId,
+            member_name: itemFormData.name,
+            member_email: itemFormData.email,
+            signup_note: itemFormData.note,
+            quantity: itemFormData.quantity,
+            idempotency_key: idempotencyKey,
+            signup_retry: isRetry,
+            ...(getAttributionForSubmission() || {}),
+          }),
+        });
       });
       if (!res.ok) {
         const d = await res.json();
@@ -147,22 +159,31 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setCustomError("");
     let captchaUsed = false;
     try {
-      const captchaToken = await customCaptcha.getToken();
-      if (customCaptcha.enabled && !captchaToken) throw new Error(customCaptcha.missingMessage);
-      captchaUsed = customCaptcha.enabled;
       const { getAttributionForSubmission } = await import("@/lib/attribution");
-      const res = await fetch("/api/item-signups", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
-        body: JSON.stringify({
-          ...(captchaToken ? { captchaToken } : {}),
-          campaign_id: eventId,
-          custom_label: customItem.label.trim(),
-          member_name: customItem.name.trim(),
-          signup_note: customItem.note.trim() || null,
-          quantity: 1,
-          ...(getAttributionForSubmission() || {}),
-        }),
+      const idempotencyKey = newSignupIdempotencyKey();
+      let attempt = 0;
+      const res = await fetchRetryOn503(async () => {
+        if (attempt > 0 && customCaptcha.enabled) customCaptcha.reset();
+        const captchaToken = await customCaptcha.getToken();
+        if (customCaptcha.enabled && !captchaToken) throw new Error(customCaptcha.missingMessage);
+        captchaUsed = customCaptcha.enabled;
+        const isRetry = attempt > 0;
+        attempt += 1;
+        return fetch("/api/item-signups", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
+          body: JSON.stringify({
+            ...(captchaToken ? { captchaToken } : {}),
+            campaign_id: eventId,
+            custom_label: customItem.label.trim(),
+            member_name: customItem.name.trim(),
+            signup_note: customItem.note.trim() || null,
+            quantity: 1,
+            idempotency_key: idempotencyKey,
+            signup_retry: isRetry,
+            ...(getAttributionForSubmission() || {}),
+          }),
+        });
       });
       if (!res.ok) {
         const d = await res.json();
@@ -226,27 +247,36 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
 
     let captchaUsed = false;
     try {
-      const captchaToken = await slotCaptcha.getToken();
-      if (slotCaptcha.enabled && !captchaToken) throw new Error(slotCaptcha.missingMessage);
-      captchaUsed = slotCaptcha.enabled;
-      const cleanGuests = guestNames.map((n) => n.trim()).filter(Boolean);
+      const cleanGuests = allowGuests ? guestNames.map((n) => n.trim()).filter(Boolean) : [];
 
       // Single bulk request → single confirmation email covering every slot.
       const { getAttributionForSubmission } = await import("@/lib/attribution");
-      const r = await fetch("/api/signups/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
-        body: JSON.stringify({
-          ...(captchaToken ? { captchaToken } : {}),
-          campaign_id: eventId,
-          session_ids: sessionsToSignUp,
-          member_name: formData.name,
-          member_email: formData.email,
-          member_phone: formData.phone,
-          signup_note: formData.note || undefined,
-          guest_names: cleanGuests,
-          ...(getAttributionForSubmission() || {}),
-        }),
+      const idempotencyKey = newSignupIdempotencyKey();
+      let attempt = 0;
+      const r = await fetchRetryOn503(async () => {
+        if (attempt > 0 && slotCaptcha.enabled) slotCaptcha.reset();
+        const captchaToken = await slotCaptcha.getToken();
+        if (slotCaptcha.enabled && !captchaToken) throw new Error(slotCaptcha.missingMessage);
+        captchaUsed = slotCaptcha.enabled;
+        const isRetry = attempt > 0;
+        attempt += 1;
+        return fetch("/api/signups/bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", ...posthogDistinctIdHeader() },
+          body: JSON.stringify({
+            ...(captchaToken ? { captchaToken } : {}),
+            campaign_id: eventId,
+            session_ids: sessionsToSignUp,
+            member_name: formData.name,
+            member_email: formData.email,
+            member_phone: formData.phone,
+            signup_note: formData.note || undefined,
+            guest_names: cleanGuests,
+            idempotency_key: idempotencyKey,
+            signup_retry: isRetry,
+            ...(getAttributionForSubmission() || {}),
+          }),
+        });
       });
       const json = await r.json().catch(() => ({}));
       if (!r.ok) {

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { createHash } from "crypto";
+import { getAuthFromRequest } from "@/lib/auth";
 
 function parseJsonBody(raw: string): { token?: unknown } | null {
   const t = raw.trim();
@@ -60,35 +61,49 @@ export async function POST(request: NextRequest) {
     if (lookupErr || !invite || (Array.isArray(invite) && (invite as unknown[]).length === 0)) {
       // Check if it's an already-accepted or revoked invite for better error messages
       // Use separate queries to prevent filter injection
-      let usedInvite = null;
+      type UsedInvite = {
+        status: string;
+        token_expires_at?: string | null;
+        user_id?: string | null;
+      };
+      let usedInvite: UsedInvite | null = null;
       
       // Try by hash first
       const { data: byHash } = await admin
         .from("organization_members")
-        .select("status, token_expires_at")
+        .select("status, token_expires_at, user_id")
         .eq("accept_token_hash", tokenHash)
         .maybeSingle();
       
       if (byHash) {
-        usedInvite = byHash;
+        usedInvite = byHash as UsedInvite;
       } else {
         // Try by plaintext for legacy tokens
         const { data: byPlaintext } = await admin
           .from("organization_members")
-          .select("status, token_expires_at")
+          .select("status, token_expires_at, user_id")
           .eq("accept_token", token)
           .maybeSingle();
-        usedInvite = byPlaintext;
+        usedInvite = (byPlaintext as UsedInvite | null) ?? null;
       }
 
       if (usedInvite) {
-        if ((usedInvite as { status: string }).status === "revoked") {
+        if (usedInvite.status === "revoked") {
           return NextResponse.json({ error: "This invitation has been revoked" }, { status: 410 });
         }
-        if ((usedInvite as { status: string }).status === "accepted") {
-          return NextResponse.json({ error: "This invitation has already been used" }, { status: 410 });
+        if (usedInvite.status === "accepted") {
+          // Only tell the visitor they are already in when we can confirm it is
+          // their membership. Never return the invited email or another user's id.
+          const alreadyMember = await signedInUserAlreadyAccepted(request, usedInvite.user_id);
+          return NextResponse.json(
+            {
+              error: "This invitation has already been used",
+              alreadyMember,
+            },
+            { status: 410 },
+          );
         }
-        const expiresAt = (usedInvite as { token_expires_at?: string }).token_expires_at;
+        const expiresAt = usedInvite.token_expires_at;
         if (expiresAt && new Date(expiresAt) < new Date()) {
           return NextResponse.json({ error: "This invitation has expired" }, { status: 410 });
         }
@@ -110,3 +125,17 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
+
+/** True only when the request carries a valid session for the member who accepted. */
+async function signedInUserAlreadyAccepted(request: NextRequest, acceptedUserId: string | null | undefined): Promise<boolean> {
+  if (!acceptedUserId) return false;
+  if (!request.headers.get("authorization")) return false;
+  try {
+    const auth = await getAuthFromRequest(request);
+    if (!auth.ok) return false;
+    return auth.user.id === acceptedUserId;
+  } catch {
+    return false;
+  }
+}
+

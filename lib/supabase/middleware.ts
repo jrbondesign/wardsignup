@@ -12,6 +12,20 @@ export function isProtectedPath(pathname: string): boolean {
   return false;
 }
 
+/**
+ * Routes where middleware must know who the visitor is (redirect to login
+ * or away from /login). Public pages skip the session check, even when an
+ * auth cookie is present, so a stall does not add an Auth round trip to
+ * every event page view. The session is still refreshed on the next visit
+ * to one of these routes.
+ */
+export function needsAuthSession(pathname: string): boolean {
+  if (isProtectedPath(pathname)) return true;
+  if (pathname === "/login") return true;
+  if (pathname.startsWith("/orgs/accept")) return true;
+  return false;
+}
+
 /** Longest the middleware waits on Supabase auth before letting the request through. */
 export const AUTH_TIMEOUT_MS = 5000;
 

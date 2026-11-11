@@ -1,5 +1,7 @@
 "use client";
 
+import { fetchRetryOn503 } from "@/lib/fetch-retry-503";
+
 import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
@@ -29,7 +31,7 @@ export default function CancelSignupPage() {
 
   useEffect(() => {
     if (!token) return;
-    fetch(`/api/signups/cancel/lookup?token=${encodeURIComponent(token)}`)
+    fetchRetryOn503(() => fetch(`/api/signups/cancel/lookup?token=${encodeURIComponent(token)}`))
       .then((r) => r.json())
       .then((data) => {
         if (data.error === "not_found") {

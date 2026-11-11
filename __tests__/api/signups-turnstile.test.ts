@@ -25,6 +25,7 @@ jest.mock("@/lib/leader-email", () => ({
 }));
 jest.mock("@/lib/posthog-server", () => ({
   getPostHogClient: () => ({ capture: jest.fn(), flush: jest.fn().mockResolvedValue(undefined) }),
+  captureServerException: jest.fn(),
 }));
 jest.mock("@/lib/analytics-context", () => ({
   analyticsContextForCampaign: jest.fn().mockResolvedValue({ orgId: null, isTestOrg: null }),
@@ -34,16 +35,24 @@ jest.mock("@/lib/event-page-cache", () => ({ revalidateEventPage: jest.fn() }));
 
 // Admin client: the rate limit and item RPCs go through adminRpc.
 const adminRpc = jest.fn();
+function withAbort(value: unknown) {
+  const p = Promise.resolve(value);
+  const q: { abortSignal: () => unknown; then: typeof p.then } = {
+    abortSignal: () => q,
+    then: p.then.bind(p),
+  };
+  return q;
+}
 const query = () => {
   const q: Record<string, unknown> = {};
-  for (const m of ["select", "eq", "in", "update"]) q[m] = () => q;
+  for (const m of ["select", "eq", "in", "update", "gte", "abortSignal"]) q[m] = () => q;
   q.single = () => Promise.resolve({ data: null, error: null });
   q.maybeSingle = q.single;
   q.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: [], error: null }).then(res);
   return q;
 };
 jest.mock("@supabase/supabase-js", () => ({
-  createClient: () => ({ from: () => query(), rpc: (...a: unknown[]) => adminRpc(...a) }),
+  createClient: () => ({ from: () => query(), rpc: (...a: unknown[]) => withAbort(adminRpc(...a)) }),
 }));
 
 import { NextRequest } from "next/server";

@@ -43,6 +43,9 @@ function AcceptInner() {
   const [userEmail, setUserEmail] = useState<string>("");
   const [errorType, setErrorType] = useState<ErrorType | null>(null);
   const [errorMessage, setErrorMessage] = useState<string>("");
+  const [errorTitle, setErrorTitle] = useState<string>("");
+  const [showSignIn, setShowSignIn] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const [accessToken, setAccessToken] = useState<string>("");
   const [callingChoice, setCallingChoice] = useState<string>("");
   const [callingOther, setCallingOther] = useState<string>("");
@@ -57,12 +60,26 @@ function AcceptInner() {
     }
   }, [token, posthog]);
 
+  const applyInviteFailure = (status: number, data: { error?: string; alreadyMember?: boolean } | undefined) => {
+    const failure = classifyInviteInfoFailure(status, data?.error, {
+      alreadyMember: data?.alreadyMember === true,
+    });
+    setStatus("error");
+    setErrorType(failure.type);
+    setErrorMessage(failure.message);
+    setErrorTitle(failure.title);
+    setShowSignIn(failure.showSignIn);
+    setShowDashboard(failure.showDashboard);
+    posthog?.capture("invite_error", { type: failure.type });
+  };
+
   useEffect(() => {
     const run = async () => {
       if (!token) {
         setStatus("error");
         setErrorType("missing_token");
-        setErrorMessage("Missing invite token.");
+        setErrorMessage("This invite link is missing a token. Ask your admin for a new link.");
+        setErrorTitle("Invitation not found");
         posthog?.capture("invite_error", { type: "missing_token" });
         return;
       }
@@ -82,11 +99,7 @@ function AcceptInner() {
 
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
-          const failure = classifyInviteInfoFailure(res.status, data?.error);
-          setStatus("error");
-          setErrorType(failure.type);
-          setErrorMessage(failure.message);
-          posthog?.capture("invite_error", { type: failure.type });
+          applyInviteFailure(res.status, data);
           return;
         }
 
@@ -107,17 +120,16 @@ function AcceptInner() {
       // Get invite email for comparison
       const infoRes = await fetch("/api/organizations/invite-info", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${session.access_token}`,
+        },
         body: JSON.stringify({ token }),
       });
 
       if (!infoRes.ok) {
         const data = await infoRes.json().catch(() => ({}));
-        const failure = classifyInviteInfoFailure(infoRes.status, data?.error);
-        setStatus("error");
-        setErrorType(failure.type);
-        setErrorMessage(failure.message);
-        posthog?.capture("invite_error", { type: failure.type });
+        applyInviteFailure(infoRes.status, data);
         return;
       }
 
@@ -387,25 +399,39 @@ function AcceptInner() {
       <main className="min-h-screen bg-[#F4FAFB] py-8 px-4 flex flex-col items-center justify-center">
         <div className="max-w-md w-full bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-8 text-center">
           <h1 className="font-serif text-[22px] text-[#0D2B35] mb-2">
-            {errorType === "invite_expired"
-              ? "Invitation expired"
-              : errorType === "invite_revoked"
-                ? "Invitation revoked"
-                : errorType === "invite_already_used"
-                  ? "Invitation already used"
-                  : errorType === "invite_not_found"
-                    ? "Invitation not found"
-                    : errorType === "ward_deleted"
-                      ? "Ward deleted"
-                      : "We couldn't accept this invitation"}
+            {errorTitle
+              || (errorType === "ward_deleted" ? "Ward deleted" : "We couldn't accept this invitation")}
           </h1>
-          <p className="text-sm text-red-600 mb-5">{errorMessage}</p>
-          <Link
-            href="/dashboard"
-            className="inline-flex items-center justify-center gap-2 text-sm font-semibold px-6 py-2.5 rounded-full border-[1.5px] border-[#0E96B0]/30 text-[#08647E] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all"
-          >
-            Back to events
-          </Link>
+          <p className="text-sm text-[#5A8399] mb-5">{errorMessage}</p>
+          <div className="flex flex-col items-center gap-3">
+            {showDashboard && (
+              <Link
+                href="/dashboard"
+                className="w-full inline-flex items-center justify-center gap-2 text-sm font-semibold px-6 py-2.5 rounded-full bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:shadow-[0_6px_20px_rgba(14,150,176,0.45)] transition-all"
+              >
+                Go to your dashboard
+              </Link>
+            )}
+            {showSignIn && (
+              <>
+                <p className="text-sm text-[#5A8399]">If you already joined, sign in here.</p>
+                <Link
+                  href="/login"
+                  className="w-full inline-flex items-center justify-center gap-2 text-sm font-semibold px-6 py-2.5 rounded-full bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white shadow-[0_4px_14px_rgba(14,150,176,0.35)] hover:shadow-[0_6px_20px_rgba(14,150,176,0.45)] transition-all"
+                >
+                  Sign in
+                </Link>
+              </>
+            )}
+            {!showDashboard && (
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center justify-center gap-2 text-sm font-semibold px-6 py-2.5 rounded-full border-[1.5px] border-[#0E96B0]/30 text-[#08647E] hover:border-[#0E96B0] hover:bg-[#E6F7FB] transition-all"
+              >
+                Back to events
+              </Link>
+            )}
+          </div>
         </div>
       </main>
     </>
