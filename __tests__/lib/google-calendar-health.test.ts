@@ -34,30 +34,50 @@ type Call = { table: string; method: string; args: unknown[] };
 /** Fake admin with a single connection row whose status flips on the guarded update. */
 function fakeAdmin(initialStatus: "active" | "broken", opts: { statusError?: boolean } = {}) {
   const calls: Call[] = [];
-  const state = { status: initialStatus };
+  const state = { status: initialStatus, brokenAt: null as string | null, notified: false };
   const admin = {
     auth: { admin: { getUserById: jest.fn(async () => ({ data: { user: { email: "creator@example.com" } } })) } },
     from(table: string) {
-      const ctx: { update?: any; eqs: Array<[string, unknown]>; select?: string } = { eqs: [] };
+      const ctx: { update?: any; eqs: Array<[string, unknown]>; nulls: string[]; select?: string } = { eqs: [], nulls: [] };
       const chain: any = {
         update(row: unknown) { ctx.update = row; calls.push({ table, method: "update", args: [row] }); return chain; },
         select(cols: string) { ctx.select = cols; return chain; },
         eq(col: string, val: unknown) { ctx.eqs.push([col, val]); return chain; },
+        is(col: string, val: unknown) { if (val === null) ctx.nulls.push(col); return chain; },
         limit() { return chain; },
         maybeSingle() {
-          return Promise.resolve({ data: table === "campaigns" ? { id: "c1", name: "Missionary Dinners", brand_id: null, public_host: null } : null, error: null });
+          if (table === "campaigns") {
+            return Promise.resolve({ data: { id: "c1", name: "Missionary Dinners", brand_id: null, public_host: null }, error: null });
+          }
+          const wantsPending = table === "google_calendar_connections"
+            && ctx.eqs.some(([col, val]) => col === "status" && val === "broken")
+            && ctx.nulls.includes("broken_notified_at");
+          if (wantsPending && state.status === "broken" && !state.notified && state.brokenAt) {
+            return Promise.resolve({
+              data: { id: "conn1", user_id: "u1", organization_id: "o1", google_email: "g@example.com", broken_at: state.brokenAt },
+              error: null,
+            });
+          }
+          return Promise.resolve({ data: null, error: null });
         },
         then(resolve: (v: unknown) => unknown) {
+          if (table === "google_calendar_connections" && ctx.update?.broken_notified_at) state.notified = true;
           if (table === "google_calendar_connections" && ctx.update?.status === "broken") {
             if (opts.statusError) return Promise.resolve({ data: null, error: { message: "column status does not exist" } }).then(resolve);
             const guard = ctx.eqs.find(([c]) => c === "status");
             if (guard && state.status === guard[1]) {
               state.status = "broken";
+              state.brokenAt = ctx.update.broken_at;
+              state.notified = false;
               return Promise.resolve({ data: [{ id: "conn1", user_id: "u1", organization_id: "o1", google_email: "g@example.com" }], error: null }).then(resolve);
             }
             return Promise.resolve({ data: [], error: null }).then(resolve);
           }
-          if (table === "google_calendar_connections" && ctx.update?.status === "active") state.status = "active";
+          if (table === "google_calendar_connections" && ctx.update?.status === "active") {
+            state.status = "active";
+            state.brokenAt = null;
+            state.notified = false;
+          }
           if (table === "campaign_calendar_sync" && ctx.select) {
             return Promise.resolve({ data: [{ campaign_id: "c1" }], error: null }).then(resolve);
           }
@@ -120,7 +140,7 @@ describe("markConnectionBroken", () => {
     const tos = mockSend.mock.calls.map((c) => c[0].to).sort();
     expect(tos).toEqual(["creator@example.com", "jonathan@wardsignup.com"]);
     const creatorCall = mockSend.mock.calls.find((c) => c[0].to === "creator@example.com");
-    expect(creatorCall?.[0].urgent).toBe(true);
+    expect(creatorCall?.[0].realtime).toBe(true);
     expect(calls.some((c) => c.table === "campaign_calendar_sync" && (c.args[0] as any).last_error === CONNECTION_BROKEN_ERROR)).toBe(true);
     expect(calls.some((c) => (c.args[0] as any).broken_notified_at)).toBe(true);
   });
@@ -137,6 +157,71 @@ describe("markConnectionBroken", () => {
   it("does not notify (or throw) when the migration is not applied", async () => {
     const { admin } = fakeAdmin("active", { statusError: true });
     expect(await markConnectionBroken(admin, { connectionId: "conn1", reason: "invalid_grant" })).toBe(false);
+    expect(mockSend).not.toHaveBeenCalled();
+  });
+
+  it("retries a failed send with the same breakage key and stamps only after it settles", async () => {
+    process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
+    mockSend.mockResolvedValue({ ok: false, error: "queue insert failed" });
+    const { admin, calls } = fakeAdmin("active");
+    expect(await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" })).toBe(true);
+    expect(calls.some((c) => (c.args[0] as { broken_notified_at?: string }).broken_notified_at)).toBe(false);
+    const firstCreator = mockSend.mock.calls.find((c) => c[0].to === "creator@example.com")?.[0].idempotencyKey;
+    const firstFounder = mockSend.mock.calls.find((c) => c[0].to === "jonathan@wardsignup.com")?.[0].idempotencyKey;
+    expect(firstCreator).toMatch(/^calendar_reconnect\//);
+    expect(firstFounder).toMatch(/^calendar_founder\//);
+    mockSend.mockResolvedValue({ ok: true });
+    expect(await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" })).toBe(true);
+    const creatorKeys = mockSend.mock.calls.filter((c) => c[0].to === "creator@example.com").map((c) => c[0].idempotencyKey);
+    const founderKeys = mockSend.mock.calls.filter((c) => c[0].to === "jonathan@wardsignup.com").map((c) => c[0].idempotencyKey);
+    expect(creatorKeys).toEqual([firstCreator, firstCreator]);
+    expect(founderKeys).toEqual([firstFounder, firstFounder]);
+    expect(calls.some((c) => (c.args[0] as { broken_notified_at?: string }).broken_notified_at)).toBe(true);
+    mockSend.mockClear();
+    expect(await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" })).toBe(false);
+    expect(mockSend).not.toHaveBeenCalled();
+    delete process.env.EMAIL_PROVIDER_CUTOVER;
+  });
+
+  it("does not send the reconnect mail again after an ambiguous or queued result", async () => {
+    process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
+    mockSend.mockResolvedValue({ ok: false, error: "timed out", ambiguous: true });
+    const { admin } = fakeAdmin("active");
+    await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" });
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    mockSend.mockClear();
+    expect(await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" })).toBe(false);
+    expect(mockSend).not.toHaveBeenCalled();
+
+    mockSend.mockResolvedValue({ ok: true, queued: true });
+    const queued = fakeAdmin("active");
+    await markConnectionBroken(queued.admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" });
+    expect(queued.calls.some((c) => (c.args[0] as { broken_notified_at?: string }).broken_notified_at)).toBe(true);
+    mockSend.mockClear();
+    expect(await markConnectionBroken(queued.admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" })).toBe(false);
+    expect(mockSend).not.toHaveBeenCalled();
+    delete process.env.EMAIL_PROVIDER_CUTOVER;
+  });
+
+  it("keeps a retryable send that was not queued recoverable", async () => {
+    process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
+    mockSend.mockResolvedValue({ ok: false, error: "down", retryable: true });
+    const { admin, calls } = fakeAdmin("active");
+    await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" });
+    expect(calls.some((c) => (c.args[0] as { broken_notified_at?: string }).broken_notified_at)).toBe(false);
+    expect(await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" })).toBe(true);
+    expect(mockSend).toHaveBeenCalledTimes(4);
+    delete process.env.EMAIL_PROVIDER_CUTOVER;
+  });
+
+  it("gate off: a failed send still stamps once and is not re-sent (no key to dedupe the founder alert)", async () => {
+    delete process.env.EMAIL_PROVIDER_CUTOVER;
+    mockSend.mockResolvedValue({ ok: false, error: "down" });
+    const { admin, calls } = fakeAdmin("active");
+    expect(await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" })).toBe(true);
+    expect(calls.some((c) => (c.args[0] as { broken_notified_at?: string }).broken_notified_at)).toBe(true);
+    mockSend.mockClear();
+    expect(await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" })).toBe(false);
     expect(mockSend).not.toHaveBeenCalled();
   });
 });

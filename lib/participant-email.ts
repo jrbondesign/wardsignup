@@ -8,6 +8,7 @@ import { buildParticipantEmailFooterHtml } from "@/lib/site-footer";
 import { formatSessionSlotLabel } from "@/lib/organizer-email";
 import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
 import type { Campaign } from "@/lib/types";
 import { withUtm } from "@/lib/utm";
 import { googleTemplateDates, rsvpEventEndDate } from "@/lib/calendar-times";
@@ -87,7 +88,9 @@ export async function sendParticipantSignupConfirmation(params: {
   cancelUrl?: string;
   cancelToken?: string;
   guestNames?: string[];
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  /** Signup row id. Required for a stable cutover key. Omitted on the live path. */
+  operationId?: string;
+}): Promise<{ ok: true } | { ok: false; error: string; retryable?: boolean; queued?: boolean; ambiguous?: boolean; terminal?: boolean }> {
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
   if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
@@ -160,10 +163,18 @@ export async function sendParticipantSignupConfirmation(params: {
     to: params.to.trim(),
     subject: `You’re signed up: ${params.campaign.name}`,
     html,
+    idempotencyKey: cutoverOperationKey("signup_confirmation", [params.operationId]),
   });
 
   if (!send.ok) {
-    return { ok: false, error: send.error || send.skipped || "send failed" };
+    return {
+      ok: false,
+      error: send.error || send.skipped || "send failed",
+      retryable: Boolean(send.retryable),
+      queued: Boolean(send.queued),
+      ambiguous: Boolean(send.ambiguous),
+      terminal: Boolean(send.terminal) || send.skipped === "suppressed",
+    };
   }
   return { ok: true };
 }
@@ -175,7 +186,9 @@ export async function sendParticipantReminderEmail(params: {
   session: SessionFields;
   cancelUrl?: string;
   cancelToken?: string;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  /** Signup row id. Required for a stable cutover key. */
+  signupId?: string;
+}): Promise<{ ok: true } | { ok: false; error: string; retryable?: boolean; queued?: boolean; ambiguous?: boolean; terminal?: boolean }> {
   const { siteOrigin, brand } = publicSiteOriginAndBrandForCampaign(params.campaign);
   if (!hasEmailProviderConfigured(brand)) {
     return { ok: false, error: "Resend not configured for brand" };
@@ -248,10 +261,18 @@ export async function sendParticipantReminderEmail(params: {
     to: params.to.trim(),
     subject: `Reminder tomorrow: ${params.campaign.name}`,
     html,
+    idempotencyKey: cutoverOperationKey("reminder", [params.signupId]),
   });
 
   if (!send.ok) {
-    return { ok: false, error: send.error || send.skipped || "send failed" };
+    return {
+      ok: false,
+      error: send.error || send.skipped || "send failed",
+      retryable: Boolean(send.retryable),
+      queued: Boolean(send.queued),
+      ambiguous: Boolean(send.ambiguous),
+      terminal: Boolean(send.terminal) || send.skipped === "suppressed",
+    };
   }
   return { ok: true };
 }
@@ -267,7 +288,9 @@ export async function sendParticipantBatchSignupConfirmation(params: {
    * cancel token, so a single `cancelUrl` can only ever cancel one slot. */
   sessionCancelUrls?: (string | null)[];
   guestNames?: string[];
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  /** Stable id for the whole batch, such as the sorted signup ids. */
+  operationId?: string;
+}): Promise<{ ok: true } | { ok: false; error: string; retryable?: boolean; queued?: boolean; ambiguous?: boolean; terminal?: boolean }> {
   if (params.sessions.length === 0) {
     return { ok: false, error: "No sessions to confirm" };
   }
@@ -283,6 +306,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
       cancelUrl: params.cancelUrl,
       cancelToken: params.cancelToken,
       guestNames: params.guestNames,
+      operationId: params.operationId,
     });
   }
 
@@ -394,10 +418,18 @@ export async function sendParticipantBatchSignupConfirmation(params: {
     to: params.to.trim(),
     subject: `You’re signed up: ${params.campaign.name} (${params.sessions.length} slots)`,
     html,
+    idempotencyKey: cutoverOperationKey("signup_confirmation", [params.operationId]),
   });
 
   if (!send.ok) {
-    return { ok: false, error: send.error || send.skipped || "send failed" };
+    return {
+      ok: false,
+      error: send.error || send.skipped || "send failed",
+      retryable: Boolean(send.retryable),
+      queued: Boolean(send.queued),
+      ambiguous: Boolean(send.ambiguous),
+      terminal: Boolean(send.terminal) || send.skipped === "suppressed",
+    };
   }
   return { ok: true };
 }

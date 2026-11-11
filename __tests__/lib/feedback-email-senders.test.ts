@@ -23,7 +23,7 @@ afterAll(() => {
 });
 
 it("feedback ask comes from jonathan@ with no Reply-To, and keeps the copy-into-browser line", async () => {
-  await sendFeedbackAskEmail({ brand, to: "leader@example.com", firstName: "Ann", formUrl: "https://wardsignup.com/feedback/abc" });
+  await sendFeedbackAskEmail({ brand, to: "leader@example.com", firstName: "Ann", formUrl: "https://wardsignup.com/feedback/abc", requestId: "req-1" });
   const p = sendGuardedEmail.mock.calls[0][0];
   expect(p.from).toBe("Jonathan <jonathan@wardsignup.com>");
   expect(p.replyTo).toBeUndefined();

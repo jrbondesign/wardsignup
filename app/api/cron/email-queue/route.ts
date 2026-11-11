@@ -5,6 +5,7 @@ import { getBrandDefinition, toPublicBrand } from "@/lib/brand/brands";
 import type { BrandId } from "@/lib/brand/types";
 import type { QueuedEmailRow } from "@/lib/email-queue";
 import { MAX_QUEUE_ATTEMPTS, REALTIME_KINDS, isRealtimeKind, realtimeRetrySendAfter } from "@/lib/email-queue-time";
+import { emailCronDisabledBody } from "@/lib/email-outbound";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -20,6 +21,66 @@ export const STALE_CLAIM_MS = 15 * 60 * 1000;
 function drainLimit(): number {
   const n = Number(process.env.EMAIL_QUEUE_DRAIN_LIMIT);
   return Number.isInteger(n) && n > 0 ? n : 150;
+}
+
+/** A business key is one the cutover lease can match. A synthetic row id is not. */
+function businessQueueKey(key: string | null | undefined): string | null {
+  const trimmed = key?.trim();
+  if (!trimmed || trimmed.startsWith("email-queue/")) return null;
+  return trimmed;
+}
+
+type AttemptEvidence = "accepted" | "uncertain" | "pre_http";
+
+/** Queue status is not provider evidence. A classified decline is not uncertainty. */
+function classifyAttempt(row: {
+  phase?: string | null;
+  rejection_class?: string | null;
+  http_started?: boolean | null;
+  provider_message_id?: string | null;
+  delivery_status?: string | null;
+} | null): AttemptEvidence {
+  if (!row) return "pre_http";
+  const phase = row.phase ?? "";
+  if (
+    phase === "primary_accepted" ||
+    phase === "fallback_accepted" ||
+    row.delivery_status === "accepted" ||
+    row.delivery_status === "delivered"
+  ) {
+    return "accepted";
+  }
+  if (row.provider_message_id) return "uncertain";
+  if (phase === "primary_ambiguous" || phase === "fallback_ambiguous") return "uncertain";
+  if ((phase === "primary_inflight" || phase === "fallback_inflight") && row.http_started) {
+    return "uncertain";
+  }
+  if (
+    (phase === "primary_rejected" || phase === "fallback_rejected") &&
+    row.http_started &&
+    (row.rejection_class == null || row.rejection_class === "unknown")
+  ) {
+    return "uncertain";
+  }
+  return "pre_http";
+}
+
+async function noteQueueLease(
+  admin: { rpc?: (name: string, args: never) => PromiseLike<{ error: { message?: string } | null }> },
+  key: string | null | undefined,
+  outcome: "accepted" | "rejected" | "ambiguous" | "pending",
+): Promise<void> {
+  const trimmed = businessQueueKey(key);
+  if (!trimmed || typeof admin.rpc !== "function") return;
+  try {
+    const { error } = await admin.rpc("email_operation_apply_queue_result", {
+      p_idempotency_key: trimmed,
+      p_outcome: outcome,
+    } as never);
+    if (error) console.error("email_operation_apply_queue_result failed:", error);
+  } catch (e) {
+    console.error("email_operation_apply_queue_result threw:", e);
+  }
 }
 
 /**
@@ -41,13 +102,19 @@ function drainLimit(): number {
  *
  * Recovery: a run that dies between claim and result write leaves the row in
  * sending. Each run first returns sending rows claimed more than
- * STALE_CLAIM_MS ago to pending (or failed once MAX_ATTEMPTS is used up).
- * This trades a possible duplicate (Resend accepted the email but the result
- * write was lost) for never silently dropping one; the attempts cap bounds
- * duplicates to at most MAX_ATTEMPTS sends.
+ * STALE_CLAIM_MS ago to pending while attempts remain. At the cap, the
+ * delivery attempt decides the row. An acceptance is sent. A message id, an
+ * ambiguous phase, an inflight HTTP start, or an unclassified rejection that
+ * started HTTP is ambiguous and is not retried. A classified decline with no
+ * message id, and a pre-HTTP failure, are failed. The claim increments
+ * attempts before the provider call, so the cap is not itself proof the
+ * provider declined.
  * Secured with Authorization: Bearer CRON_SECRET.
  */
 export async function GET(request: NextRequest) {
+  const disabled = emailCronDisabledBody();
+  if (disabled) return NextResponse.json(disabled);
+
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {
     return NextResponse.json({ error: "CRON_SECRET is not configured" }, { status: 500 });
@@ -64,23 +131,67 @@ export async function GET(request: NextRequest) {
   }
 
   const staleBefore = new Date(Date.now() - STALE_CLAIM_MS).toISOString();
-  const { data: requeued, error: requeueError } = await admin
+  const { data: staleRows, error: staleError } = await admin
     .from("email_queue")
-    .update({ status: "pending", last_error: "claim expired" } as never)
+    // "*" so this still reads before the cutover migration adds idempotency_key.
+    .select("*")
     .eq("status", "sending")
-    .lt("claimed_at", staleBefore)
-    .lt("attempts", MAX_ATTEMPTS)
-    .select("id");
-  const { data: expired, error: expireError } = await admin
-    .from("email_queue")
-    .update({ status: "failed", last_error: "claim expired" } as never)
-    .eq("status", "sending")
-    .lt("claimed_at", staleBefore)
-    .gte("attempts", MAX_ATTEMPTS)
-    .select("id");
-  if (requeueError || expireError) console.error("email-queue recovery error:", requeueError ?? expireError);
-  const recovered = ((requeued as unknown[] | null) ?? []).length;
-  const expiredClaims = ((expired as unknown[] | null) ?? []).length;
+    .lt("claimed_at", staleBefore);
+  if (staleError) console.error("email-queue recovery error:", staleError);
+  let recovered = 0;
+  let expiredClaims = 0;
+  for (const stale of (staleRows as { id: string; attempts: number; idempotency_key?: string | null }[] | null) ?? []) {
+    if (stale.attempts < MAX_ATTEMPTS) {
+      await admin
+        .from("email_queue")
+        .update({ status: "pending", last_error: "claim expired" } as never)
+        .eq("id", stale.id);
+      await noteQueueLease(admin, stale.idempotency_key, "pending");
+      recovered += 1;
+      continue;
+    }
+    let evidence: AttemptEvidence = "pre_http";
+    const attemptKey = businessQueueKey(stale.idempotency_key);
+    if (attemptKey) {
+      try {
+        const { data: attempt, error: attemptError } = await admin
+          .from("email_delivery_attempts")
+          .select("phase, rejection_class, http_started, provider_message_id, delivery_status")
+          .eq("idempotency_key", attemptKey)
+          .maybeSingle();
+        evidence = attemptError ? "uncertain" : classifyAttempt(attempt as {
+          phase?: string | null;
+          rejection_class?: string | null;
+          http_started?: boolean | null;
+          provider_message_id?: string | null;
+          delivery_status?: string | null;
+        } | null);
+      } catch (e) {
+        console.error("email-queue attempt lookup failed:", e);
+        evidence = "uncertain";
+      }
+    }
+    if (evidence === "accepted") {
+      await admin
+        .from("email_queue")
+        .update({ status: "sent", sent_at: new Date().toISOString(), last_error: null } as never)
+        .eq("id", stale.id);
+      await noteQueueLease(admin, stale.idempotency_key, "accepted");
+    } else if (evidence === "uncertain") {
+      await admin
+        .from("email_queue")
+        .update({ status: "ambiguous", last_error: "claim expired after HTTP" } as never)
+        .eq("id", stale.id);
+      await noteQueueLease(admin, stale.idempotency_key, "ambiguous");
+    } else {
+      await admin
+        .from("email_queue")
+        .update({ status: "failed", last_error: "claim expired" } as never)
+        .eq("id", stale.id);
+      await noteQueueLease(admin, stale.idempotency_key, "rejected");
+    }
+    expiredClaims += 1;
+  }
 
   const nowIso = new Date().toISOString();
   const limit = drainLimit();
@@ -127,6 +238,7 @@ export async function GET(request: NextRequest) {
     const def = getBrandDefinition(raw.brand_id as BrandId);
     if (!def) {
       await admin.from("email_queue").update({ status: "failed", last_error: "unknown brand" } as never).eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "rejected");
       failed += 1;
       continue;
     }
@@ -145,20 +257,69 @@ export async function GET(request: NextRequest) {
       realtime: isRealtimeKind(raw.kind),
       fromQueue: true,
       // Row id: an attempt Resend accepted but we never heard back from is not sent again.
-      idempotencyKey: `email-queue/${raw.id}`,
+      idempotencyKey:
+        typeof raw.idempotency_key === "string" && raw.idempotency_key.trim()
+          ? raw.idempotency_key.trim()
+          : `email-queue/${raw.id}`,
     });
 
+    if (r.queued) {
+      await admin
+        .from("email_queue")
+        .update({
+          status: "pending",
+          attempts: raw.attempts,
+          send_after: new Date(Date.now() + 60_000).toISOString(),
+          last_error: ("error" in r ? r.error : undefined) ?? "queued",
+        } as never)
+        .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "pending");
+      continue;
+    }
     if (r.ok) {
       await admin
         .from("email_queue")
         .update({ status: "sent", sent_at: new Date().toISOString(), last_error: null } as never)
         .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "accepted");
       sent += 1;
       continue;
     }
     if (r.skipped === "suppressed") {
       await admin.from("email_queue").update({ status: "skipped", last_error: "suppressed" } as never).eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "rejected");
       skipped += 1;
+      continue;
+    }
+    if (r.ambiguous) {
+      // The provider may already have accepted this row. Do not send it again.
+      await admin
+        .from("email_queue")
+        .update({ status: "ambiguous", last_error: r.error ?? "ambiguous" } as never)
+        .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "ambiguous");
+      continue;
+    }
+    if (r.retryable) {
+      await admin
+        .from("email_queue")
+        .update({
+          status: "pending",
+          attempts: raw.attempts,
+          send_after: new Date(Date.now() + 60_000).toISOString(),
+          last_error: r.error ?? "retry",
+        } as never)
+        .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "pending");
+      continue;
+    }
+    if (r.terminal) {
+      await admin
+        .from("email_queue")
+        .update({ status: "failed", last_error: r.error ?? "terminal" } as never)
+        .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "rejected");
+      failed += 1;
       continue;
     }
     if (r.overBudget || r.skipped === "ceiling") {
@@ -167,6 +328,7 @@ export async function GET(request: NextRequest) {
         .from("email_queue")
         .update({ status: "pending", attempts: raw.attempts, last_error: r.error ?? r.skipped ?? null } as never)
         .eq("id", raw.id);
+      await noteQueueLease(admin, raw.idempotency_key, "pending");
       stoppedOverBudget = true;
       break;
     }
@@ -179,6 +341,7 @@ export async function GET(request: NextRequest) {
     }
     if (giveUp) console.error(`email_queue ${raw.id} (${raw.kind}) failed after ${attemptsMade} attempts: ${r.error ?? "send failed"}`);
     await admin.from("email_queue").update(patch as never).eq("id", raw.id);
+    await noteQueueLease(admin, raw.idempotency_key, giveUp ? "rejected" : "pending");
     failed += 1;
   }
 

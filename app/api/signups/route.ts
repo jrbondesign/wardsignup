@@ -202,8 +202,9 @@ export async function POST(request: Request) {
               cancelUrl,
               cancelToken: cancelToken ?? undefined,
               guestNames: guest_names.length > 0 ? guest_names : undefined,
+              operationId: signupId,
             });
-            if (!r.ok) console.error("Participant confirmation send:", r.error);
+            if (!r.ok && !r.queued) console.error("Participant confirmation send:", r.error);
           }
 
           // Assigned-leader notification — fires on every signup when set.

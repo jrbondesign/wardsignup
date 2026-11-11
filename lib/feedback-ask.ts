@@ -1,7 +1,7 @@
 import type { createServiceRoleClient } from "@/lib/supabase-admin";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { claimCronRun } from "@/lib/rate-limit";
-import { phoenixDayStartUtc, phoenixWeekday } from "@/lib/phoenix-time";
+import { phoenixDateKey, phoenixDayStartUtc, phoenixWeekday } from "@/lib/phoenix-time";
 import { getPostHogClient } from "@/lib/posthog-server";
 import {
   buildFeedbackDigestEmailHtml,
@@ -11,6 +11,8 @@ import {
 import { organizerEmailFrom } from "@/lib/brand/email-from";
 import { parseMetricsAdminEmails } from "@/lib/metrics-admin";
 import { sendGuardedEmail } from "@/lib/email-send";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
+import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
 import { isFeedbackAskPaused } from "@/lib/feedback-ask-pause";
 import { FOUNDER_NOTIFY_TO } from "@/lib/founder-notify";
 
@@ -184,8 +186,9 @@ export async function runFeedbackAskPass(
         to: row.email_lower,
         firstName,
         formUrl: `${siteOrigin}/feedback/${row.token}`,
+        requestId: row.id,
       });
-      if (!result.ok) {
+      if (!result.ok && !result.queued) {
         errors.push(`${row.email_lower}: ${result.error}`);
         return false;
       }
@@ -199,12 +202,14 @@ export async function runFeedbackAskPass(
         // a permanent skip only if the row vanished; here the row exists.
         errors.push(`${row.email_lower}: mark-sent failed: ${updErr.message}`);
       }
-      posthog.capture({
-        distinctId: row.user_id,
-        event: "feedback_requested",
-        properties: { brand_id: brandId },
-      });
-      return true;
+      if (result.ok && !result.queued) {
+        posthog.capture({
+          distinctId: row.user_id,
+          event: "feedback_requested",
+          properties: { brand_id: brandId },
+        });
+      }
+      return Boolean(result.ok && !result.queued);
     } catch (e) {
       errors.push(
         `${row.email_lower}: ${e instanceof Error ? e.message : String(e)}`,
@@ -282,6 +287,7 @@ export type FeedbackDigestSummary = {
   ran: boolean;
   responses: number;
   error?: string;
+  queued?: boolean;
 };
 
 /**
@@ -335,9 +341,21 @@ export async function runFeedbackDigestPass(
     to: creatorNotifyTo,
     subject: `${brand.name}: ${rows.length} creator feedback response${rows.length === 1 ? "" : "s"} this week`,
     html: buildFeedbackDigestEmailHtml({ brand, responses: rows }),
+    idempotencyKey: cutoverOperationKey("feedback_digest", [
+      brandId,
+      phoenixDateKey(),
+      rows.map((r) => r.id).sort().join(","),
+    ]),
   });
-  if (!send.ok) {
+  if (!send.ok && !send.queued) {
     console.error("feedback-digest send error:", send.error || send.skipped);
+    if (isBrevoCutoverEnabled() && send.retryable && !send.queued) {
+      await admin
+        .from("cron_runs")
+        .delete()
+        .eq("job", `feedback-digest:${brandId}`)
+        .eq("bucket_start", phoenixDayStartUtc().toISOString());
+    }
     return { ran: true, responses: 0, error: send.error || send.skipped };
   }
 
@@ -350,5 +368,5 @@ export async function runFeedbackDigestPass(
     );
   if (updateErr) console.error("feedback-digest triage update:", updateErr);
 
-  return { ran: true, responses: rows.length };
+  return { ran: true, responses: send.ok && !send.queued ? rows.length : 0, queued: Boolean(send.queued) };
 }

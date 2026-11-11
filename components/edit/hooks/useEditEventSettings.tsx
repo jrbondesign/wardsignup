@@ -3,7 +3,7 @@
 import { createClientComponentClient } from "@/lib/auth";
 import { INITIAL_FORM_STATE, type CreateFormState } from "@/lib/create-form-state";
 import { coverFileError, prepareCoverUpload } from "@/lib/cover-upload";
-import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
+import { organizerReportErrorHint, organizerReportResultMessage } from "@/lib/organizer-report-ui";
 import EventOptionalSettings from "@/components/event/EventOptionalSettings";
 import { type EditEventState } from "./useEditEventState";
 
@@ -308,10 +308,7 @@ export function useEditEventSettings(ctx: EditEventState) {
       if (data.resendId) {
         console.info("[organizer-report] Resend accepted:", data.resendId);
       }
-      const to = typeof data.sentTo === "string" ? data.sentTo : "";
-      setToastMessage(
-        to ? `Report sent to ${to}. Check inbox and spam.` : "Report sent! Check your inbox.",
-      );
+      setToastMessage(organizerReportResultMessage(data));
       setShowToast(true);
     } catch (e: unknown) {
       alert(

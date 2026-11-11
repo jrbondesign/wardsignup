@@ -264,6 +264,11 @@ export async function POST(request: Request) {
               return t ? `${siteOrigin}/cancel/${t}` : null;
             });
 
+            const operationId = results
+              .filter((res): res is SuccessResult => "signup_id" in res && Boolean(res.signup_id))
+              .map((res) => res.signup_id)
+              .sort()
+              .join(",");
             const r = await sendParticipantBatchSignupConfirmation({
               to: emailTrim,
               memberName: member_name.trim(),
@@ -271,10 +276,11 @@ export async function POST(request: Request) {
               sessions: orderedSessions,
               cancelUrl,
               cancelToken: primaryToken ?? undefined,
+              operationId: operationId || undefined,
               sessionCancelUrls,
               guestNames: guest_names.length > 0 ? guest_names : undefined,
             });
-            if (!r.ok) console.error("Bulk confirmation send:", r.error);
+            if (!r.ok && !r.queued) console.error("Bulk confirmation send:", r.error);
           }
 
           const leaderCampaign = campaign as unknown as LeaderCampaignEmailFields;

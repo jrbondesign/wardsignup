@@ -6,6 +6,7 @@ import type { ParticipantCampaignEmailFields } from "@/lib/participant-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { claimCronRun, hourBucketDate } from "@/lib/rate-limit";
 import { resolveCronBrandId } from "@/lib/cron-brand";
+import { emailCronDisabledBody } from "@/lib/email-outbound";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -23,6 +24,9 @@ const MAX_PER_RUN = 300;
  * 48 hours before their slot (they just got a confirmation email).
  */
 export async function GET(request: NextRequest) {
+  const disabled = emailCronDisabledBody();
+  if (disabled) return NextResponse.json(disabled);
+
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {
     return NextResponse.json(
@@ -207,8 +211,10 @@ export async function GET(request: NextRequest) {
     const cancelToken = r.cancel_token ?? undefined;
 
     // Mark BEFORE sending (at-most-once). The old send-then-mark order meant a
-    // failed mark re-emailed the same person every hour forever. A send
-    // failure after marking drops one reminder — the safe direction for email.
+    // failed mark re-emailed the same person every hour forever. An ordinary
+    // send failure after marking drops one reminder. A retryable result (the
+    // provider did not accept it) clears the mark below so a later run can
+    // send while the slot is still inside the 0–25h window.
     // The IS NULL filter makes the claim atomic against a concurrent run.
     const { data: claimed, error: upErr } = await admin
       .from("signups")
@@ -238,7 +244,38 @@ export async function GET(request: NextRequest) {
       },
       cancelUrl,
       cancelToken,
+      signupId: r.id,
     });
+
+    if (!sendResult.ok && sendResult.ambiguous) {
+      // The provider may already have accepted it. The claim stays so this
+      // slot is not mailed again. The stamp is not a delivery receipt.
+      errors.push(`${r.id}: unconfirmed`);
+      continue;
+    }
+
+    if (!sendResult.ok && sendResult.terminal) {
+      errors.push(`${r.id}: suppressed`);
+      continue;
+    }
+
+    if (!sendResult.ok && sendResult.retryable && !sendResult.queued) {
+      // Not sent. Clear the claim so the next run can retry while the slot
+      // is still inside the 0–25h window. A later run past the slot does not send.
+      let { error: clearErr } = await admin
+        .from("signups")
+        .update({ reminder_sent_at: null } as never)
+        .eq("id", r.id);
+      if (clearErr) {
+        const again = await admin
+          .from("signups")
+          .update({ reminder_sent_at: null } as never)
+          .eq("id", r.id);
+        clearErr = again.error;
+      }
+      errors.push(`${r.id}: ${sendResult.error}${clearErr ? ` (clear failed: ${clearErr.message})` : ""}`);
+      continue;
+    }
 
     if (!sendResult.ok) {
       errors.push(`${r.id}: ${sendResult.error}`);

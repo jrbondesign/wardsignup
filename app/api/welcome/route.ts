@@ -8,6 +8,7 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { escapeHtml } from "@/lib/html-escape";
 import { hasEmailProviderConfigured } from "@/lib/email-deliver";
 import { sendGuardedEmail } from "@/lib/email-send";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
 import { withUtm } from "@/lib/utm";
 import { buildWelcomeEmail } from "@/lib/welcome-email";
 
@@ -229,20 +230,30 @@ export async function POST(request: NextRequest) {
       subject: welcomeSubject,
       text: welcomeText,
       html: welcomeHtml,
+      idempotencyKey: cutoverOperationKey("welcome", [user.id, brand.id]),
     });
 
     if (!welcomeSend.ok) {
       console.error("Welcome email send error:", welcomeSend.error || welcomeSend.skipped);
-      if (adminForWelcome) {
+      const keepClaim = Boolean(
+        welcomeSend.ambiguous || welcomeSend.queued || welcomeSend.terminal || welcomeSend.skipped === "suppressed",
+      );
+      if (!keepClaim && adminForWelcome) {
         await adminForWelcome
           .from("welcome_email_sent")
           .delete()
           .eq("user_id", user.id)
           .eq("brand_id", brand.id);
       }
+      if (welcomeSend.ambiguous) {
+        return NextResponse.json({ ok: true, delivery: "unconfirmed" });
+      }
+      if (welcomeSend.queued) {
+        return NextResponse.json({ ok: true, delivery: "queued" }, { status: 202 });
+      }
       return NextResponse.json(
-        { error: welcomeSend.error || "Could not send welcome email" },
-        { status: 502 },
+        { error: welcomeSend.error || "Could not send welcome email", retryable: Boolean(welcomeSend.retryable) },
+        { status: welcomeSend.retryable ? 503 : 502 },
       );
     }
 

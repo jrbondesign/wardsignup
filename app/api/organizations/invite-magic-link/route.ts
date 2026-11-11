@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { consumeActionRate } from "@/lib/rate-limit";
-import { consumeEmailKeyRate } from "@/lib/email-send";
+import { consumeEmailKeyRate, consumeOwnedEmailSlot, releaseOwnedEmailSlot } from "@/lib/email-send";
 import { magicLinkDedupeBuckets, normalizeEmail } from "@/lib/email-throttle";
 import { getBrandFromHost } from "@/lib/brand";
 import { magicLinkEmailFrom } from "@/lib/brand/email-from";
-import { deliverEmail, hasEmailProviderConfigured } from "@/lib/email-deliver";
+import { deliverEmail, hasEmailProviderConfigured, retryDeliver } from "@/lib/email-deliver";
+import { cutoverBlocksNewLogin } from "@/lib/email-cutover";
+import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
 import { escapeHtml } from "@/lib/html-escape";
 import { getPostHogClient } from "@/lib/posthog-server";
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "crypto";
 
 function parseJsonBody(raw: string): { token?: unknown } | null {
   const t = raw.trim();
@@ -124,31 +127,92 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid invitation" }, { status: 400 });
     }
 
-    // Dedupe: if a link already went to this address in the last 5 minutes
-    const [thisMinute, ...nextMinutes] = magicLinkDedupeBuckets(new Date());
-    const dedupeKey = `invite-magic-link:${email}:${tokenHash}`;
-    const firstInWindow = await consumeEmailKeyRate(
-      "invite_magic_link_dedupe",
-      dedupeKey,
-      1,
-      thisMinute,
-    );
-    if (!firstInWindow) {
-      return NextResponse.json({ ok: true, alreadySent: true });
+    const hostHeader = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
+    const brand = getBrandFromHost(hostHeader);
+    // This is the accept/login attempt, not the original member-invite lease
+    // (`org-member:${org}:${email}`). Uncertainty is per invite hash so a new
+    // OTP is not minted while an earlier one may still be in flight.
+    const acceptScope = `invite:${tokenHash}`;
+    if (await cutoverBlocksNewLogin(acceptScope)) {
+      return NextResponse.json({ ok: true, delivery: "unconfirmed" });
     }
-    await Promise.all(
-      nextMinutes.map((b) => consumeEmailKeyRate("invite_magic_link_dedupe", dedupeKey, 1, b)),
-    );
 
     const origin = requestOrigin(request);
     if (!origin) {
       return NextResponse.json({ error: "Invalid request" }, { status: 400 });
     }
+    if (!hasEmailProviderConfigured(brand)) {
+      console.error("invite-magic-link: email not configured for this brand");
+      return NextResponse.json({ error: "Email is not configured." }, { status: 503 });
+    }
 
-    const hostHeader = request.headers.get("x-forwarded-host") ?? request.headers.get("host");
-    const brand = getBrandFromHost(hostHeader);
+    // Dedupe: if a link already went to this address in the last 5 minutes
+    const dedupeBuckets = magicLinkDedupeBuckets(new Date());
+    const [thisMinute, ...nextMinutes] = dedupeBuckets;
+    const dedupeKey = `invite-magic-link:${email}:${tokenHash}`;
+    const slotOwner = randomUUID();
+    const releaseDedupe = () => Promise.all(
+      dedupeBuckets.map((b) => releaseOwnedEmailSlot("invite_magic_link_dedupe", dedupeKey, b, slotOwner)),
+    );
+    const firstInWindow = await consumeOwnedEmailSlot(
+      "invite_magic_link_dedupe",
+      dedupeKey,
+      1,
+      thisMinute,
+      slotOwner,
+    );
+    if (firstInWindow === "unavailable") {
+      return NextResponse.json(
+        { error: "Could not start the invitation email. Please try again.", retryable: true },
+        { status: 503 },
+      );
+    }
+    if (!firstInWindow) {
+      return NextResponse.json({ ok: true, alreadySent: true });
+    }
+    await Promise.all(
+      nextMinutes.map((b) => consumeOwnedEmailSlot("invite_magic_link_dedupe", dedupeKey, 1, b, slotOwner)),
+    );
 
-    // Generate magic link for this user
+    // Separate from the member-invite lease. Held only around generateLink so
+    // a second request cannot rotate the OTP before this one is emailed.
+    const gateOn = isBrevoCutoverEnabled();
+    const acceptLease = `org-accept:${tokenHash}`;
+    const acceptHolder = randomUUID();
+    const finishAcceptLease = async (state: "accepted" | "retryable" | "terminal") => {
+      if (!gateOn) return;
+      const { error: finishError } = await admin.rpc("email_operation_finish", {
+        p_scope: acceptLease,
+        p_holder: acceptHolder,
+        p_state: state,
+      } as never);
+      if (finishError) console.error("invite-magic-link lease finish:", finishError);
+    };
+    if (gateOn) {
+      const { data: lease, error: leaseError } = await admin.rpc("email_operation_acquire", {
+        p_scope: acceptLease,
+        p_holder: acceptHolder,
+        p_stale_seconds: 180,
+      } as never);
+      if (leaseError || lease !== "go") {
+        await releaseDedupe();
+        if (lease === "busy" || lease === "blocked") {
+          return NextResponse.json(
+            lease === "busy"
+              ? { error: "A sign-in link for this invitation is already being sent." }
+              : { ok: true, delivery: "unconfirmed" },
+            { status: lease === "busy" ? 409 : 200 },
+          );
+        }
+        console.error("invite-magic-link lease:", leaseError);
+        return NextResponse.json(
+          { error: "Could not start the invitation email. Please try again.", retryable: true },
+          { status: 503 },
+        );
+      }
+    }
+
+    // Generate magic link only once this request is allowed to email it.
     const callbackUrl = `${origin}/auth/callback?next=${encodeURIComponent(`/orgs/accept?token=${encodeURIComponent(token)}`)}`;
 
     const { data, error } = await admin.auth.admin.generateLink({
@@ -160,6 +224,8 @@ export async function POST(request: NextRequest) {
     const hashedOtpToken = data?.properties?.hashed_token;
     if (error || !hashedOtpToken) {
       console.error("invite-magic-link generateLink:", error);
+      await finishAcceptLease("terminal");
+      await releaseDedupe();
       return NextResponse.json(
         { error: "Could not create a sign in link. Please try again." },
         { status: 500 },
@@ -169,11 +235,6 @@ export async function POST(request: NextRequest) {
     // Build token_hash callback URL (type=email for new accounts with confirmation_token)
     const actionLink = `${origin}/auth/callback?token_hash=${encodeURIComponent(hashedOtpToken)}&type=email&next=${encodeURIComponent(`/orgs/accept?token=${encodeURIComponent(token)}`)}`;
 
-    if (!hasEmailProviderConfigured(brand)) {
-      console.error("invite-magic-link: email not configured for this brand");
-      return NextResponse.json({ error: "Email is not configured." }, { status: 503 });
-    }
-
     const from = magicLinkEmailFrom(brand);
     const subject = `Accept your invitation to ${organizationName}`;
     const safeName = escapeHtml(brand.name);
@@ -182,12 +243,14 @@ export async function POST(request: NextRequest) {
     const safeSiteUrl = escapeHtml(brand.siteUrl);
     const safeSiteHost = escapeHtml(brand.siteHost);
 
-    const sendRes = await deliverEmail(
+    const sendRes = await retryDeliver(() => deliverEmail(
       {
         brand,
         kind: "org_invite_link",
         from,
         to: email,
+        idempotencyKey: cutoverOperationKey("org_invite", [tokenHash, email, hashedOtpToken]),
+        operationScope: acceptScope,
         subject,
         text: `Accept your invitation to ${organizationName}\n\n${actionLink}\n\n${brand.name} · ${brand.siteHost}\nMade with ❤️ in Arizona`,
         html: `
@@ -204,12 +267,29 @@ export async function POST(request: NextRequest) {
         `,
       },
       { urgent: true },
-    );
+    ));
 
+    if (!sendRes.ok && sendRes.retryable) {
+      await finishAcceptLease("retryable");
+      await releaseDedupe();
+      return NextResponse.json(
+        { error: "Failed to send email", retryable: true },
+        { status: 503 },
+      );
+    }
+    if (!sendRes.ok && sendRes.ambiguous) {
+      // The uncertainty row, not this mutex, stops a new OTP for 10 minutes.
+      // After that window a new OTP is a new key and is emailed.
+      await finishAcceptLease("accepted");
+      return NextResponse.json({ ok: true, delivery: "unconfirmed" });
+    }
     if (!sendRes.ok) {
       console.error("invite-magic-link send error:", sendRes.error);
+      await finishAcceptLease("terminal");
+      await releaseDedupe();
       return NextResponse.json({ error: "Failed to send email" }, { status: 500 });
     }
+    await finishAcceptLease("accepted");
 
     const posthog = getPostHogClient();
     posthog.capture({

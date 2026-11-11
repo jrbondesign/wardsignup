@@ -12,6 +12,8 @@ export type QueuedEmailInsert = {
   reply_to: string | null;
   attachments: Array<{ filename: string; content: string }> | null;
   send_after: string;
+  /** Present only after the cutover migration, and only when a business key exists. */
+  idempotency_key?: string;
 };
 
 export type QueuedEmailRow = QueuedEmailInsert & {
@@ -21,19 +23,45 @@ export type QueuedEmailRow = QueuedEmailInsert & {
 };
 
 /**
- * Insert a queued email. With `dedupe`, an identical email (same brand, kind,
- * recipient and subject) that is already pending or sending is not queued
- * again, so a retried request can't put two copies of a welcome in the queue.
- * Callers keep their own once-only guards (welcome_email_sent, the creator
- * notification log); this is a second net. A failed lookup still queues:
- * losing the email is worse than the small chance of a duplicate.
+ * Insert a queued email. A row with an operation key is stored once for that
+ * key, including after it has been sent. A different key with the same subject
+ * is a different email. With `dedupe` and no key, an identical pending email
+ * (same brand, kind, recipient and subject) is not queued again. Callers keep
+ * their own once-only guards. A failed lookup on that unkeyed path still queues.
  */
 export async function enqueueEmail(
   row: QueuedEmailInsert,
   opts: { dedupe?: boolean } = {},
-): Promise<{ ok: true; deduped?: boolean } | { ok: false; error: string }> {
+): Promise<{ ok: true; deduped?: boolean; status?: string } | { ok: false; error: string }> {
   try {
     const admin = createServiceRoleClient();
+    const operationKey = row.idempotency_key?.trim();
+    if (operationKey) {
+      const { data, error } = await admin.rpc("email_queue_enqueue", {
+        p_brand_id: row.brand_id,
+        p_category: row.category,
+        p_kind: row.kind,
+        p_from_address: row.from_address,
+        p_to_address: row.to_address,
+        p_subject: row.subject,
+        p_html: row.html,
+        p_text_body: row.text_body,
+        p_reply_to: row.reply_to,
+        p_attachments: row.attachments,
+        p_send_after: row.send_after,
+        p_idempotency_key: operationKey,
+      } as never);
+      if (error) {
+        console.error("email_queue keyed insert failed:", error);
+        return { ok: false, error: error.message };
+      }
+      const status = data as string | null;
+      if (status === "inserted") return { ok: true, status: "pending" };
+      if (status && status !== "refused") {
+        return { ok: true, deduped: true, status };
+      }
+      return { ok: false, error: "email queue did not accept this operation key" };
+    }
     if (opts.dedupe) {
       const { data: existing, error: findErr } = await admin
         .from("email_queue")

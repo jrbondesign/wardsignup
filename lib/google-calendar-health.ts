@@ -3,14 +3,16 @@
  *
  * Goal: sync never stops silently. When Google rejects our refresh token
  * (invalid_grant, revoked, expired) or answers 401 after a fresh refresh, the
- * connection is marked broken exactly once per breakage. That first transition
- * emails the creator a reconnect link and emails the founder, and is logged.
+ * connection is marked broken exactly once per breakage. The reconnect mail
+ * is retried until it is accepted, ambiguous, or queued, and is logged.
  * Reconnecting through the OAuth flow clears the broken state.
  */
 
 import { creatorNotifyEmailFrom, getDefaultPublicBrand, publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import type { PublicBrand } from "@/lib/brand/types";
 import { sendGuardedEmail } from "@/lib/email-send";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
+import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
 import { FOUNDER_NOTIFY_TO } from "@/lib/founder-notify";
 import { escapeHtml } from "@/lib/html-escape";
 
@@ -81,9 +83,12 @@ export type MarkBrokenInput = {
 };
 
 /**
- * Mark a connection broken. Idempotent: only the first call per breakage
- * (status active to broken) sends notifications. Never throws.
- * Returns true when this call performed the transition.
+ * Mark a connection broken. The active-to-broken update happens once.
+ * Notification is separate: while broken_notified_at is null, a later call
+ * retries with the stored broken_at so a failed send is not lost. A settled
+ * send (accepted, ambiguous, or queued) stamps the row and is not repeated.
+ * Never throws. Returns true when this call transitioned the row or retried
+ * a notification that had not settled.
  */
 export async function markConnectionBroken(admin: Admin, input: MarkBrokenInput): Promise<boolean> {
   const nowIso = new Date().toISOString();
@@ -112,22 +117,43 @@ export async function markConnectionBroken(admin: Admin, input: MarkBrokenInput)
       console.error("[gcal-health] could not set broken status (migration applied?):", error.message ?? error);
       return false;
     }
-    const row = Array.isArray(data) ? data[0] : data;
-    if (!row) {
+    let row = Array.isArray(data) ? data[0] : data;
+    let brokenAt = nowIso;
+    // Gate off keeps the live contract: notify once on the transition and
+    // always stamp, so a failed send is never re-sent on the next sync error.
+    const gateOn = isBrevoCutoverEnabled();
+    if (!row && !gateOn) {
       console.warn(`[gcal-health] connection ${input.connectionId} already broken; not notifying again`);
       return false;
+    }
+    if (!row) {
+      const { data: pending, error: pendingError } = await admin
+        .from("google_calendar_connections")
+        .select("id, user_id, organization_id, google_email, broken_at")
+        .eq("id", input.connectionId)
+        .eq("status", "broken")
+        .is("broken_notified_at", null)
+        .maybeSingle();
+      if (pendingError || !pending?.broken_at) {
+        console.warn(`[gcal-health] connection ${input.connectionId} already broken; notification already settled`);
+        return false;
+      }
+      row = pending;
+      brokenAt = pending.broken_at;
     }
 
     console.error(
       `[gcal-health] CONNECTION BROKEN connection=${row.id} org=${row.organization_id} user=${row.user_id} campaign=${input.campaignId ?? "n/a"} reason=${reason}`,
     );
 
-    await notifyBroken(admin, row, input.campaignId ?? null, reason);
+    const notified = await notifyBroken(admin, row, input.campaignId ?? null, reason, brokenAt);
 
-    await admin
-      .from("google_calendar_connections")
-      .update({ broken_notified_at: new Date().toISOString() })
-      .eq("id", row.id);
+    if (notified || !gateOn) {
+      await admin
+        .from("google_calendar_connections")
+        .update({ broken_notified_at: new Date().toISOString() })
+        .eq("id", row.id);
+    }
     return true;
   } catch (e) {
     console.error("[gcal-health] markConnectionBroken failed:", e);
@@ -140,7 +166,8 @@ async function notifyBroken(
   row: { id: string; user_id: string; organization_id: string; google_email: string },
   campaignId: string | null,
   reason: string,
-): Promise<void> {
+  brokenAt: string,
+): Promise<boolean> {
   // Pick an event to link to: the one that failed, else any synced event on this connection.
   let eventId = campaignId;
   if (!eventId) {
@@ -178,6 +205,7 @@ async function notifyBroken(
     console.error("[gcal-health] creator lookup failed:", e);
   }
 
+  let creatorSettled = true;
   if (creatorEmail) {
     const mail = buildCreatorReconnectEmail({ brand, eventName, googleEmail: row.google_email, link });
     const sent = await sendGuardedEmail({
@@ -188,10 +216,12 @@ async function notifyBroken(
       subject: mail.subject,
       html: mail.html,
       text: mail.text,
-      // Sync is already broken; never let the email queue defer this.
-      urgent: true,
+      realtime: true,
+      kind: "calendar_reconnect",
+      idempotencyKey: cutoverOperationKey("calendar_reconnect", [row.id, brokenAt]),
     });
     if (!sent.ok) console.error("[gcal-health] creator reconnect email not sent:", sent);
+    creatorSettled = sent.ok || (!sent.ok && Boolean(sent.ambiguous || sent.queued));
   } else {
     console.error(`[gcal-health] no creator email for user ${row.user_id}`);
   }
@@ -214,8 +244,13 @@ async function notifyBroken(
     subject: `Google Calendar sync broke: ${eventName}`,
     html: `<pre style="font-family: ui-monospace, Menlo, monospace; font-size: 13px; white-space: pre-wrap;">${escapeHtml(founderText)}</pre>`,
     text: founderText,
+    realtime: true,
+    kind: "calendar_founder",
+    idempotencyKey: cutoverOperationKey("calendar_founder", [row.id, brokenAt]),
   });
   if (!founder.ok) console.error("[gcal-health] founder alert email not sent:", founder);
+  const founderSettled = founder.ok || (!founder.ok && Boolean(founder.ambiguous || founder.queued));
+  return creatorSettled && founderSettled;
 }
 
 /** Clear broken state after a successful reconnect. Never throws. */

@@ -7,6 +7,8 @@ import { claimCronRun } from "@/lib/rate-limit";
 import { phoenixDayStartUtc } from "@/lib/phoenix-time";
 import { runFeedbackAskPass } from "@/lib/feedback-ask";
 import { resolveCronBrandId } from "@/lib/cron-brand";
+import { emailCronDisabledBody } from "@/lib/email-outbound";
+import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -28,6 +30,9 @@ export const maxDuration = 120;
  * own brand-scoped claimCronRun.
  */
 export async function GET(request: NextRequest) {
+  const disabled = emailCronDisabledBody();
+  if (disabled) return NextResponse.json(disabled);
+
   // Trim so accidental spaces in Vercel env don’t break Bearer matching (Vercel also rejects whitespace-only secrets at deploy).
   const secret = process.env.CRON_SECRET?.trim();
   if (!secret) {
@@ -139,6 +144,8 @@ export async function GET(request: NextRequest) {
 
   let sent = 0;
   let skipped = 0;
+  let acceptedOrQueued = 0;
+  let retryableLeft = 0;
   const errors: string[] = [];
   // Anti-spam guard 2: at most ONE digest email per organizer inbox per run.
   const emailedOrganizers = new Set<string>();
@@ -180,11 +187,15 @@ export async function GET(request: NextRequest) {
       let delivered = false;
       if (organizerDue) {
         const result = await sendOrganizerMetricsEmail(admin, c.id, "digest");
-        if (result.ok) {
+        if (result.ok || result.queued) {
           delivered = true;
-          sent += 1;
+          acceptedOrQueued += 1;
+          if (result.ok && !result.queued) sent += 1;
           if (organizerEmail) emailedOrganizers.add(organizerEmail);
           if (result.sentTo) emailedOrganizers.add(result.sentTo.trim().toLowerCase());
+        } else if (result.retryable) {
+          retryableLeft += 1;
+          errors.push(`${c.id}: ${result.error || "retryable"}`);
         } else if (result.skipped === "no_organizer_email") {
           skipped += 1;
         } else {
@@ -194,10 +205,14 @@ export async function GET(request: NextRequest) {
 
       if (leaderTo && !emailedOrganizers.has(leaderTo)) {
         const lr = await sendOrganizerMetricsEmail(admin, c.id, "digest", { to: leaderTo });
-        if (lr.ok) {
+        if (lr.ok || lr.queued) {
           delivered = true;
-          sent += 1;
+          acceptedOrQueued += 1;
+          if (lr.ok && !lr.queued) sent += 1;
           emailedOrganizers.add(leaderTo);
+        } else if (lr.retryable) {
+          retryableLeft += 1;
+          errors.push(`${c.id} leader: ${lr.error || "retryable"}`);
         } else {
           errors.push(`${c.id} leader: ${lr.error || lr.skipped || "send failed"}`);
         }
@@ -212,6 +227,17 @@ export async function GET(request: NextRequest) {
     } catch (e: unknown) {
       errors.push(`${c.id}: ${e instanceof Error ? e.message : String(e)}`);
     }
+  }
+
+  // The day claim is not a delivery receipt. When the gate is on and nothing
+  // was accepted or queued, a retryable failure can run again on the next ping.
+  if (isBrevoCutoverEnabled() && acceptedOrQueued === 0 && retryableLeft > 0) {
+    const { error: releaseErr } = await admin
+      .from("cron_runs")
+      .delete()
+      .eq("job", `organizer-digest:${brandId}`)
+      .eq("bucket_start", phoenixDayStartUtc().toISOString());
+    if (releaseErr) errors.push(`digest claim release: ${releaseErr.message}`);
   }
 
   return NextResponse.json({

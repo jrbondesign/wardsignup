@@ -4,6 +4,8 @@ import { getResendForBrand } from "@/lib/resend-for-brand";
 import type { PublicBrand } from "@/lib/brand/types";
 import { phoenixDayStartUtc } from "@/lib/phoenix-time";
 import { getPostHogClient } from "@/lib/posthog-server";
+import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
+import { emailOutboundBlock } from "@/lib/email-outbound";
 import { allowedEnvSender, checkSender, parseFrom } from "@/lib/email-sender-guard";
 import { organizerEmailFrom } from "@/lib/brand/email-from";
 
@@ -71,16 +73,30 @@ export type DeliverParams = {
    * twice. Defaults to a fresh key per call, which still covers the in-call retry.
    */
   idempotencyKey?: string;
+  /**
+   * Cutover-only grouping for "is a send of this login still unconfirmed?".
+   * Ignored on the production Resend path.
+   */
+  operationScope?: string | null;
 };
 
 export type DeliverResult =
-  | { ok: true; provider: "resend" | "brevo" }
+  | { ok: true; provider: "resend" | "brevo"; messageId?: string; duplicateSuppressed?: boolean }
   | {
       ok: false;
       error: string;
       overBudget?: boolean;
       /** Brevo was tried (Resend out of budget or 429) and refused or errored. */
       brevoFailed?: boolean;
+      /** Provider may have accepted the message. Do not send it anywhere else. */
+      ambiguous?: boolean;
+      outboundDisabled?: boolean;
+      /** Same idempotency key already finished. Nothing was sent on this call. */
+      duplicateSuppressed?: boolean;
+      /** Safe to try the same provider later. The other provider was not called. */
+      retryable?: boolean;
+      /** Do not retry this key. */
+      terminal?: boolean;
       /** The From address is not @wardsignup.com. Nothing was sent anywhere. */
       senderRefused?: boolean;
     };
@@ -166,11 +182,39 @@ async function consumeDailyCounter(action: string, key: string, bucket: Date, ma
 }
 
 /**
- * Resend has room when both the UTC day safety cap and the Arizona day budget
- * do. The cap is checked first so a send refused by the cap doesn't use up
- * Arizona budget. A send the Arizona budget refuses has already counted one
- * against the cap; that errs on the safe side (fewer sends, never a 429).
+ * Fail-closed copy of the live Resend counters. A read error does not send.
+ * Both windows are reserved in one database call, so a full Arizona bucket
+ * does not keep a UTC slot. The production path above stays fail-open and
+ * still consumes one window at a time.
  */
+export async function consumeSharedResendBudget(
+  brandId: string,
+  recipients: number,
+  now: Date = new Date(),
+  env: Env = process.env,
+): Promise<"reserved" | "full" | "unknown"> {
+  if (!Number.isInteger(recipients) || recipients < 1 || recipients > 20) return "unknown";
+  const cap = resendUtcDayCap(env);
+  const soft = resendDailySoftLimit(env);
+  try {
+    const admin = createServiceRoleClient();
+    const { data, error } = await admin.rpc("try_consume_resend_pair", {
+      p_utc_hash: createHash("sha256").update(`resend-daily:${brandId}`).digest("hex"),
+      p_utc_bucket: utcDayStart(now).toISOString(),
+      p_utc_max: cap,
+      p_phx_hash: createHash("sha256").update(`resend-phx-day:${brandId}`).digest("hex"),
+      p_phx_bucket: phoenixDayStartUtc(now).toISOString(),
+      p_phx_max: soft,
+      p_amount: recipients,
+    } as never);
+    if (error) return "unknown";
+    if (data === "reserved" || data === "full") return data;
+    return "unknown";
+  } catch {
+    return "unknown";
+  }
+}
+
 async function consumeResendDailyBudget(brandId: string, now: Date = new Date()): Promise<boolean> {
   const underCap = await consumeDailyCounter(
     "email_resend_daily",
@@ -357,9 +401,23 @@ export async function deliverEmail(
   params: DeliverParams,
   opts: { urgent: boolean; realtime?: boolean; bulk?: boolean },
 ): Promise<DeliverResult> {
-  const p: DeliverParams = { ...params, idempotencyKey: params.idempotencyKey ?? `ws/${randomUUID()}` };
-  const sender = checkSender(p.from, p.kind);
+  const blocked = emailOutboundBlock();
+  if (blocked.blocked) {
+    return {
+      ok: false,
+      error: `Email outbound is disabled (${blocked.reason})`,
+      outboundDisabled: true,
+    };
+  }
+  // Sender guard runs before either path, so the cutover can never send a
+  // From outside @wardsignup.com either.
+  const sender = checkSender(params.from, params.kind);
   if (!sender.ok) return { ok: false, error: sender.error, senderRefused: true };
+  if (isBrevoCutoverEnabled()) {
+    const { productionCutoverDeps, runBrevoCutover } = await import("@/lib/email-cutover");
+    return runBrevoCutover(params, opts, productionCutoverDeps());
+  }
+  const p: DeliverParams = { ...params, idempotencyKey: params.idempotencyKey ?? `ws/${randomUUID()}` };
   const brevoOk = opts.urgent || Boolean(opts.realtime);
   let brevo = brevoConfig();
 
@@ -447,6 +505,15 @@ export async function deliverEmail(
   // permanent (validation) and in_progress never fail over: the first would
   // fail on Brevo too, the second may already be on its way through Resend.
   return { ok: false, error: message };
+}
+
+/** One extra attempt on the same callback. The caller passes the same idempotency key. */
+export async function retryDeliver<T extends { ok: true } | { ok: false; retryable?: boolean }>(
+  send: () => Promise<T>,
+): Promise<T> {
+  const first = await send();
+  if (!first.ok && first.retryable) return send();
+  return first;
 }
 
 /** True when some provider can send for this brand (Resend key, or the Brevo fallback). */

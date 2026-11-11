@@ -1,4 +1,5 @@
 import { sendGuardedEmail } from "@/lib/email-send";
+import { cutoverOperationKey } from "@/lib/email-operation-key";
 import type { User } from "@supabase/supabase-js";
 import { creatorNotifyEmailFrom, type PublicBrand } from "@/lib/brand";
 import { escapeHtml } from "@/lib/html-escape";
@@ -83,7 +84,15 @@ export async function notifyFounderIfFirstEvent(opts: {
             <p style="margin: 0; font-size: 12px; color: #6b7280;">User ID: ${escapeHtml(user.id)} · Event ID: ${escapeHtml(eventId)}</p>
           </div>
         `,
+      idempotencyKey: cutoverOperationKey("new_creator", [user.id]),
     });
+    if (!sent.ok && sent.retryable && !sent.queued) {
+      // The log row is a claim, not a receipt. This attempt was not accepted.
+      await admin
+        .from("creator_signup_notification_log")
+        .delete()
+        .eq("email", `activated:${user.id}`.toLowerCase());
+    }
     if (!sent.ok) console.error("Founder notify send error:", sent.error || sent.skipped);
   } catch (e) {
     console.error("Founder notify error:", e);

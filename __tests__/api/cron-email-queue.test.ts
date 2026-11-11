@@ -70,24 +70,24 @@ function listRows(q: QueryRecord, rows: QueuedEmailRow[]): QueuedEmailRow[] {
   return rows;
 }
 
-function isRecovery(q: QueryRecord) {
-  return hasOp(q, "update") !== undefined && eqValue(q, "status") === "sending";
+function isStaleSelect(q: QueryRecord) {
+  return q.table === "email_queue" && !hasOp(q, "update") && eqValue(q, "status") === "sending";
 }
 
 function setup(opts: {
   rows?: QueuedEmailRow[];
   listError?: { message: string };
   lostClaim?: string[];
-  requeued?: string[];
-  expired?: string[];
 }) {
   const resolve = (q: QueryRecord): QueryResult => {
-    if (isRecovery(q)) {
-      const ids = hasOp(q, "gte") ? opts.expired : opts.requeued;
-      return { data: (ids ?? []).map((id) => ({ id })), error: null };
+    if (q.table === "email_delivery_attempts") {
+      return { data: null, error: null };
+    }
+    if (isStaleSelect(q)) {
+      return { data: (opts.rows ?? []).filter((row) => row.status === "sending"), error: null };
     }
     if (!hasOp(q, "update")) {
-      return { data: listRows(q, opts.rows ?? []), error: opts.listError ?? null };
+      return { data: listRows(q, (opts.rows ?? []).filter((row) => row.status !== "sending")), error: opts.listError ?? null };
     }
     const id = eqValue(q, "id") as string;
     // Claim query: update(...).eq(id).eq(status,pending).select("id")
@@ -161,7 +161,7 @@ describe("/api/cron/email-queue", () => {
   it("lists only pending rows whose send_after has passed", async () => {
     const { queries } = setup({ rows: [] });
     await GET(cronRequest(PATH, SECRET));
-    const list = queries.find((q) => !hasOp(q, "update"))!;
+    const list = queries.find((q) => eqValue(q, "status") === "pending")!;
     expect(list.table).toBe("email_queue");
     expect(list.ops).toContainEqual({ method: "eq", args: ["status", "pending"] });
     expect(hasOp(list, "lte")?.args[0]).toBe("send_after");
@@ -239,6 +239,50 @@ describe("/api/cron/email-queue", () => {
     expect(updatesFor(queries, "b")).toHaveLength(0);
   });
 
+  it("returns disabled on preview before auth or the database", async () => {
+    process.env.VERCEL_ENV = "preview";
+    try {
+      const res = await GET(cronRequest(PATH));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true, disabled: true, reason: "preview", sent: 0 });
+      expect(mockCreateClient).not.toHaveBeenCalled();
+      expect(mockSend).not.toHaveBeenCalled();
+    } finally {
+      delete process.env.VERCEL_ENV;
+    }
+  });
+
+  it("marks an ambiguous provider result and does not treat it as a failed retry", async () => {
+    mockSend.mockResolvedValue({ ok: false, ambiguous: true, error: "timeout" });
+    const { queries } = setup({ rows: [queued("a"), queued("b")] });
+    const body = await (await GET(cronRequest(PATH, SECRET))).json();
+    expect(body).toMatchObject({ sent: 0, failed: 0 });
+    expect(mockSend).toHaveBeenCalledTimes(2);
+    expect(updatesFor(queries, "a")[1].payload).toEqual({ status: "ambiguous", last_error: "timeout" });
+    expect(updatesFor(queries, "b")[1].payload).toEqual({ status: "ambiguous", last_error: "timeout" });
+  });
+
+  it("requeues a rate-limited row without using up an attempt", async () => {
+    mockSend.mockResolvedValue({ ok: false, retryable: true, error: "429" });
+    const { queries } = setup({ rows: [queued("a", { attempts: 1 })] });
+    const body = await (await GET(cronRequest(PATH, SECRET))).json();
+    expect(body).toMatchObject({ sent: 0, failed: 0, stoppedOverBudget: false });
+    expect(updatesFor(queries, "a")[1].payload).toMatchObject({
+      status: "pending",
+      attempts: 1,
+      last_error: "429",
+    });
+    expect(updatesFor(queries, "a")[1].payload.send_after).toEqual(expect.any(String));
+  });
+
+  it("fails a terminal rejection without further attempts", async () => {
+    mockSend.mockResolvedValue({ ok: false, terminal: true, error: "bad address" });
+    const { queries } = setup({ rows: [queued("a", { attempts: 0 })] });
+    const body = await (await GET(cronRequest(PATH, SECRET))).json();
+    expect(body.failed).toBe(1);
+    expect(updatesFor(queries, "a")[1].payload).toEqual({ status: "failed", last_error: "bad address" });
+  });
+
   it("retries failures as pending until the third attempt, then fails", async () => {
     mockSend.mockResolvedValue({ ok: false, error: "500 from resend" });
     const { queries } = setup({ rows: [queued("retry", { attempts: 1 }), queued("dead", { attempts: 2 })] });
@@ -250,28 +294,29 @@ describe("/api/cron/email-queue", () => {
   });
 
   describe("stale claim recovery", () => {
-    it("requeues stale sending rows with attempts left and fails exhausted ones, before listing", async () => {
+    it("requeues stale sending rows under the cap and fails an exhausted claim with no attempt", async () => {
       const now = Date.parse("2026-10-18T01:00:00.000Z");
       jest.spyOn(Date, "now").mockReturnValue(now);
-      const { queries } = setup({ rows: [], requeued: ["r1", "r2"], expired: ["e1"] });
+      const { queries } = setup({
+        rows: [
+          queued("r1", { status: "sending", attempts: 1 }),
+          queued("r2", { status: "sending", attempts: 2 }),
+          queued("e1", { status: "sending", attempts: 3 }),
+        ],
+      });
 
       const body = await (await GET(cronRequest(PATH, SECRET))).json();
       expect(body).toMatchObject({ recovered: 2, expired: 1, failed: 0 });
+      expect(mockSend).not.toHaveBeenCalled();
 
-      const recovery = queries.filter(isRecovery);
-      expect(recovery).toHaveLength(2);
-      const listIdx = queries.findIndex((q) => !hasOp(q, "update"));
-      expect(queries.indexOf(recovery[0])).toBeLessThan(listIdx);
-      expect(queries.indexOf(recovery[1])).toBeLessThan(listIdx);
-
-      const cutoff = new Date(now - STALE_CLAIM_MS).toISOString();
-      const [requeue, expire] = recovery;
-      expect(hasOp(requeue, "update")!.args[0]).toEqual({ status: "pending", last_error: "claim expired" });
-      expect(requeue.ops).toContainEqual({ method: "lt", args: ["claimed_at", cutoff] });
-      expect(requeue.ops).toContainEqual({ method: "lt", args: ["attempts", 3] });
-      expect(hasOp(expire, "update")!.args[0]).toEqual({ status: "failed", last_error: "claim expired" });
-      expect(expire.ops).toContainEqual({ method: "lt", args: ["claimed_at", cutoff] });
-      expect(expire.ops).toContainEqual({ method: "gte", args: ["attempts", 3] });
+      const stale = queries.find(isStaleSelect);
+      const listIdx = queries.findIndex((q) => eqValue(q, "status") === "pending");
+      expect(stale).toBeDefined();
+      expect(queries.indexOf(stale!)).toBeLessThan(listIdx);
+      expect(stale!.ops).toContainEqual({ method: "lt", args: ["claimed_at", new Date(now - STALE_CLAIM_MS).toISOString()] });
+      expect(updatesFor(queries, "r1")[0].payload).toEqual({ status: "pending", last_error: "claim expired" });
+      expect(updatesFor(queries, "r2")[0].payload).toEqual({ status: "pending", last_error: "claim expired" });
+      expect(updatesFor(queries, "e1")[0].payload).toEqual({ status: "failed", last_error: "claim expired" });
     });
 
     it("uses a threshold well above the function's maxDuration", () => {
@@ -280,7 +325,7 @@ describe("/api/cron/email-queue", () => {
 
     it("keeps draining when recovery fails", async () => {
       const fake = createFakeAdmin((q) => {
-        if (isRecovery(q)) return { data: null, error: { message: "boom" } };
+        if (isStaleSelect(q)) return { data: null, error: { message: "boom" } };
         if (!hasOp(q, "update")) return { data: listRows(q, [queued("a")]), error: null };
         return { data: hasOp(q, "select") ? [{ id: "a" }] : null, error: null };
       });

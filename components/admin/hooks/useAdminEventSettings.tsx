@@ -3,7 +3,7 @@
 import { createClientComponentClient } from "@/lib/auth";
 import { type CreateFormState } from "@/lib/create-form-state";
 import { coverFileError, prepareCoverUpload } from "@/lib/cover-upload";
-import { organizerReportErrorHint } from "@/lib/organizer-report-ui";
+import { organizerReportErrorHint, organizerReportResultMessage } from "@/lib/organizer-report-ui";
 import { type AdminEventState } from "./useAdminEventState";
 import { type AdminSignupActions } from "./useAdminSignupActions";
 import { type AdminDeleteActions } from "./useAdminDeleteActions";
@@ -272,10 +272,7 @@ export function useAdminEventSettings(ctx: AdminEventState & AdminSignupActions 
       if (data.resendId) {
         console.info("[organizer-report] Resend accepted:", data.resendId);
       }
-      const to = typeof data.sentTo === "string" ? data.sentTo : "";
-      setToastMessage(
-        to ? `Report sent to ${to}. Check inbox and spam.` : "Report sent! Check your inbox.",
-      );
+      setToastMessage(organizerReportResultMessage(data));
       setShowToast(true);
     } catch (e: unknown) {
       alert(
