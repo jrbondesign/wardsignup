@@ -406,6 +406,9 @@ export async function consumeOwnedEmailSlot(
   bucketStart: Date,
   holder: string,
 ): Promise<boolean | "unavailable"> {
+  // try_consume_owned_slot ships with the unapplied cutover migration. Gate
+  // off keeps the live limiter (and its fail-closed "already sent" answer).
+  if (!isBrevoCutoverEnabled()) return consumeEmailKeyRate(action, key, maxPerWindow, bucketStart);
   try {
     const admin = createServiceRoleClient();
     const { data, error } = await admin.rpc("try_consume_owned_slot", {
@@ -433,6 +436,8 @@ export async function releaseOwnedEmailSlot(
   bucketStart: Date,
   holder: string,
 ): Promise<boolean> {
+  // Gate off: the live limiter has no owner column and was never released.
+  if (!isBrevoCutoverEnabled()) return false;
   try {
     const admin = createServiceRoleClient();
     const { data, error } = await admin.rpc("release_owned_slot", {

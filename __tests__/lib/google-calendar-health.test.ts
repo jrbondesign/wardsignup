@@ -204,12 +204,25 @@ describe("markConnectionBroken", () => {
   });
 
   it("keeps a retryable send that was not queued recoverable", async () => {
+    process.env.EMAIL_PROVIDER_CUTOVER = "brevo";
     mockSend.mockResolvedValue({ ok: false, error: "down", retryable: true });
     const { admin, calls } = fakeAdmin("active");
     await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" });
     expect(calls.some((c) => (c.args[0] as { broken_notified_at?: string }).broken_notified_at)).toBe(false);
     expect(await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" })).toBe(true);
     expect(mockSend).toHaveBeenCalledTimes(4);
+    delete process.env.EMAIL_PROVIDER_CUTOVER;
+  });
+
+  it("gate off: a failed send still stamps once and is not re-sent (no key to dedupe the founder alert)", async () => {
+    delete process.env.EMAIL_PROVIDER_CUTOVER;
+    mockSend.mockResolvedValue({ ok: false, error: "down" });
+    const { admin, calls } = fakeAdmin("active");
+    expect(await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" })).toBe(true);
+    expect(calls.some((c) => (c.args[0] as { broken_notified_at?: string }).broken_notified_at)).toBe(true);
+    mockSend.mockClear();
+    expect(await markConnectionBroken(admin, { connectionId: "conn1", campaignId: "c1", reason: "invalid_grant" })).toBe(false);
+    expect(mockSend).not.toHaveBeenCalled();
   });
 });
 

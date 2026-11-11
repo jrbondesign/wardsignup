@@ -12,6 +12,7 @@ import { creatorNotifyEmailFrom, getDefaultPublicBrand, publicSiteOriginAndBrand
 import type { PublicBrand } from "@/lib/brand/types";
 import { sendGuardedEmail } from "@/lib/email-send";
 import { cutoverOperationKey } from "@/lib/email-operation-key";
+import { isBrevoCutoverEnabled } from "@/lib/email-cutover-config";
 import { FOUNDER_NOTIFY_TO } from "@/lib/founder-notify";
 import { escapeHtml } from "@/lib/html-escape";
 
@@ -118,6 +119,13 @@ export async function markConnectionBroken(admin: Admin, input: MarkBrokenInput)
     }
     let row = Array.isArray(data) ? data[0] : data;
     let brokenAt = nowIso;
+    // Gate off keeps the live contract: notify once on the transition and
+    // always stamp, so a failed send is never re-sent on the next sync error.
+    const gateOn = isBrevoCutoverEnabled();
+    if (!row && !gateOn) {
+      console.warn(`[gcal-health] connection ${input.connectionId} already broken; not notifying again`);
+      return false;
+    }
     if (!row) {
       const { data: pending, error: pendingError } = await admin
         .from("google_calendar_connections")
@@ -140,7 +148,7 @@ export async function markConnectionBroken(admin: Admin, input: MarkBrokenInput)
 
     const notified = await notifyBroken(admin, row, input.campaignId ?? null, reason, brokenAt);
 
-    if (notified) {
+    if (notified || !gateOn) {
       await admin
         .from("google_calendar_connections")
         .update({ broken_notified_at: new Date().toISOString() })

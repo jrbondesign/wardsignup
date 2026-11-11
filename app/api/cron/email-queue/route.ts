@@ -133,7 +133,8 @@ export async function GET(request: NextRequest) {
   const staleBefore = new Date(Date.now() - STALE_CLAIM_MS).toISOString();
   const { data: staleRows, error: staleError } = await admin
     .from("email_queue")
-    .select("id, attempts, idempotency_key")
+    // "*" so this still reads before the cutover migration adds idempotency_key.
+    .select("*")
     .eq("status", "sending")
     .lt("claimed_at", staleBefore);
   if (staleError) console.error("email-queue recovery error:", staleError);
