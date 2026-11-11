@@ -1,7 +1,11 @@
 const mockLoad = jest.fn();
 jest.mock("@/lib/public-event-page", () => ({ loadPublicEventPage: (...a: unknown[]) => mockLoad(...a) }));
 const mockCover = jest.fn();
-jest.mock("@/lib/event-media", () => ({ publicCoverForCampaign: (...a: unknown[]) => mockCover(...a) }));
+const mockPublicCoverFromRow = jest.fn((row: unknown) => row);
+jest.mock("@/lib/event-media", () => ({
+  coverRowForCampaign: (...a: unknown[]) => mockCover(...a),
+  publicCoverFromRow: (row: unknown) => mockPublicCoverFromRow(row),
+}));
 jest.mock("@/lib/supabase-admin", () => ({ createServiceRoleClient: () => ({}) }));
 jest.mock("@supabase/supabase-js", () => ({ createClient: () => ({}) }));
 jest.mock("react", () => ({ ...jest.requireActual("react"), cache: (fn: unknown) => fn }));
@@ -79,7 +83,7 @@ describe("getServerEventPage", () => {
 });
 
 describe("getServerEventSnapshot", () => {
-  it("shares the read across requests for 30-60 s under a per-event tag", async () => {
+  it("shares the read across requests for 5 minutes under a per-event tag", async () => {
     mockUnstableCache.mockReset();
     mockLoad.mockResolvedValueOnce({ event: { id: ID } });
     const before = Date.now();
@@ -89,8 +93,7 @@ describe("getServerEventSnapshot", () => {
     const [keyParts, opts] = mockUnstableCache.mock.calls[0] as [string[], { revalidate: number; tags: string[] }];
     expect(keyParts).toContain(ID);
     expect(opts.tags).toEqual([`event-page:${ID}`]);
-    expect(opts.revalidate).toBeGreaterThanOrEqual(30);
-    expect(opts.revalidate).toBeLessThanOrEqual(60);
+    expect(opts.revalidate).toBe(300);
   });
   it("returns null for a missing event and undefined on failure (never cached)", async () => {
     mockLoad.mockResolvedValueOnce(null);
@@ -113,5 +116,21 @@ describe("getServerEventCover", () => {
     await expect(getServerEventCover(ID)).resolves.toBeNull();
     mockCover.mockRejectedValueOnce(new Error("no key"));
     await expect(getServerEventCover(ID)).resolves.toBeUndefined();
+  });
+  it("caches the cover row for 5 minutes under the same per-event tag", async () => {
+    mockUnstableCache.mockReset();
+    mockCover.mockResolvedValueOnce({ url: "u", position: "50% 50%" });
+    await getServerEventCover(ID);
+    const [keyParts, opts] = mockUnstableCache.mock.calls[0] as [string[], { revalidate: number; tags: string[] }];
+    expect(keyParts).toEqual(["public-event-cover-v1", ID]);
+    expect(opts).toEqual({ revalidate: 300, tags: [`event-page:${ID}`] });
+  });
+  it("applies the cover allowlist after the cache, not inside it", async () => {
+    mockPublicCoverFromRow.mockClear();
+    const row = { organization_id: "o", cover_image_url: "u", cover_position: null };
+    mockCover.mockResolvedValueOnce(row);
+    mockPublicCoverFromRow.mockReturnValueOnce(null as never);
+    await expect(getServerEventCover(ID)).resolves.toBeNull();
+    expect(mockPublicCoverFromRow).toHaveBeenCalledWith(row);
   });
 });

@@ -63,6 +63,34 @@ export async function removeCoverIfUnreferenced(
   }
 }
 
+/** The campaigns columns the public cover needs (cacheable: no env checks applied yet). */
+export interface CoverRow {
+  organization_id: string | null;
+  cover_image_url: string | null;
+  cover_position: string | null;
+}
+
+/**
+ * Server-only: read the cover columns for one event. Throws on a database error
+ * so a shared cache never stores a failure as "no cover". null = no such event.
+ */
+export async function coverRowForCampaign(admin: AdminClient, campaignId: string): Promise<CoverRow | null> {
+  const { data, error } = await admin
+    .from("campaigns")
+    .select("organization_id, cover_image_url, cover_position")
+    .eq("id", campaignId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as CoverRow | null) ?? null;
+}
+
+/** Apply the cover feature allowlist and bucket URL check to a cover row. */
+export function publicCoverFromRow(row: CoverRow | null): { url: string; position: string } | null {
+  if (!row || !isCoverImageEnabledForOrg(row.organization_id)) return null;
+  if (!isEventCoverUrl(row.cover_image_url)) return null;
+  return { url: row.cover_image_url, position: coverObjectPosition(row.cover_position) };
+}
+
 /**
  * Server-only: the event's cover URL and focal point if the cover feature is enabled
  * for its org and the URL is a valid cover in this project's bucket; otherwise null.
@@ -78,12 +106,5 @@ export async function publicCoverForCampaign(
     .select("organization_id, cover_image_url, cover_position")
     .eq("id", campaignId)
     .maybeSingle();
-  const row = data as {
-    organization_id: string | null;
-    cover_image_url: string | null;
-    cover_position: string | null;
-  } | null;
-  if (!row || !isCoverImageEnabledForOrg(row.organization_id)) return null;
-  if (!isEventCoverUrl(row.cover_image_url)) return null;
-  return { url: row.cover_image_url, position: coverObjectPosition(row.cover_position) };
+  return publicCoverFromRow((data as CoverRow | null) ?? null);
 }

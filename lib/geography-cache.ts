@@ -1,4 +1,4 @@
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { isRealOrgId, TEST_ORG_IDS, TEST_OWNER_EMAILS } from "@/lib/test-orgs";
 import {
@@ -14,12 +14,26 @@ export const GEOGRAPHY_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 /** Public homepage and founder metrics map endpoint. */
 export const GEOGRAPHY_PUBLIC_PATH = "/api/geography/public";
 /**
- * CDN header for the public map endpoint: fresh for 1h, then serve stale while
- * revalidating. The cron also calls revalidatePath right after it writes, so
- * both maps pick up the new row without waiting for the hour.
+ * CDN header for the public map endpoint: fresh for 6h, then served stale for
+ * up to 7 days while the CDN refreshes in the background. The map is a daily
+ * aggregate (cron at 8 AM Arizona), so it does not need to be real time; a
+ * longer window means the homepage almost never reaches Postgres. The cron
+ * also purges it right after it writes (revalidatePublicGeography), so a new
+ * row usually shows at once and is at most 6h late if that purge misses.
  */
 export const GEOGRAPHY_PUBLIC_CACHE_CONTROL =
-  "public, s-maxage=3600, stale-while-revalidate=86400";
+  "public, s-maxage=21600, stale-while-revalidate=604800";
+
+/**
+ * CDN header when the route had to serve the baked snapshot (cache row read
+ * slow, failed or empty). Short, so the next try at the database is at most
+ * 5 minutes away, but long enough that a stalled database is not hit again on
+ * every homepage view while it is struggling.
+ */
+export const GEOGRAPHY_FALLBACK_CACHE_CONTROL = "public, s-maxage=300";
+
+/** Vercel CDN cache tag on public map responses, purged by the cron writer. */
+export const GEOGRAPHY_CDN_TAG = "geography-public";
 
 /**
  * Give up on a slow geography_snapshot_cache read. Past this, the public
@@ -30,17 +44,27 @@ export const GEOGRAPHY_CACHE_READ_TIMEOUT_MS = 5_000;
 
 /**
  * Purge the cached public map response after the snapshot row changes so the
- * homepage and founder metrics map match right away. Never throws: a failed
- * purge must not fail the write; the 1h window covers it.
+ * homepage and founder metrics map match right away. revalidatePath covers the
+ * Next.js cache; the CDN copy (a force-dynamic route cached by Cache-Control)
+ * is purged through its Vercel-Cache-Tag. Never throws: a failed purge must
+ * not fail the write; the 6h window covers it.
  */
 export function revalidatePublicGeography(): boolean {
+  let ok = true;
   try {
     revalidatePath(GEOGRAPHY_PUBLIC_PATH);
-    return true;
   } catch (err) {
     console.warn("geography public revalidate failed:", err);
-    return false;
+    ok = false;
   }
+  try {
+    // "max": mark stale and refresh in the background, no stampede on purge.
+    revalidateTag(GEOGRAPHY_CDN_TAG, "max");
+  } catch (err) {
+    console.warn("geography CDN tag purge failed:", err);
+    ok = false;
+  }
+  return ok;
 }
 
 const POSTHOG_HOST =

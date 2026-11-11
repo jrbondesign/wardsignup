@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 import {
+  GEOGRAPHY_CDN_TAG,
+  GEOGRAPHY_FALLBACK_CACHE_CONTROL,
   GEOGRAPHY_PUBLIC_CACHE_CONTROL,
   resolveGeographyPayload,
 } from "@/lib/geography-cache";
@@ -7,10 +9,11 @@ import {
 export const maxDuration = 60;
 /**
  * Do not prerender. A build-time read of geography_snapshot_cache queries
- * production Supabase with no timeout and fails the Vercel build. CDN
- * freshness for a cache row stays on GEOGRAPHY_PUBLIC_CACHE_CONTROL
- * (s-maxage 3600, then stale-while-revalidate). The baked snapshot, an empty
- * city list, and a thrown error stay private, no-store.
+ * production Supabase with no timeout and fails the Vercel build. The CDN
+ * still caches the response: a cache row on GEOGRAPHY_PUBLIC_CACHE_CONTROL
+ * (6h, then stale-while-revalidate), the baked snapshot or an empty list on
+ * GEOGRAPHY_FALLBACK_CACHE_CONTROL (5 min). A thrown error stays private,
+ * no-store.
  */
 export const dynamic = "force-dynamic";
 
@@ -29,14 +32,16 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const payload = await resolveGeographyPayload();
-    // A snapshot fallback means the cache read missed or timed out. Do not
-    // pin that body at the CDN; the next request should try the database again.
-    const cacheable = payload.source === "cache" && payload.cities.length > 0;
+    // A snapshot fallback means the cache read missed or timed out. Keep it
+    // only briefly at the CDN so the database is retried within 5 minutes
+    // without every homepage view piling onto a stalled database.
+    const fromCacheRow = payload.source === "cache" && payload.cities.length > 0;
     return NextResponse.json(payload, {
       headers: {
-        "Cache-Control": cacheable
+        "Cache-Control": fromCacheRow
           ? GEOGRAPHY_PUBLIC_CACHE_CONTROL
-          : "private, no-store",
+          : GEOGRAPHY_FALLBACK_CACHE_CONTROL,
+        "Vercel-Cache-Tag": GEOGRAPHY_CDN_TAG,
       },
     });
   } catch (error) {

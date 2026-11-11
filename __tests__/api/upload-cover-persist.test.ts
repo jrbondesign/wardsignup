@@ -15,6 +15,10 @@ import { isEventCoverUrl } from "@/lib/event-media";
 jest.mock("@/lib/auth", () => ({ getAuthFromRequest: jest.fn() }));
 jest.mock("@/lib/campaign-access", () => ({ userCanAdminCampaign: jest.fn() }));
 jest.mock("@/lib/supabase-admin", () => ({ createServiceRoleClient: jest.fn() }));
+const mockRevalidateEventPage = jest.fn();
+jest.mock("@/lib/event-page-cache", () => ({
+  revalidateEventPage: (...a: unknown[]) => mockRevalidateEventPage(...a),
+}));
 
 const BASE = "https://qa.supabase.co";
 const USER = "qa-user";
@@ -133,6 +137,18 @@ describe("POST /api/upload cover persist lifecycle", () => {
   const log = jest.spyOn(console, "error").mockImplementation(() => {});
 
   afterAll(() => log.mockRestore());
+
+  beforeEach(() => mockRevalidateEventPage.mockReset());
+
+  it("expires the public event page cache only after the cover URL is saved", async () => {
+    setup();
+    expect((await POST(request())).status).toBe(200);
+    expect(mockRevalidateEventPage).toHaveBeenCalledWith(EVENT);
+    mockRevalidateEventPage.mockReset();
+    setup({ failPatch: "error" });
+    expect((await POST(request())).status).toBe(500);
+    expect(mockRevalidateEventPage).not.toHaveBeenCalled();
+  });
 
   it("valid cover lands in the event folder and passes the URL guard", async () => {
     const { upload, remove } = setup();

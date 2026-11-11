@@ -2,7 +2,7 @@ import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { loadPublicEventPage, type PublicEventClient, type PublicEventPageData } from "@/lib/public-event-page";
-import { publicCoverForCampaign } from "@/lib/event-media";
+import { coverRowForCampaign, publicCoverFromRow, type CoverRow } from "@/lib/event-media";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import type { PublicCover } from "@/lib/use-public-cover";
 import { EVENT_PAGE_CACHE_SECONDS, eventPageTag } from "@/lib/event-page-cache";
@@ -23,7 +23,9 @@ import { cleanEventId, isPublicEventUuid } from "@/lib/public-event-id";
  * The event page read is also shared across requests for
  * EVENT_PAGE_CACHE_SECONDS (tag eventPageTag(id)); signup, cancel and edit
  * routes expire it with revalidateEventPage. Failures throw inside the cache
- * so they are never stored.
+ * so they are never stored. The cover row is cached the same way under the
+ * same tag; the cover feature allowlist is applied after the cache so an env
+ * change takes effect on the next view.
  */
 
 export const SERVER_LOAD_TIMEOUT_MS = 1500;
@@ -69,6 +71,14 @@ function loadCachedEventSnapshot(eventId: string): Promise<ServerEventSnapshot |
   )(eventId);
 }
 
+function loadCachedCoverRow(eventId: string): Promise<CoverRow | null> {
+  return unstable_cache(
+    async (id: string): Promise<CoverRow | null> => coverRowForCampaign(createServiceRoleClient(), id),
+    ["public-event-cover-v1", eventId],
+    { revalidate: EVENT_PAGE_CACHE_SECONDS, tags: [eventPageTag(eventId)] }
+  )(eventId);
+}
+
 export const getServerEventSnapshot = cache(
   async (eventId: string): Promise<ServerEventSnapshot | null | undefined> => {
     const id = acceptedEventId(eventId);
@@ -93,7 +103,8 @@ export const getServerEventCover = cache(
     const id = acceptedEventId(eventId);
     if (!id) return null;
     try {
-      return await withTimeout(publicCoverForCampaign(createServiceRoleClient(), id), SERVER_LOAD_TIMEOUT_MS);
+      const row = await withTimeout(loadCachedCoverRow(id), SERVER_LOAD_TIMEOUT_MS);
+      return row === undefined ? undefined : publicCoverFromRow(row);
     } catch (err) {
       console.error("Server event cover load failed:", err);
       return undefined;

@@ -136,6 +136,9 @@ export async function POST(request: Request) {
         { status: 500 }
       );
     }
+    // The signup row exists now: expire the page cache right away so counts
+    // update even if a later step throws. Expired again below for the note.
+    revalidateEventPage(campaign_id);
 
     // Optional note + first-touch attribution in one non-critical update:
     // log failures but never fail the signup over them.

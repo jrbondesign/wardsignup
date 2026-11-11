@@ -3,8 +3,10 @@
  */
 
 const mockRevalidatePath = jest.fn();
+const mockRevalidateTag = jest.fn();
 jest.mock("next/cache", () => ({
   revalidatePath: (...args: unknown[]) => mockRevalidatePath(...args),
+  revalidateTag: (...args: unknown[]) => mockRevalidateTag(...args),
 }));
 
 const mockUpsert = jest.fn(async () => ({ error: null as null | { message: string } }));
@@ -31,6 +33,8 @@ jest.mock("@/lib/supabase-admin", () => ({
 }));
 
 import {
+  GEOGRAPHY_CDN_TAG,
+  GEOGRAPHY_FALLBACK_CACHE_CONTROL,
   GEOGRAPHY_CACHE_READ_TIMEOUT_MS,
   GEOGRAPHY_PUBLIC_CACHE_CONTROL,
   GEOGRAPHY_PUBLIC_PATH,
@@ -52,6 +56,7 @@ const city = {
 
 beforeEach(() => {
   mockRevalidatePath.mockReset();
+  mockRevalidateTag.mockReset();
   mockUpsert.mockClear();
   mockMaybeSingle.mockReset();
   mockMaybeSingle.mockResolvedValue({ data: null, error: null });
@@ -60,10 +65,14 @@ beforeEach(() => {
 });
 
 describe("public geography cache window", () => {
-  it("is 1h fresh with a 1 day stale window", () => {
+  it("is 6h fresh with a 7 day stale window", () => {
     expect(GEOGRAPHY_PUBLIC_CACHE_CONTROL).toBe(
-      "public, s-maxage=3600, stale-while-revalidate=86400",
+      "public, s-maxage=21600, stale-while-revalidate=604800",
     );
+  });
+
+  it("keeps a snapshot fallback for only 5 minutes", () => {
+    expect(GEOGRAPHY_FALLBACK_CACHE_CONTROL).toBe("public, s-maxage=300");
   });
 });
 
@@ -73,6 +82,7 @@ describe("writeGeographyCache", () => {
     expect(result.ok).toBe(true);
     expect(mockUpsert).toHaveBeenCalledTimes(1);
     expect(mockRevalidatePath).toHaveBeenCalledWith(GEOGRAPHY_PUBLIC_PATH);
+    expect(mockRevalidateTag).toHaveBeenCalledWith(GEOGRAPHY_CDN_TAG, "max");
     expect(GEOGRAPHY_PUBLIC_PATH).toBe("/api/geography/public");
   });
 
@@ -83,6 +93,7 @@ describe("writeGeographyCache", () => {
     err.mockRestore();
     expect(result.ok).toBe(false);
     expect(mockRevalidatePath).not.toHaveBeenCalled();
+    expect(mockRevalidateTag).not.toHaveBeenCalled();
   });
 
   it("still succeeds if revalidatePath throws", async () => {
@@ -97,6 +108,25 @@ describe("writeGeographyCache", () => {
 });
 
 describe("revalidatePublicGeography", () => {
+  it("purges both the Next.js path and the CDN tag", () => {
+    expect(revalidatePublicGeography()).toBe(true);
+    expect(mockRevalidatePath).toHaveBeenCalledWith(GEOGRAPHY_PUBLIC_PATH);
+    expect(mockRevalidateTag).toHaveBeenCalledWith("geography-public", "max");
+  });
+
+  it("still tries the CDN tag when revalidatePath throws, and never throws", () => {
+    mockRevalidatePath.mockImplementationOnce(() => {
+      throw new Error("not in a request scope");
+    });
+    mockRevalidateTag.mockImplementationOnce(() => {
+      throw new Error("no store");
+    });
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    expect(() => revalidatePublicGeography()).not.toThrow();
+    expect(mockRevalidateTag).toHaveBeenCalled();
+    warn.mockRestore();
+  });
+
   it("returns false when revalidatePath throws", () => {
     mockRevalidatePath.mockImplementationOnce(() => {
       throw new Error("not in a request scope");
