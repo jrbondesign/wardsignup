@@ -3,7 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { formatSessionSlotLabel } from "@/lib/organizer-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { captureServerException } from "@/lib/posthog-server";
-import { SIGNUP_TIMEOUT_MESSAGE, SupabaseTimeoutError, withSupabaseTimeout } from "@/lib/supabase-timeout";
+import { REQUEST_TIMEOUT_MESSAGE, SupabaseTimeoutError, withSupabaseTimeout } from "@/lib/supabase-timeout";
 
 export async function GET(request: NextRequest) {
   const token = request.nextUrl.searchParams.get("token")?.trim() ?? "";
@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
         route: "/api/signups/cancel/lookup",
         properties: { kind: "supabase_timeout" },
       });
-      return NextResponse.json({ error: SIGNUP_TIMEOUT_MESSAGE }, { status: 503 });
+      return NextResponse.json({ error: REQUEST_TIMEOUT_MESSAGE }, { status: 503 });
     }
     console.error("cancel/lookup:", error);
     captureServerException(error, { route: "/api/signups/cancel/lookup" });

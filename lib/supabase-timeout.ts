@@ -12,6 +12,10 @@ export const SUPABASE_TIMEOUT_MS = 10_000;
 export const SIGNUP_TIMEOUT_MESSAGE =
   "Signups are taking longer than usual. Please try again in a moment.";
 
+/** For reads after a signup already saved (confirmation or cancel lookup). */
+export const REQUEST_TIMEOUT_MESSAGE =
+  "This is taking longer than usual. Please try again in a moment.";
+
 export class SupabaseTimeoutError extends Error {
   constructor(label: string, ms: number) {
     super(`Supabase call timed out after ${ms}ms: ${label}`);
@@ -32,11 +36,15 @@ export function withSupabaseTimeout<T>(
   const controller = new AbortController();
   const work =
     typeof call === "function" ? Promise.resolve(call(controller.signal)) : Promise.resolve(call);
+  // If the timer wins, `work` may still reject (for example after abort).
+  // This handler keeps that from becoming an unhandledRejection.
+  work.catch(() => {});
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_, reject) => {
     timer = setTimeout(() => {
-      controller.abort();
+      // Reject the race first so an abort error from `work` cannot win.
       reject(new SupabaseTimeoutError(label, ms));
+      controller.abort();
     }, ms);
   });
   return Promise.race([work, timeout]).finally(() => clearTimeout(timer));

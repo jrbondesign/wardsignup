@@ -119,6 +119,16 @@ export function clearSignupIdempotencyMemory(): void {
   memory.clear();
 }
 
+export function signupIdempotencyMemorySize(): number {
+  return memory.size;
+}
+
+function pruneExpiredMemory(nowMs: number): void {
+  for (const [k, hit] of memory) {
+    if (hit.expiresAt < nowMs) memory.delete(k);
+  }
+}
+
 export function memoryIdempotencyStore(
   now: () => number = Date.now,
   ttlMs: number = SIGNUP_IDEMPOTENCY_MEMORY_TTL_MS,
@@ -134,7 +144,9 @@ export function memoryIdempotencyStore(
       return hit.value;
     },
     async set(key, value) {
-      memory.set(key, { value, expiresAt: now() + ttlMs });
+      const nowMs = now();
+      pruneExpiredMemory(nowMs);
+      memory.set(key, { value, expiresAt: nowMs + ttlMs });
     },
   };
 }
@@ -143,15 +155,29 @@ export function memoryIdempotencyStore(
  * If `key` was already completed in `store`, return that value and skip
  * `produce`. Otherwise run it once and remember the result.
  */
+const inflight = new Map<string, Promise<unknown>>();
+
 export async function withIdempotency<T>(
   key: string | null,
   store: IdempotencyStore,
   produce: () => Promise<T>,
 ): Promise<{ value: T; reused: boolean }> {
   if (!key) return { value: await produce(), reused: false };
+  const pending = inflight.get(key);
+  if (pending) return { value: (await pending) as T, reused: true };
   const existing = await store.get(key);
   if (existing !== undefined) return { value: existing as T, reused: true };
-  const value = await produce();
-  await store.set(key, value);
-  return { value, reused: false };
+  const pendingAfterGet = inflight.get(key);
+  if (pendingAfterGet) return { value: (await pendingAfterGet) as T, reused: true };
+  const run = (async () => {
+    const value = await produce();
+    await store.set(key, value);
+    return value;
+  })();
+  inflight.set(key, run);
+  try {
+    return { value: await run, reused: false };
+  } finally {
+    inflight.delete(key);
+  }
 }

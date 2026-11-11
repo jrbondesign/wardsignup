@@ -155,6 +155,9 @@ export async function POST(request: Request) {
     // update even if a later step throws. Expired again below after PostHog.
     revalidateEventPage(campaign_id);
 
+    const payload = { signup: data };
+    if (storeKey) await store.set(storeKey, payload);
+
     // Assigned-leader notification (fire-and-forget; never fails the signup).
     if (serviceKey && supabaseUrl) {
       // after() keeps the function alive past the response — a bare floating
@@ -217,8 +220,6 @@ export async function POST(request: Request) {
     });
 
     revalidateEventPage(campaign_id);
-    const payload = { signup: data };
-    if (storeKey) await store.set(storeKey, payload);
     return NextResponse.json(payload);
   } catch (err) {
     if (err instanceof SupabaseTimeoutError) {

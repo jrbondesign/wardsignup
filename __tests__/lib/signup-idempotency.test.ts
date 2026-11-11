@@ -4,6 +4,7 @@ import {
   findReusableEmailSignup,
   memoryIdempotencyStore,
   parseSignupIdempotencyKey,
+  signupIdempotencyMemorySize,
   withIdempotency,
 } from "@/lib/signup-idempotency";
 
@@ -84,5 +85,43 @@ describe("withIdempotency", () => {
     await withIdempotency("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", store, produce);
     await withIdempotency("bbbbbbbb-bbbb-4ccc-8ddd-eeeeeeeeeeee", store, produce);
     expect(produce).toHaveBeenCalledTimes(3);
+  });
+
+  it("runs produce only once when two calls overlap on the same key", async () => {
+    const store = memoryIdempotencyStore();
+    let releases: Array<() => void> = [];
+    const produce = jest.fn(
+      () =>
+        new Promise<{ signup_id: string }>((resolve) => {
+          releases.push(() => resolve({ signup_id: "s-overlap" }));
+        }),
+    );
+    const first = withIdempotency("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", store, produce);
+    // Let the first produce start and register inflight.
+    for (let i = 0; i < 10 && releases.length === 0; i++) {
+      await Promise.resolve();
+    }
+    const second = withIdempotency("aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee", store, produce);
+    expect(releases).toHaveLength(1);
+    releases[0]!();
+    await expect(first).resolves.toEqual({ value: { signup_id: "s-overlap" }, reused: false });
+    await expect(second).resolves.toEqual({ value: { signup_id: "s-overlap" }, reused: true });
+    expect(produce).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("memoryIdempotencyStore", () => {
+  beforeEach(() => clearSignupIdempotencyMemory());
+
+  it("evicts other expired keys when a new value is stored", async () => {
+    let nowMs = 1_000;
+    const store = memoryIdempotencyStore(() => nowMs, 100);
+    await store.set("old", { n: 1 });
+    expect(signupIdempotencyMemorySize()).toBe(1);
+    nowMs = 1_200;
+    await store.set("new", { n: 2 });
+    expect(signupIdempotencyMemorySize()).toBe(1);
+    expect(await store.get("old")).toBeUndefined();
+    expect(await store.get("new")).toEqual({ n: 2 });
   });
 });

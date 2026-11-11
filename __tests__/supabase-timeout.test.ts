@@ -30,4 +30,28 @@ describe("withSupabaseTimeout", () => {
     await check;
     expect(seen?.aborted).toBe(true);
   });
+
+  it("does not leave an unhandled rejection when the aborted call later fails", async () => {
+    jest.useFakeTimers();
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    try {
+      const p = withSupabaseTimeout((signal) => {
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(new Error("aborted")));
+        });
+      }, "slow", 10_000);
+      const check = expect(p).rejects.toBeInstanceOf(SupabaseTimeoutError);
+      await jest.advanceTimersByTimeAsync(10_000);
+      await check;
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(unhandled).toEqual([]);
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+    }
+  });
 });

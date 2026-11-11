@@ -152,6 +152,23 @@ export async function POST(request: Request) {
 
     // Sequential to surface per-slot capacity errors cleanly.
     for (const sessionId of sessionIds) {
+      if (storeKey) {
+        const cachedSlot = await store.get(`${storeKey}:${sessionId}`);
+        if (
+          cachedSlot &&
+          typeof cachedSlot === "object" &&
+          typeof (cachedSlot as { signup_id?: unknown }).signup_id === "string" &&
+          (cachedSlot as { signup_id: string }).signup_id
+        ) {
+          const reused = cachedSlot as ReusedSlot;
+          results.push(reused);
+          successfulSessionIds.push(sessionId);
+          if (reused.cancel_token) successfulCancelTokens.push(reused.cancel_token);
+          successfulSignupIds.push(reused.signup_id);
+          continue;
+        }
+      }
+
       if (isRetry && admin && normalizeEmail(member_email)) {
         const reused = await reuseEmailSignup(admin, sessionId, campaign_id, member_email);
         if (reused) {
@@ -200,6 +217,13 @@ export async function POST(request: Request) {
       successfulSessionIds.push(sessionId);
       if (cancelToken) successfulCancelTokens.push(cancelToken);
       if (signupId) successfulSignupIds.push(signupId);
+      if (storeKey && signupId) {
+        await store.set(`${storeKey}:${sessionId}`, {
+          session_id: sessionId,
+          signup_id: signupId,
+          cancel_token: cancelToken,
+        });
+      }
     }
 
     // Rows exist now: expire the page cache right away so counts update even

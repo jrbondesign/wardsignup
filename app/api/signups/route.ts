@@ -161,6 +161,12 @@ export async function POST(request: Request) {
     // update even if a later step throws. Expired again below for the note.
     revalidateEventPage(campaign_id);
 
+    // Remember the result before note/email/analytics work so a later stall
+    // still lets a same-isolate 503 retry return this row instead of inserting again.
+    const cancelToken = (data as Record<string, unknown>).cancel_token as string | null | undefined;
+    const payload = { signup: data, cancel_token: cancelToken ?? null };
+    if (storeKey) await store.set(storeKey, payload);
+
     // Optional note + first-touch attribution in one non-critical update:
     // log failures but never fail the signup over them.
     const signupId = (data as Record<string, unknown>).id as string | undefined;
@@ -187,8 +193,6 @@ export async function POST(request: Request) {
     const emailTrim =
       typeof member_email === "string" ? member_email.trim() : "";
     if (admin) {
-      // Extract cancel_token from the newly created signup row
-      const cancelToken = (data as Record<string, unknown>).cancel_token as string | null | undefined;
       // after() keeps the function alive past the response — a bare floating
       // promise can be frozen mid-send once the response is returned on Vercel.
       after(async () => {
@@ -279,10 +283,7 @@ export async function POST(request: Request) {
     // Keep the function alive until the event is delivered.
     after(() => posthog.flush());
 
-    const cancelToken = (data as Record<string, unknown>).cancel_token as string | null | undefined;
     revalidateEventPage(campaign_id);
-    const payload = { signup: data, cancel_token: cancelToken ?? null };
-    if (storeKey) await store.set(storeKey, payload);
     return NextResponse.json(payload);
   } catch (error) {
     if (error instanceof SupabaseTimeoutError) {
