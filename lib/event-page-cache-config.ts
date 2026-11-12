@@ -6,8 +6,9 @@
  * demand (revalidateEventPage), so organizer edits and signups show on the
  * next load. This window is only the safety net for a write that bypasses
  * those routes (a SQL edit in the Supabase dashboard, a migration, a cascade).
- * 5 minutes: views in a burst (a sheet link shared in a ward chat) cost one
- * read instead of one every 30 s, and a missed write is never more than
- * 5 minutes behind.
+ * Write paths already expire the per-event tag on demand, so this window is
+ * only the safety net. 15 minutes: a burst of views (a sheet link shared in a
+ * ward chat) costs one read, and a missed write is never more than 15 minutes
+ * behind.
  */
-export const EVENT_PAGE_CACHE_SECONDS = 300;
+export const EVENT_PAGE_CACHE_SECONDS = 900;
