@@ -1,6 +1,7 @@
 import {
   clearSignupIdempotencyMemory,
   findPublicItemSignupMatch,
+  isSignupRecoveryStatus,
   findReusableEmailItemSignup,
   findReusableEmailSignup,
   memoryIdempotencyStore,
@@ -163,6 +164,18 @@ describe("findPublicItemSignupMatch", () => {
         { itemId: "i1", memberName: "Alex Reed", quantity: 1 },
       ),
     ).toBeNull();
+  });
+});
+
+
+describe("isSignupRecoveryStatus", () => {
+  it("recovers only after a 5xx, not after a 4xx", () => {
+    expect(isSignupRecoveryStatus(503)).toBe(true);
+    expect(isSignupRecoveryStatus(500)).toBe(true);
+    expect(isSignupRecoveryStatus(409)).toBe(false);
+    expect(isSignupRecoveryStatus(429)).toBe(false);
+    expect(isSignupRecoveryStatus(400)).toBe(false);
+    expect(isSignupRecoveryStatus(403)).toBe(false);
   });
 });
 

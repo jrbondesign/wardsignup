@@ -19,6 +19,7 @@ import {
   customItemSignupIdempotencyStorageKey,
   findPublicItemSignupMatch,
   getOrCreateStoredSignupIdempotencyKey,
+  isSignupRecoveryStatus,
   itemSignupIdempotencyStorageKey,
   newSignupIdempotencyKey,
 } from "@/lib/signup-idempotency";
@@ -100,6 +101,8 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setItemSubmitting(true);
     setItemError("");
     let captchaUsed = false;
+    let res: Response | undefined;
+    let triedRecover = false;
     const storageKey = itemSignupIdempotencyStorageKey(eventId, itemId);
     const markItemSaved = () => {
       clearStoredSignupIdempotencyKey(storageKey);
@@ -127,7 +130,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
       const { getAttributionForSubmission } = await import("@/lib/attribution");
       const idempotencyKey = getOrCreateStoredSignupIdempotencyKey(storageKey);
       let attempt = 0;
-      const res = await fetchRetryOn503(async () => {
+      res = await fetchRetryOn503(async () => {
         if (attempt > 0 && itemCaptcha.enabled) itemCaptcha.reset();
         const captchaToken = await itemCaptcha.getToken();
         if (itemCaptcha.enabled && !captchaToken) throw new Error(itemCaptcha.missingMessage);
@@ -152,9 +155,12 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         });
       });
       if (!res.ok) {
-        if (await recoverIfAlreadySaved()) {
-          markItemSaved();
-          return;
+        if (isSignupRecoveryStatus(res.status)) {
+          triedRecover = true;
+          if (await recoverIfAlreadySaved()) {
+            markItemSaved();
+            return;
+          }
         }
         const d = await res.json();
         throw new Error(d.error || "Failed to sign up");
@@ -162,7 +168,10 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
       markItemSaved();
       fetchData();
     } catch (err: any) {
-      if (await recoverIfAlreadySaved()) {
+      // 4xx must keep the real error (full, disabled, validation). Recover
+      // only after a 5xx or a thrown network/timeout with no usable status.
+      const canRecover = !triedRecover && (!res || isSignupRecoveryStatus(res.status));
+      if (canRecover && await recoverIfAlreadySaved()) {
         markItemSaved();
         return;
       }
@@ -192,6 +201,8 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setCustomSubmitting(true);
     setCustomError("");
     let captchaUsed = false;
+    let res: Response | undefined;
+    let triedRecover = false;
     const storageKey = customItemSignupIdempotencyStorageKey(eventId);
     const markCustomSaved = () => {
       clearStoredSignupIdempotencyKey(storageKey);
@@ -213,7 +224,7 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
       const { getAttributionForSubmission } = await import("@/lib/attribution");
       const idempotencyKey = getOrCreateStoredSignupIdempotencyKey(storageKey);
       let attempt = 0;
-      const res = await fetchRetryOn503(async () => {
+      res = await fetchRetryOn503(async () => {
         if (attempt > 0 && customCaptcha.enabled) customCaptcha.reset();
         const captchaToken = await customCaptcha.getToken();
         if (customCaptcha.enabled && !captchaToken) throw new Error(customCaptcha.missingMessage);
@@ -237,9 +248,12 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         });
       });
       if (!res.ok) {
-        if (await recoverIfCustomAlreadySaved()) {
-          markCustomSaved();
-          return;
+        if (isSignupRecoveryStatus(res.status)) {
+          triedRecover = true;
+          if (await recoverIfCustomAlreadySaved()) {
+            markCustomSaved();
+            return;
+          }
         }
         const d = await res.json();
         throw new Error(d.error || "Failed to add your contribution");
@@ -247,7 +261,8 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
       markCustomSaved();
       fetchData();
     } catch (err: any) {
-      if (await recoverIfCustomAlreadySaved()) {
+      const canRecover = !triedRecover && (!res || isSignupRecoveryStatus(res.status));
+      if (canRecover && await recoverIfCustomAlreadySaved()) {
         markCustomSaved();
         return;
       }

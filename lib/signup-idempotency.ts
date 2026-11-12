@@ -186,6 +186,12 @@ export function findPublicItemSignupMatch(
   return null;
 }
 
+
+/** Refetch-and-recover only after a server or network failure, never a 4xx. */
+export function isSignupRecoveryStatus(status: number): boolean {
+  return status >= 500;
+}
+
 export function itemSignupIdempotencyStorageKey(eventId: string, itemId: string): string {
   return `ws-item-idempotency:${eventId}:${itemId}`;
 }

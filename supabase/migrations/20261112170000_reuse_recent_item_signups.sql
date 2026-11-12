@@ -66,6 +66,10 @@ BEGIN
     RAISE EXCEPTION 'CUSTOM_ITEMS_DISABLED';
   END IF;
 
+  -- Lock the item first, same order as the previous function, so concurrent
+  -- claims on one item stay serialized. Reuse must run after that lock and
+  -- before the capacity check: a retry for a row that already filled the
+  -- last spot would otherwise raise ITEM_FULL instead of returning the row.
   IF p_item_id IS NOT NULL THEN
     SELECT ci.campaign_id, ci.item_limit
       INTO item_campaign, item_cap
@@ -79,15 +83,6 @@ BEGIN
 
     IF item_campaign IS DISTINCT FROM p_campaign_id THEN
       RAISE EXCEPTION 'CAMPAIGN_MISMATCH';
-    END IF;
-
-    SELECT COALESCE(SUM(quantity), 0)::int
-      INTO claimed
-    FROM public.item_signups
-    WHERE item_id = p_item_id;
-
-    IF item_cap IS NOT NULL AND claimed + qty > item_cap THEN
-      RAISE EXCEPTION 'ITEM_FULL';
     END IF;
   END IF;
 
@@ -120,6 +115,17 @@ BEGIN
 
   IF FOUND THEN
     RETURN new_row;
+  END IF;
+
+  IF p_item_id IS NOT NULL THEN
+    SELECT COALESCE(SUM(quantity), 0)::int
+      INTO claimed
+    FROM public.item_signups
+    WHERE item_id = p_item_id;
+
+    IF item_cap IS NOT NULL AND claimed + qty > item_cap THEN
+      RAISE EXCEPTION 'ITEM_FULL';
+    END IF;
   END IF;
 
   INSERT INTO public.item_signups (

@@ -22,4 +22,18 @@ describe("reuse recent item signups migration", () => {
     expect(sql).toMatch(/IF FOUND THEN\s+RETURN new_row;/);
     expect(sql).toMatch(/INSERT INTO public\.item_signups/);
   });
+
+  it("looks for a reusable row after the item lock and before ITEM_FULL", () => {
+    const lockAt = sql.indexOf("FOR UPDATE");
+    const reuseAt = sql.indexOf("signed_up_at >= now() - interval '30 minutes'");
+    const returnAt = sql.indexOf("IF FOUND THEN");
+    const fullAt = sql.indexOf("RAISE EXCEPTION 'ITEM_FULL'");
+    const insertAt = sql.indexOf("INSERT INTO public.item_signups");
+    expect(lockAt).toBeGreaterThan(-1);
+    expect(reuseAt).toBeGreaterThan(lockAt);
+    expect(returnAt).toBeGreaterThan(reuseAt);
+    expect(fullAt).toBeGreaterThan(returnAt);
+    expect(fullAt).toBeGreaterThan(-1);
+    expect(insertAt).toBeGreaterThan(fullAt);
+  });
 });
