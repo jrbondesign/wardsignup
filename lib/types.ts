@@ -46,6 +46,9 @@ export interface Database {
           event_type: string;
           allow_guests: boolean;
           show_capacity_publicly: boolean;
+          /** Items events: show the "I'm also bringing…" write-in box. Absent until
+           *  migration 20261111210000 runs; treat missing or null as true. */
+          allow_custom_items?: boolean | null;
           list_on_directory: boolean;
           event_date: string | null;
           event_end_date: string | null;
@@ -84,6 +87,7 @@ export interface Database {
           event_type?: string;
           allow_guests?: boolean;
           show_capacity_publicly?: boolean;
+          allow_custom_items?: boolean;
           list_on_directory?: boolean;
           event_date?: string | null;
           event_end_date?: string | null;
@@ -117,6 +121,7 @@ export interface Database {
           event_type?: string;
           allow_guests?: boolean;
           show_capacity_publicly?: boolean;
+          allow_custom_items?: boolean;
           list_on_directory?: boolean;
           event_date?: string | null;
           event_end_date?: string | null;
@@ -570,6 +575,8 @@ export interface Database {
           show_signups_publicly: boolean;
           allow_guests: boolean;
           show_capacity_publicly: boolean;
+          /** Missing before migration 20261111210000; treat as true. */
+          allow_custom_items?: boolean | null;
         }[];
       };
       create_signup_if_capacity: {

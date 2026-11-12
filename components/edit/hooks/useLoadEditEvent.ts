@@ -14,6 +14,8 @@ export function useLoadEditEvent(ctx: EditEventState) {
     error,
     eventId,
     setAllowGuests,
+    setAllowCustomItems,
+    setAllowCustomItemsSupported,
     setCalendarId,
     setCalendarLastError,
     setCalendarLastSyncedAt,
@@ -105,6 +107,10 @@ export function useLoadEditEvent(ctx: EditEventState) {
         setAllowGuests(ag == null ? true : Boolean(ag));
         const scp = (event as any).show_capacity_publicly;
         setShowCapacityPublicly(scp == null ? true : Boolean(scp));
+        // select("*") only returns allow_custom_items once the migration ran.
+        const aci = (event as any).allow_custom_items;
+        setAllowCustomItemsSupported(aci !== undefined);
+        setAllowCustomItems(aci !== false);
         
         // Load calendar sync settings
         const { data: calSyncData } = await supabase

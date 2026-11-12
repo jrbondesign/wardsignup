@@ -36,6 +36,10 @@ export function useEditEventState() {
   const [registrationOpen, setRegistrationOpen] = useState(false);
   const [allowGuests, setAllowGuests] = useState(true);
   const [showCapacityPublicly, setShowCapacityPublicly] = useState(true);
+  // Items events: "I'm also bringing…" write-in box. Supported = the loaded
+  // campaigns row has the column (migration 20261111210000 applied).
+  const [allowCustomItems, setAllowCustomItems] = useState(true);
+  const [allowCustomItemsSupported, setAllowCustomItemsSupported] = useState(false);
   const [leaderName, setLeaderName] = useState("");
   const [leaderEmail, setLeaderEmail] = useState("");
   // Debounce leader-field auto-save so we don't PATCH on every keystroke.
@@ -258,6 +262,10 @@ export function useEditEventState() {
     setAllowGuests,
     showCapacityPublicly,
     setShowCapacityPublicly,
+    allowCustomItems,
+    setAllowCustomItems,
+    allowCustomItemsSupported,
+    setAllowCustomItemsSupported,
     leaderName,
     setLeaderName,
     leaderEmail,

@@ -22,7 +22,23 @@ export interface PublicEventRow {
   show_signups_publicly?: boolean | null;
   allow_guests?: boolean | null;
   show_capacity_publicly?: boolean | null;
+  /** Items events: write-in box on/off. Missing until migration 20261111210000. */
+  allow_custom_items?: boolean | null;
   [key: string]: unknown;
+}
+
+/** Shown when a write-in reaches the server after the organizer turned them off. */
+export const CUSTOM_ITEMS_DISABLED_MESSAGE =
+  "The organizer isn't taking extra items for this event. Please pick something from the list.";
+
+/**
+ * Whether attendees may add their own write-in items ("I'm also bringing…").
+ * Only an explicit false turns it off: a database that has not run the
+ * allow_custom_items migration returns no such field, and existing events
+ * default to on.
+ */
+export function customItemsAllowed(event: { allow_custom_items?: unknown } | null | undefined): boolean {
+  return event?.allow_custom_items !== false;
 }
 
 export interface PublicCustomSignup {

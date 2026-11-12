@@ -6,6 +6,7 @@ import { createHash } from "crypto";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { orgIdForCampaign } from "@/lib/analytics-context";
 import { getClientIp } from "@/lib/request-ip";
+import { CUSTOM_ITEMS_DISABLED_MESSAGE } from "@/lib/public-event-page";
 import { verifyTurnstile, turnstileRejectionMessage } from "@/lib/turnstile";
 import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
@@ -140,6 +141,9 @@ export async function POST(request: Request) {
       }
       if (msg.includes("CAMPAIGN_MISMATCH")) {
         return NextResponse.json({ error: "Item not found" }, { status: 404 });
+      }
+      if (msg.includes("CUSTOM_ITEMS_DISABLED")) {
+        return NextResponse.json({ error: CUSTOM_ITEMS_DISABLED_MESSAGE, custom_items_disabled: true }, { status: 403 });
       }
       if (msg.includes("ITEM_FULL")) {
         return NextResponse.json({ error: "This item is already full" }, { status: 409 });
