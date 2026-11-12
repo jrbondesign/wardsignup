@@ -86,7 +86,8 @@ describe("customItemsAllowed", () => {
 describe("public items page", () => {
   it("hides the add form but keeps existing write-ins when the organizer turned it off", async () => {
     await renderPage(false, { custom: [PIE] });
-    expect(screen.getByText(/also bringing/)).toBeInTheDocument();
+    expect(screen.getByText(/^Also bringing$/)).toBeInTheDocument();
+    expect(screen.queryByText(/^I'm also bringing…$/)).not.toBeInTheDocument();
     expect(screen.getByText("Carin Hiatt")).toBeInTheDocument();
     expect(screen.getByText(/A pumpkin pie/)).toBeInTheDocument();
     expect(screen.getByText(/homemade/)).toBeInTheDocument();
@@ -111,13 +112,16 @@ describe("public items page", () => {
 
   it.each([true, null, "missing" as const])("shows the write-in box when the setting is %p", async (allow) => {
     await renderPage(allow);
-    expect(screen.getByText(/also bringing/)).toBeInTheDocument();
+    expect(screen.getByText(/^I'm also bringing…$/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Also bringing$/)).not.toBeInTheDocument();
     expect(screen.getByText("Add my contribution")).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/trailer/)).toBeInTheDocument();
   });
 
   it("still shows existing write-ins and the add form when the setting is on", async () => {
     await renderPage(true, { custom: [PIE] });
+    expect(screen.getByText(/^I'm also bringing…$/)).toBeInTheDocument();
+    expect(screen.queryByText(/^Also bringing$/)).not.toBeInTheDocument();
     expect(screen.getByText("Carin Hiatt")).toBeInTheDocument();
     expect(screen.getByText(/A pumpkin pie/)).toBeInTheDocument();
     expect(screen.getByText("Add my contribution")).toBeInTheDocument();

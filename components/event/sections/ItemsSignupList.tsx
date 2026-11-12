@@ -238,7 +238,9 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
       {(showCustomItems || showCustomList) && (
       <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden">
         <div className="px-5 py-4 border-b border-[#0E96B0]/8">
-          <div className="font-semibold text-[15px] text-[#0D2B35]">I&apos;m also bringing…</div>
+          <div className="font-semibold text-[15px] text-[#0D2B35]">
+            {showCustomItems ? <>I&apos;m also bringing…</> : "Also bringing"}
+          </div>
           {showCustomItems && (
           <div className="text-xs text-[#5A8399] mt-0.5">
             Got something not on the list? Add it here so the organizer knows.
