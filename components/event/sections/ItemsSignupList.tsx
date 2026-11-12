@@ -37,6 +37,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
   const itemLock = useRef(false);
   const customLock = useRef(false);
   const showCustomItems = customItemsAllowed(event);
+  const showCustomList = showSignupsPublicly && customSignups.length > 0;
 
   return (
     eventType === "items" && (
@@ -232,17 +233,22 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
         })
       )}
 
-      {/* Custom write-in: "I'm also bringing…" (organizer can turn it off) */}
-      {showCustomItems && (
+      {/* Custom write-ins stay visible when the organizer turns the box off;
+          only the add form is hidden. With none already added, render nothing. */}
+      {(showCustomItems || showCustomList) && (
       <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden">
         <div className="px-5 py-4 border-b border-[#0E96B0]/8">
-          <div className="font-semibold text-[15px] text-[#0D2B35]">I&apos;m also bringing…</div>
+          <div className="font-semibold text-[15px] text-[#0D2B35]">
+            {showCustomItems ? <>I&apos;m also bringing…</> : "Also bringing"}
+          </div>
+          {showCustomItems && (
           <div className="text-xs text-[#5A8399] mt-0.5">
             Got something not on the list? Add it here so the organizer knows.
           </div>
+          )}
         </div>
-        {showSignupsPublicly && customSignups.length > 0 && (
-          <div className="px-5 py-3 border-b border-[#0E96B0]/8 space-y-1">
+        {showCustomList && (
+          <div className={`px-5 py-3 space-y-1${showCustomItems ? " border-b border-[#0E96B0]/8" : ""}`}>
             {customSignups.map((sig) => (
               <div key={sig.id} className="text-xs text-[#2E5566]">
                 <span className="font-medium">{sig.member_name}</span>
@@ -252,6 +258,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
             ))}
           </div>
         )}
+        {showCustomItems && (
         <form
           onSubmit={(e) => {
             if (!beginSubmit(customLock, e)) return;
@@ -306,6 +313,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
             {customSubmitting ? "Adding…" : "Add my contribution"}
           </button>
         </form>
+        )}
       </div>
       )}
     </div>
