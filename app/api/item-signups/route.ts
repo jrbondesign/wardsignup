@@ -2,13 +2,12 @@ import { captureServerException } from "@/lib/posthog-server";
 import { NextResponse, after } from "next/server";
 import { revalidateEventPage } from "@/lib/event-page-cache";
 import { createClient } from "@supabase/supabase-js";
-import { createHash } from "crypto";
 import { getPostHogClient } from "@/lib/posthog-server";
 import { orgIdForCampaign } from "@/lib/analytics-context";
 import { getClientIp } from "@/lib/request-ip";
 import { CUSTOM_ITEMS_DISABLED_MESSAGE } from "@/lib/public-event-page";
 import { verifyTurnstile, turnstileRejectionMessage } from "@/lib/turnstile";
-import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
+import { consumeSignupRate, SIGNUP_RATE_LIMITED_MESSAGE } from "@/lib/signup-rate-limit";
 import { sendLeaderSignupNotification, type LeaderCampaignEmailFields } from "@/lib/leader-email";
 import { SIGNUP_TIMEOUT_MESSAGE, SupabaseTimeoutError, withSupabaseTimeout } from "@/lib/supabase-timeout";
 import {
@@ -18,11 +17,6 @@ import {
 } from "@/lib/signup-idempotency";
 
 export const maxDuration = 30;
-
-function hashIp(ip: string): string {
-  const salt = process.env.RATE_LIMIT_IP_SALT || "wardsignup_signup_rate";
-  return createHash("sha256").update(`${salt}:${ip}`).digest("hex");
-}
 
 /** POST /api/item-signups — public signup for a campaign item */
 export async function POST(request: Request) {
@@ -52,45 +46,16 @@ export async function POST(request: Request) {
       }
     }
 
-    // Rate limiting — same bucket as session signups to share quota across both types
+    // Rate limiting — same in-memory bucket as session and bulk signups.
+    // Errors fail open inside consumeSignupRate so a limiter bug cannot
+    // block a real claim (and cannot 503 the request the way the old
+    // Postgres RPC did when it stalled).
+    if (!consumeSignupRate(request).allowed) {
+      return NextResponse.json({ error: SIGNUP_RATE_LIMITED_MESSAGE }, { status: 429 });
+    }
+
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    if (serviceKey && supabaseUrl) {
-      const admin = createClient(supabaseUrl, serviceKey);
-      const ip = getClientIp(request);
-      const bucket = new Date();
-      bucket.setMinutes(0, 0, 0);
-      let allowed: boolean | null = true;
-      try {
-        const rate = await withSupabaseTimeout(
-          (signal) =>
-            admin.rpc("try_consume_signup_rate", {
-              p_ip_hash: hashIp(ip),
-              p_bucket: bucket.toISOString(),
-              p_max: getSignupRateLimitPerIpPerHour(),
-            } as never).abortSignal(signal),
-          "try_consume_signup_rate",
-        );
-        if (rate.error) {
-          console.error("Item signup rate limit RPC error:", rate.error);
-        } else {
-          allowed = rate.data as boolean | null;
-        }
-      } catch (err) {
-        // A stall here used to abort the whole signup with 503, even though
-        // the rate-limit RPC error path already fails open. If the later
-        // insert still commits after a timeout, failing closed also left the
-        // client free to insert a second row on retry.
-        if (!(err instanceof SupabaseTimeoutError)) throw err;
-        console.error("Item signup rate limit timed out; continuing:", err.message);
-      }
-      if (allowed === false) {
-        return NextResponse.json(
-          { error: "Too many signups from this network. Please try again later." },
-          { status: 429 }
-        );
-      }
-    }
 
     const { item_id, campaign_id, member_name, member_email, signup_note } = body;
     const rawQuantity = body.quantity;

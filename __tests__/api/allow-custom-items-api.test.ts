@@ -10,6 +10,7 @@ import { NextRequest } from "next/server";
 import { POST } from "@/app/api/item-signups/route";
 import { PATCH } from "@/app/api/events/[id]/route";
 import { clearSignupIdempotencyMemory } from "@/lib/signup-idempotency";
+import { clearSignupRateLimitMemory } from "@/lib/signup-rate-limit";
 import { getAuthFromRequest } from "@/lib/auth";
 import { userCanAdminCampaign } from "@/lib/campaign-access";
 import { CUSTOM_ITEMS_DISABLED_MESSAGE } from "@/lib/public-event-page";
@@ -69,6 +70,7 @@ describe("POST /api/item-signups with the write-in switch", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     clearSignupIdempotencyMemory();
+    clearSignupRateLimitMemory();
     process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
   });

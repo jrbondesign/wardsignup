@@ -6,6 +6,7 @@ import { POST } from "@/app/api/item-signups/route";
 import { NextRequest } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { clearSignupIdempotencyMemory } from "@/lib/signup-idempotency";
+import { clearSignupRateLimitMemory, SIGNUP_RATE_LIMITED_MESSAGE } from "@/lib/signup-rate-limit";
 
 const mockRpc = jest.fn();
 
@@ -46,6 +47,7 @@ describe("/api/item-signups", () => {
     jest.clearAllMocks();
     jest.useRealTimers();
     clearSignupIdempotencyMemory();
+    clearSignupRateLimitMemory();
     mockFrom.mockImplementation(emptyFrom);
     process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role";
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
@@ -119,7 +121,7 @@ describe("/api/item-signups", () => {
     expect(response.status).toBe(503);
   });
 
-  it("returns a cached signup on retry without hitting the rate-limit RPC", async () => {
+  it("returns a cached signup on retry without another insert", async () => {
     const key = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
     const first = await POST(new NextRequest("http://localhost:3000/api/item-signups", {
       method: "POST",
@@ -132,8 +134,8 @@ describe("/api/item-signups", () => {
       }),
     }));
     expect(first.status).toBe(200);
-    const rateCalls = mockRpc.mock.calls.filter((c) => c[0] === "try_consume_signup_rate").length;
-    expect(rateCalls).toBe(1);
+    expect(mockRpc).toHaveBeenCalledTimes(1);
+    expect(mockRpc.mock.calls[0][0]).toBe("create_item_signup_if_capacity");
 
     mockRpc.mockImplementation(() => new Promise(() => {}));
     const second = await POST(new NextRequest("http://localhost:3000/api/item-signups", {
@@ -149,7 +151,7 @@ describe("/api/item-signups", () => {
     }));
     expect(second.status).toBe(200);
     expect((await second.json()).signup.member_name).toBe("Pat");
-    expect(mockRpc).toHaveBeenCalledTimes(rateCalls + 1); // first request: rate + create only
+    expect(mockRpc).toHaveBeenCalledTimes(1);
   });
 
   it("does not insert when a retry's email lookup times out", async () => {
@@ -210,28 +212,30 @@ describe("/api/item-signups", () => {
     expect(mockRpc.mock.calls.some((c) => c[0] === "create_item_signup_if_capacity")).toBe(false);
   });
 
-  it("continues to create the signup when the rate-limit RPC times out", async () => {
-    jest.useFakeTimers();
-    mockRpc.mockImplementation((name: string) => {
-      if (name === "try_consume_signup_rate") return new Promise(() => {});
-      return Promise.resolve({
-        data: { id: "is-after-rate-timeout", campaign_id: "c1", member_name: "Pat", quantity: 1 },
-        error: null,
-      });
-    });
-
-    const pending = POST(new NextRequest("http://localhost:3000/api/item-signups", {
-      method: "POST",
-      body: JSON.stringify({
-        campaign_id: "c1",
-        item_id: "item-1",
-        member_name: "Pat",
-      }),
-    }));
-    await jest.advanceTimersByTimeAsync(10_000);
-    const response = await pending;
-    expect(response.status).toBe(200);
-    expect((await response.json()).signup.id).toBe("is-after-rate-timeout");
-    expect(mockRpc.mock.calls.some((c) => c[0] === "create_item_signup_if_capacity")).toBe(true);
+  it("returns 429 when the in-memory signup rate limit is exhausted", async () => {
+    const previous = process.env.SIGNUP_RATE_LIMIT_PER_IP_PER_HOUR;
+    process.env.SIGNUP_RATE_LIMIT_PER_IP_PER_HOUR = "1";
+    const body = {
+      campaign_id: "c1",
+      item_id: "item-1",
+      member_name: "Pat",
+    };
+    try {
+      const first = await POST(new NextRequest("http://localhost:3000/api/item-signups", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }));
+      expect(first.status).toBe(200);
+      const second = await POST(new NextRequest("http://localhost:3000/api/item-signups", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }));
+      expect(second.status).toBe(429);
+      expect((await second.json()).error).toBe(SIGNUP_RATE_LIMITED_MESSAGE);
+      expect(mockRpc.mock.calls.filter((c) => c[0] === "create_item_signup_if_capacity")).toHaveLength(1);
+    } finally {
+      if (previous === undefined) delete process.env.SIGNUP_RATE_LIMIT_PER_IP_PER_HOUR;
+      else process.env.SIGNUP_RATE_LIMIT_PER_IP_PER_HOUR = previous;
+    }
   });
 });

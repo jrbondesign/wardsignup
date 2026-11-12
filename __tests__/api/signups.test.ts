@@ -5,6 +5,7 @@
 import { POST } from "@/app/api/signups/route";
 import { NextRequest } from "next/server";
 import { createSignupIfCapacityRpc } from "@/lib/supabase";
+import { clearSignupRateLimitMemory } from "@/lib/signup-rate-limit";
 
 // after() needs a Next request scope; run callbacks inline instead.
 jest.mock("next/server", () => ({
@@ -36,6 +37,7 @@ const mockRpc = createSignupIfCapacityRpc as unknown as jest.Mock;
 
 describe("/api/signups", () => {
   beforeEach(() => {
+    clearSignupRateLimitMemory();
     jest.clearAllMocks();
   });
 
