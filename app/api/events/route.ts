@@ -162,6 +162,10 @@ export async function POST(request: Request) {
       allow_guests: resolvedAllowGuests,
       show_capacity_publicly: resolvedShowCapacity,
       list_on_directory: resolvedListOnDirectory,
+      // New events always show the "I'm also bringing…" box. Organizers can
+      // turn it off later in the editor. Ignore any client-supplied value so
+      // a create cannot start with the box off.
+      allow_custom_items: true,
       event_date: eventDateValue,
       event_end_date: eventEndDateValue,
       organization_id: org.id,

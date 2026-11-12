@@ -1,7 +1,8 @@
 /**
  * Organizer switch for the "I'm also bringing…" write-in box on items events.
- * Off hides the box; on, null, or missing (database without the migration)
- * keeps it, so existing events and pre-migration deploys are unchanged.
+ * Off hides the add form but keeps any write-ins people already added on the
+ * public list. On, null, or missing (database without the migration) keeps
+ * the form, so existing events and pre-migration deploys are unchanged.
  */
 import { readFileSync, readdirSync } from "fs";
 import path from "path";
@@ -26,24 +27,39 @@ import { getDefaultPublicBrand } from "@/lib/brand";
 
 const ID = "33333333-3333-3333-3333-333333333333";
 
-function payload(allow: boolean | null | "missing"): PublicEventPagePayload {
+const PIE = {
+  id: "cs1",
+  item_id: null,
+  member_name: "Carin Hiatt",
+  custom_label: "A pumpkin pie",
+  signup_note: "homemade",
+  quantity: 1,
+};
+
+function payload(
+  allow: boolean | null | "missing",
+  opts: { custom?: typeof PIE[]; showPublicly?: boolean } = {},
+): PublicEventPagePayload {
   const event: Record<string, unknown> = {
     id: ID,
     name: "Ward Potluck",
     description: null,
     event_type: "items",
-    show_signups_publicly: true,
+    show_signups_publicly: opts.showPublicly ?? true,
   };
   if (allow !== "missing") event.allow_custom_items = allow;
   return {
     event: event as never,
     items: [{ id: "i1", campaign_id: ID, label: "Rolls", item_limit: 5, section: null, sort_order: 1, created_at: "" }] as never,
-    item_signups: [],
+    item_signups: opts.custom ?? [],
   };
 }
 
-async function renderPage(allow: boolean | null | "missing") {
-  const page = buildPublicEventPage(payload(allow))!;
+async function renderPage(
+  allow: boolean | null | "missing",
+  opts: { custom?: typeof PIE[]; showPublicly?: boolean } = {},
+) {
+  const page = buildPublicEventPage(payload(allow, opts))!;
   render(
     <BrandProvider brand={getDefaultPublicBrand()}>
       <EventPageClient eventId={ID} initialPage={page} initialCover={null} />
@@ -68,8 +84,27 @@ describe("customItemsAllowed", () => {
 });
 
 describe("public items page", () => {
-  it("hides the write-in box when the organizer turned it off", async () => {
+  it("hides the add form but keeps existing write-ins when the organizer turned it off", async () => {
+    await renderPage(false, { custom: [PIE] });
+    expect(screen.getByText(/also bringing/)).toBeInTheDocument();
+    expect(screen.getByText("Carin Hiatt")).toBeInTheDocument();
+    expect(screen.getByText(/A pumpkin pie/)).toBeInTheDocument();
+    expect(screen.getByText(/homemade/)).toBeInTheDocument();
+    expect(screen.queryByText("Add my contribution")).not.toBeInTheDocument();
+    expect(screen.queryByPlaceholderText(/trailer/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/What will you bring/)).not.toBeInTheDocument();
+  });
+
+  it("renders nothing extra when it is off and nobody has added a write-in", async () => {
     await renderPage(false);
+    expect(screen.queryByText(/also bringing/)).not.toBeInTheDocument();
+    expect(screen.queryByText("Add my contribution")).not.toBeInTheDocument();
+  });
+
+  it("renders nothing extra when it is off and write-ins are not shown publicly", async () => {
+    await renderPage(false, { custom: [PIE], showPublicly: false });
+    expect(screen.queryByText("Carin Hiatt")).not.toBeInTheDocument();
+    expect(screen.queryByText(/A pumpkin pie/)).not.toBeInTheDocument();
     expect(screen.queryByText(/also bringing/)).not.toBeInTheDocument();
     expect(screen.queryByText("Add my contribution")).not.toBeInTheDocument();
   });
@@ -78,6 +113,15 @@ describe("public items page", () => {
     await renderPage(allow);
     expect(screen.getByText(/also bringing/)).toBeInTheDocument();
     expect(screen.getByText("Add my contribution")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/trailer/)).toBeInTheDocument();
+  });
+
+  it("still shows existing write-ins and the add form when the setting is on", async () => {
+    await renderPage(true, { custom: [PIE] });
+    expect(screen.getByText("Carin Hiatt")).toBeInTheDocument();
+    expect(screen.getByText(/A pumpkin pie/)).toBeInTheDocument();
+    expect(screen.getByText("Add my contribution")).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/trailer/)).toBeInTheDocument();
   });
 });
 
@@ -103,5 +147,46 @@ describe("editor toggle", () => {
       .filter((f) => /\.tsx?$/.test(f) && !f.endsWith("AllowCustomItemsToggle.tsx"))
       .filter((f) => readFileSync(path.join(dir, f), "utf8").includes("<AllowCustomItemsToggle"));
     expect(users).toEqual([path.join("sections", "EditItemsEvent.tsx")]);
+  });
+});
+
+describe("default stays on for new events", () => {
+  it("the create API always writes true, even if a client sends false", () => {
+    const src = readFileSync(path.join(__dirname, "..", "app/api/events/route.ts"), "utf8");
+    expect(src).toMatch(/allow_custom_items:\s*true/);
+    expect(src).not.toMatch(/allow_custom_items:\s*resolved|allow_custom_items:\s*body/);
+  });
+
+  it("duplicating an event copies the source, treating missing or null as on", () => {
+    const src = readFileSync(path.join(__dirname, "..", "app/api/events/[id]/duplicate/route.ts"), "utf8");
+    expect(src).toMatch(/allow_custom_items:\s*source\.allow_custom_items !== false/);
+  });
+
+  it("create form, templates, and presets never turn the box off", () => {
+    const roots = [
+      path.join(__dirname, "..", "components/create"),
+      path.join(__dirname, "..", "lib/event-presets.ts"),
+      path.join(__dirname, "..", "lib/event-template-data.ts"),
+      path.join(__dirname, "..", "lib/create-form-state.ts"),
+      path.join(__dirname, "..", "packages/mcp/src/tools"),
+    ];
+    const files: string[] = [];
+    function walk(p: string) {
+      const st = require("fs").statSync(p);
+      if (st.isDirectory()) {
+        for (const f of readdirSync(p, { recursive: true }) as string[]) {
+          const full = path.join(p, f);
+          if (/\.(ts|tsx)$/.test(full) && require("fs").statSync(full).isFile()) files.push(full);
+        }
+      } else {
+        files.push(p);
+      }
+    }
+    roots.forEach(walk);
+    expect(files.length).toBeGreaterThan(0);
+    for (const f of files) {
+      const src = readFileSync(f, "utf8");
+      expect(src).not.toMatch(/allow_custom_items\s*:\s*false/);
+    }
   });
 });
