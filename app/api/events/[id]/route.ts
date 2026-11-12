@@ -120,6 +120,7 @@ export async function PATCH(
       body.show_signups_publicly !== undefined ||
       body.allow_guests !== undefined ||
       body.show_capacity_publicly !== undefined ||
+      body.allow_custom_items !== undefined ||
       body.list_on_directory !== undefined ||
       body.leader_name !== undefined ||
       body.leader_email !== undefined;
@@ -200,6 +201,10 @@ export async function PATCH(
 
     if (body.show_capacity_publicly !== undefined) {
       updates.show_capacity_publicly = Boolean(body.show_capacity_publicly);
+    }
+
+    if (body.allow_custom_items !== undefined) {
+      updates.allow_custom_items = Boolean(body.allow_custom_items);
     }
 
     if (body.list_on_directory !== undefined) {
@@ -374,6 +379,14 @@ export async function PATCH(
       .single();
 
     if (updateError) {
+      // Database without the allow_custom_items migration yet (PostgREST
+      // PGRST204: unknown column). Say so plainly instead of a generic 500.
+      if ("allow_custom_items" in updates && (updateError as { code?: string }).code === "PGRST204") {
+        return NextResponse.json(
+          { error: "This setting isn't available yet. Please try again later." },
+          { status: 409 }
+        );
+      }
       console.error("Error updating event:", updateError);
       return NextResponse.json(
         { error: "Failed to update event" },

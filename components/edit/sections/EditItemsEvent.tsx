@@ -16,10 +16,14 @@ import { ITEMS_TIME_PARTIAL_ERROR, endTimeNote, isItemsTimeError } from "@/lib/u
 import ItemsSection from "@/components/create/sections/ItemsSection";
 import { INITIAL_FORM_STATE } from "@/lib/create-form-state";
 import { type EditEventCtx } from "@/components/edit/hooks/useEditEvent";
+import AllowCustomItemsToggle from "@/components/edit/sections/AllowCustomItemsToggle";
 
 /** Editor for items (potluck-style) events. */
 export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
   const {
+    allowCustomItems,
+    allowCustomItemsSupported,
+    saveAllowCustomItems,
     coverPosition,
     coverPreview,
     coverUploading,
@@ -259,6 +263,11 @@ export default function EditItemsEvent({ ctx }: { ctx: EditEventCtx }) {
             <div className="bg-[#E6F7FB] border border-[rgba(14,150,176,0.18)] rounded-xl px-[18px] py-[14px] text-sm leading-relaxed text-[#2E5566] mb-6">
               <strong className="text-[#0D2B35] font-semibold">Tip:</strong>{" "}Press <kbd className="bg-white border border-[rgba(14,150,176,0.22)] rounded px-1 py-0.5 text-xs font-mono">Enter</kbd> in any item field to quickly add the next row.
             </div>
+            <AllowCustomItemsToggle
+              supported={allowCustomItemsSupported}
+              checked={allowCustomItems}
+              onChange={saveAllowCustomItems}
+            />
             {optionalSettingsEl("items", false)}
           </div>
           </div>{/* end p-4 md:p-8 */}

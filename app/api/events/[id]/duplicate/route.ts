@@ -129,6 +129,9 @@ export async function POST(
       event_type: source.event_type,
       allow_guests: source.allow_guests,
       show_capacity_publicly: source.show_capacity_publicly,
+      // Only sent when off: the column is absent before migration
+      // 20261111210000, and the database default (true) covers the rest.
+      ...(source.allow_custom_items === false ? { allow_custom_items: false } : {}),
       list_on_directory: source.list_on_directory,
       event_date: shiftNullableYmd(source.event_date, shiftDays),
       event_end_date: source.event_type === "rsvp" ? shiftNullableYmd(source.event_end_date, shiftDays) : null,

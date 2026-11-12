@@ -6,6 +6,7 @@ import { beginSubmit, finishSubmit } from "@/lib/one-submit";
 import EmailTypoHint from "@/components/EmailTypoHint";
 import SignupCaptcha from "@/components/event/SignupCaptcha";
 import { type EventPageView } from "@/components/event/hooks/deriveEventPageView";
+import { customItemsAllowed } from "@/lib/public-event-page";
 
 /** Item list and custom-item form for items events. */
 export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
@@ -15,6 +16,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
     customItem,
     customSignups,
     customSubmitting,
+    event,
     eventType,
     expandedItem,
     handleCustomItemSignup,
@@ -34,6 +36,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
   } = ctx;
   const itemLock = useRef(false);
   const customLock = useRef(false);
+  const showCustomItems = customItemsAllowed(event);
 
   return (
     eventType === "items" && (
@@ -229,7 +232,8 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
         })
       )}
 
-      {/* Custom write-in: "I'm also bringing…" */}
+      {/* Custom write-in: "I'm also bringing…" (organizer can turn it off) */}
+      {showCustomItems && (
       <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden">
         <div className="px-5 py-4 border-b border-[#0E96B0]/8">
           <div className="font-semibold text-[15px] text-[#0D2B35]">I&apos;m also bringing…</div>
@@ -303,6 +307,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
           </button>
         </form>
       </div>
+      )}
     </div>
   )
   );

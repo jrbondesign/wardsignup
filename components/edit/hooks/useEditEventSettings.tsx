@@ -10,6 +10,7 @@ import { type EditEventState } from "./useEditEventState";
 /** Auto-saved settings, cover image and organizer report actions. */
 export function useEditEventSettings(ctx: EditEventState) {
   const {
+    allowCustomItems,
     allowGuests,
     calendarId,
     calendarLastError,
@@ -30,6 +31,7 @@ export function useEditEventSettings(ctx: EditEventState) {
     organizationId,
     registrationOpen,
     sendingReport,
+    setAllowCustomItems,
     setAllowGuests,
     setCalendarId,
     setCalendarLastError,
@@ -74,6 +76,7 @@ export function useEditEventSettings(ctx: EditEventState) {
     leader_email?: string | null;
     allow_guests?: boolean;
     show_capacity_publicly?: boolean;
+    allow_custom_items?: boolean;
   }) => {
     const supabase = createClientComponentClient();
     const {
@@ -181,6 +184,20 @@ export function useEditEventSettings(ctx: EditEventState) {
       });
     }
     handleLeaderPatch(patch);
+  };
+
+  /** Items events: "Let people add their own items" (auto-saved like the other settings). */
+  const saveAllowCustomItems = (next: boolean) => {
+    const prev = allowCustomItems;
+    setAllowCustomItems(next);
+    setSettingsStatus("saving");
+    patchCampaignFields({ allow_custom_items: next })
+      .then(() => setSettingsStatus("saved"))
+      .catch((err: unknown) => {
+        setAllowCustomItems(prev);
+        setSettingsStatus("error");
+        alert(err instanceof Error ? err.message : "Could not save");
+      });
   };
 
   const optionalSettingsState = (eventType: CreateFormState["eventType"]): CreateFormState => ({
@@ -340,6 +357,7 @@ export function useEditEventSettings(ctx: EditEventState) {
 
   return {
     patchCampaignFields,
+    saveAllowCustomItems,
     handleLeaderPatch,
     applyCalendarFormPatch,
     applyOptionalSettingsPatch,
