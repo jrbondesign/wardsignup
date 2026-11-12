@@ -1,5 +1,7 @@
 import {
   clearSignupIdempotencyMemory,
+  findPublicItemSignupMatch,
+  isSignupRecoveryStatus,
   findReusableEmailItemSignup,
   findReusableEmailSignup,
   memoryIdempotencyStore,
@@ -40,10 +42,35 @@ describe("findReusableEmailSignup", () => {
     expect(findReusableEmailSignup([row], { sessionId: "s1", memberEmail: "other@example.com", now })).toBeNull();
   });
 
-  it("does not reuse the same name when there is no email", () => {
-    const named = { session_id: "s1", member_email: null, signed_up_at: row.signed_up_at, id: "signup-2" };
+  it("reuses a recent exact name on the same slot when there is no email", () => {
+    const named = {
+      session_id: "s1",
+      member_email: null,
+      member_name: "Alex Reed",
+      signed_up_at: row.signed_up_at,
+      id: "signup-2",
+    };
+    expect(
+      findReusableEmailSignup([named], { sessionId: "s1", memberEmail: "", memberName: "alex reed", now })?.id,
+    ).toBe("signup-2");
+  });
+
+  it("does not reuse a name-only match without a name, on a different name, or after the window", () => {
+    const named = {
+      session_id: "s1",
+      member_email: null,
+      member_name: "Alex Reed",
+      signed_up_at: row.signed_up_at,
+      id: "signup-2",
+    };
     expect(findReusableEmailSignup([named], { sessionId: "s1", memberEmail: "", now })).toBeNull();
-    expect(findReusableEmailSignup([named], { sessionId: "s1", memberEmail: null, now })).toBeNull();
+    expect(
+      findReusableEmailSignup([named], { sessionId: "s1", memberEmail: "", memberName: "Jordan Reed", now }),
+    ).toBeNull();
+    const stale = { ...named, signed_up_at: "2026-11-11T16:00:00Z" };
+    expect(
+      findReusableEmailSignup([stale], { sessionId: "s1", memberEmail: "", memberName: "Alex Reed", now }),
+    ).toBeNull();
   });
 
   it("ignores stale rows and other slots", () => {
@@ -62,6 +89,93 @@ describe("findReusableEmailItemSignup", () => {
   it("does not reuse a different item", () => {
     const row = { item_id: "i1", custom_label: null, member_email: "a@b.c", signed_up_at: "2026-11-11T17:59:00Z" };
     expect(findReusableEmailItemSignup([row], { itemId: "i2", memberEmail: "a@b.c", now })).toBeNull();
+  });
+
+  it("reuses a recent no-email item signup with the same name and quantity", () => {
+    const row = {
+      item_id: "i1",
+      custom_label: null,
+      member_email: null,
+      member_name: "Alex Reed",
+      quantity: 1,
+      signed_up_at: "2026-11-11T17:59:00Z",
+    };
+    expect(
+      findReusableEmailItemSignup([row], {
+        itemId: "i1",
+        memberEmail: "",
+        memberName: "alex reed",
+        quantity: 1,
+        now,
+      }),
+    ).toEqual(row);
+  });
+
+  it("does not reuse a no-email item signup with a different quantity or name", () => {
+    const row = {
+      item_id: "i1",
+      custom_label: null,
+      member_email: null,
+      member_name: "Alex Reed",
+      quantity: 1,
+      signed_up_at: "2026-11-11T17:59:00Z",
+    };
+    expect(
+      findReusableEmailItemSignup([row], {
+        itemId: "i1",
+        memberEmail: "",
+        memberName: "Alex Reed",
+        quantity: 2,
+        now,
+      }),
+    ).toBeNull();
+    expect(
+      findReusableEmailItemSignup([row], {
+        itemId: "i1",
+        memberEmail: "",
+        memberName: "Jordan Reed",
+        quantity: 1,
+        now,
+      }),
+    ).toBeNull();
+  });
+});
+
+describe("findPublicItemSignupMatch", () => {
+  const rows = [
+    { item_id: "i1", member_name: "Alex Reed", signup_note: "I can bake pies", quantity: 1 },
+    { item_id: "i2", member_name: "Alex Reed", signup_note: null, quantity: 1 },
+  ];
+  it("finds the public row for the same item, name, and quantity", () => {
+    expect(
+      findPublicItemSignupMatch(rows, {
+        itemId: "i1",
+        memberName: "alex reed",
+        quantity: 1,
+        signupNote: "I can bake pies",
+      }),
+    ).toEqual(rows[0]);
+  });
+  it("ignores hidden names and other items", () => {
+    expect(findPublicItemSignupMatch(rows, { itemId: "i1", memberName: "Alex Reed", quantity: 2 })).toBeNull();
+    expect(
+      findPublicItemSignupMatch(
+        [{ item_id: "i1", member_name: "", quantity: 1 }],
+        { itemId: "i1", memberName: "Alex Reed", quantity: 1 },
+      ),
+    ).toBeNull();
+  });
+});
+
+
+describe("isSignupRecoveryStatus", () => {
+  it("recovers only after a 5xx, not after a 4xx", () => {
+    expect(isSignupRecoveryStatus(503)).toBe(true);
+    expect(isSignupRecoveryStatus(500)).toBe(true);
+    expect(isSignupRecoveryStatus(409)).toBe(false);
+    expect(isSignupRecoveryStatus(429)).toBe(false);
+    expect(isSignupRecoveryStatus(400)).toBe(false);
+    expect(isSignupRecoveryStatus(403)).toBe(false);
   });
 });
 
