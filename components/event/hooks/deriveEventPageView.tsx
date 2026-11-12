@@ -14,7 +14,14 @@ import {
 import { formatSessionSlotLabel } from "@/lib/slot-label";
 import { saveSignupSuccessInfo } from "@/lib/signup-success-handoff";
 import { fetchRetryOn503 } from "@/lib/fetch-retry-503";
-import { newSignupIdempotencyKey } from "@/lib/signup-idempotency";
+import {
+  clearStoredSignupIdempotencyKey,
+  customItemSignupIdempotencyStorageKey,
+  findPublicItemSignupMatch,
+  getOrCreateStoredSignupIdempotencyKey,
+  itemSignupIdempotencyStorageKey,
+  newSignupIdempotencyKey,
+} from "@/lib/signup-idempotency";
 
 export type LoadedEventPageCtx = Omit<EventPageCtx, "event"> & { event: NonNullable<EventPageCtx["event"]> };
 
@@ -93,9 +100,32 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setItemSubmitting(true);
     setItemError("");
     let captchaUsed = false;
+    const storageKey = itemSignupIdempotencyStorageKey(eventId, itemId);
+    const markItemSaved = () => {
+      clearStoredSignupIdempotencyKey(storageKey);
+      posthog?.capture("item_signup_completed", buildFunnelProps(funnelCtx, { item_id: itemId, has_email: Boolean(itemFormData.email.trim()), quantity: itemFormData.quantity }));
+      setItemSuccess(true);
+      setItemFormData({ name: "", email: "", note: "", quantity: 1 });
+      setExpandedItem(null);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    const recoverIfAlreadySaved = async () => {
+      const page = await fetchData();
+      const signups = (page?.items ?? []).flatMap((item) =>
+        (item.item_signups ?? []).map((row) => ({ ...row, item_id: item.id })),
+      );
+      return Boolean(
+        findPublicItemSignupMatch(signups, {
+          itemId,
+          memberName: itemFormData.name,
+          quantity: itemFormData.quantity,
+          signupNote: itemFormData.note,
+        }),
+      );
+    };
     try {
       const { getAttributionForSubmission } = await import("@/lib/attribution");
-      const idempotencyKey = newSignupIdempotencyKey();
+      const idempotencyKey = getOrCreateStoredSignupIdempotencyKey(storageKey);
       let attempt = 0;
       const res = await fetchRetryOn503(async () => {
         if (attempt > 0 && itemCaptcha.enabled) itemCaptcha.reset();
@@ -122,16 +152,20 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         });
       });
       if (!res.ok) {
+        if (await recoverIfAlreadySaved()) {
+          markItemSaved();
+          return;
+        }
         const d = await res.json();
         throw new Error(d.error || "Failed to sign up");
       }
-      posthog?.capture("item_signup_completed", buildFunnelProps(funnelCtx, { item_id: itemId, has_email: Boolean(itemFormData.email.trim()), quantity: itemFormData.quantity }));
-      setItemSuccess(true);
-      setItemFormData({ name: "", email: "", note: "", quantity: 1 });
-      setExpandedItem(null);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      markItemSaved();
       fetchData();
     } catch (err: any) {
+      if (await recoverIfAlreadySaved()) {
+        markItemSaved();
+        return;
+      }
       setItemError(err.message || "Failed to sign up. Please try again.");
     } finally {
       // Turnstile tokens are single use: get a fresh one for the next try.
@@ -158,9 +192,26 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
     setCustomSubmitting(true);
     setCustomError("");
     let captchaUsed = false;
+    const storageKey = customItemSignupIdempotencyStorageKey(eventId);
+    const markCustomSaved = () => {
+      clearStoredSignupIdempotencyKey(storageKey);
+      posthog?.capture("item_signup_completed", buildFunnelProps(funnelCtx, { custom: true }));
+      setCustomItem({ label: "", name: "", note: "" });
+    };
+    const recoverIfCustomAlreadySaved = async () => {
+      const page = await fetchData();
+      const name = customItem.name.trim().toLowerCase();
+      const label = customItem.label.trim();
+      if (!name || !label) return false;
+      return (page?.customSignups ?? []).some(
+        (row) =>
+          (row.member_name ?? "").trim().toLowerCase() === name &&
+          (row.custom_label ?? "").trim() === label,
+      );
+    };
     try {
       const { getAttributionForSubmission } = await import("@/lib/attribution");
-      const idempotencyKey = newSignupIdempotencyKey();
+      const idempotencyKey = getOrCreateStoredSignupIdempotencyKey(storageKey);
       let attempt = 0;
       const res = await fetchRetryOn503(async () => {
         if (attempt > 0 && customCaptcha.enabled) customCaptcha.reset();
@@ -186,13 +237,20 @@ export function deriveEventPageView(ctx: LoadedEventPageCtx) {
         });
       });
       if (!res.ok) {
+        if (await recoverIfCustomAlreadySaved()) {
+          markCustomSaved();
+          return;
+        }
         const d = await res.json();
         throw new Error(d.error || "Failed to add your contribution");
       }
-      posthog?.capture("item_signup_completed", buildFunnelProps(funnelCtx, { custom: true }));
-      setCustomItem({ label: "", name: "", note: "" });
+      markCustomSaved();
       fetchData();
     } catch (err: any) {
+      if (await recoverIfCustomAlreadySaved()) {
+        markCustomSaved();
+        return;
+      }
       setCustomError(err.message || "Failed to add your contribution");
     } finally {
       if (captchaUsed) customCaptcha.reset();

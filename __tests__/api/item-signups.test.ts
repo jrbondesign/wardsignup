@@ -177,4 +177,61 @@ describe("/api/item-signups", () => {
     expect((await response.json()).error).toMatch(/try again/i);
     expect(mockRpc.mock.calls.some((c) => c[0] === "create_item_signup_if_capacity")).toBe(false);
   });
+
+  it("reuses a recent no-email signup with the same name on retry instead of inserting", async () => {
+    const existing = {
+      id: "is-existing",
+      item_id: "item-1",
+      custom_label: null,
+      member_email: null,
+      member_name: "Alex Reed",
+      quantity: 1,
+      signed_up_at: new Date().toISOString(),
+    };
+    mockFrom.mockImplementation(() => {
+      const q: Record<string, unknown> = {};
+      for (const m of ["select", "eq", "gte", "abortSignal"]) q[m] = () => q;
+      q.then = (res: (v: unknown) => unknown) => Promise.resolve({ data: [existing], error: null }).then(res);
+      return q;
+    });
+
+    const response = await POST(new NextRequest("http://localhost:3000/api/item-signups", {
+      method: "POST",
+      body: JSON.stringify({
+        campaign_id: "c1",
+        item_id: "item-1",
+        member_name: "Alex Reed",
+        quantity: 1,
+        signup_retry: true,
+      }),
+    }));
+    expect(response.status).toBe(200);
+    expect((await response.json()).signup.id).toBe("is-existing");
+    expect(mockRpc.mock.calls.some((c) => c[0] === "create_item_signup_if_capacity")).toBe(false);
+  });
+
+  it("continues to create the signup when the rate-limit RPC times out", async () => {
+    jest.useFakeTimers();
+    mockRpc.mockImplementation((name: string) => {
+      if (name === "try_consume_signup_rate") return new Promise(() => {});
+      return Promise.resolve({
+        data: { id: "is-after-rate-timeout", campaign_id: "c1", member_name: "Pat", quantity: 1 },
+        error: null,
+      });
+    });
+
+    const pending = POST(new NextRequest("http://localhost:3000/api/item-signups", {
+      method: "POST",
+      body: JSON.stringify({
+        campaign_id: "c1",
+        item_id: "item-1",
+        member_name: "Pat",
+      }),
+    }));
+    await jest.advanceTimersByTimeAsync(10_000);
+    const response = await pending;
+    expect(response.status).toBe(200);
+    expect((await response.json()).signup.id).toBe("is-after-rate-timeout");
+    expect(mockRpc.mock.calls.some((c) => c[0] === "create_item_signup_if_capacity")).toBe(true);
+  });
 });

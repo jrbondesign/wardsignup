@@ -60,18 +60,31 @@ export async function POST(request: Request) {
       const ip = getClientIp(request);
       const bucket = new Date();
       bucket.setMinutes(0, 0, 0);
-      const { data: allowed, error: rateErr } = await withSupabaseTimeout(
-        (signal) =>
-          admin.rpc("try_consume_signup_rate", {
-            p_ip_hash: hashIp(ip),
-            p_bucket: bucket.toISOString(),
-            p_max: getSignupRateLimitPerIpPerHour(),
-          } as never).abortSignal(signal),
-        "try_consume_signup_rate",
-      );
-      if (rateErr) {
-        console.error("Item signup rate limit RPC error:", rateErr);
-      } else if (allowed === false) {
+      let allowed: boolean | null = true;
+      try {
+        const rate = await withSupabaseTimeout(
+          (signal) =>
+            admin.rpc("try_consume_signup_rate", {
+              p_ip_hash: hashIp(ip),
+              p_bucket: bucket.toISOString(),
+              p_max: getSignupRateLimitPerIpPerHour(),
+            } as never).abortSignal(signal),
+          "try_consume_signup_rate",
+        );
+        if (rate.error) {
+          console.error("Item signup rate limit RPC error:", rate.error);
+        } else {
+          allowed = rate.data as boolean | null;
+        }
+      } catch (err) {
+        // A stall here used to abort the whole signup with 503, even though
+        // the rate-limit RPC error path already fails open. If the later
+        // insert still commits after a timeout, failing closed also left the
+        // client free to insert a second row on retry.
+        if (!(err instanceof SupabaseTimeoutError)) throw err;
+        console.error("Item signup rate limit timed out; continuing:", err.message);
+      }
+      if (allowed === false) {
         return NextResponse.json(
           { error: "Too many signups from this network. Please try again later." },
           { status: 429 }
@@ -112,7 +125,15 @@ export async function POST(request: Request) {
     const admin = createClient(supabaseUrl, serviceKey);
 
     if (isRetry) {
-      const reused = await reuseEmailItemSignup(admin, campaign_id, item_id || null, rawCustomLabel || null, member_email);
+      const reused = await reuseEmailItemSignup(
+        admin,
+        campaign_id,
+        item_id || null,
+        rawCustomLabel || null,
+        member_email,
+        member_name,
+        quantity,
+      );
       if (reused) {
         const payload = { signup: reused };
         if (storeKey) await store.set(storeKey, payload);
@@ -246,12 +267,14 @@ async function reuseEmailItemSignup(
   itemId: string | null,
   customLabel: string | null,
   memberEmail: unknown,
+  memberName: unknown,
+  quantity: number,
 ): Promise<Record<string, unknown> | null> {
   // A timeout or lookup error must not fall through to another insert: the
   // first attempt may already have committed. The route catch returns 503.
   const q = admin
     .from("item_signups")
-    .select("id, item_id, custom_label, member_email, signed_up_at, member_name")
+    .select("id, item_id, custom_label, member_email, member_name, quantity, signed_up_at")
     .eq("campaign_id", campaignId)
     .gte("signed_up_at", new Date(Date.now() - 30 * 60_000).toISOString());
   const { data } = await withSupabaseTimeout<{ data: unknown[] | null }>(
@@ -262,7 +285,9 @@ async function reuseEmailItemSignup(
     item_id?: string | null;
     custom_label?: string | null;
     member_email?: string | null;
+    member_name?: string | null;
+    quantity?: number | null;
     signed_up_at: string;
-  }>, { itemId, customLabel, memberEmail });
+  }>, { itemId, customLabel, memberEmail, memberName, quantity });
   return row ? (row as unknown as Record<string, unknown>) : null;
 }

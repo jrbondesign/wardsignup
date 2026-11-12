@@ -3,7 +3,7 @@
 import { sessionLastDate } from "@/lib/calendar-times";
 import { useCallback, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { loadPublicEventPage, type PublicEventClient } from "@/lib/public-event-page";
+import { loadPublicEventPage, type PublicEventPageData, type PublicEventClient } from "@/lib/public-event-page";
 import { type SessionWithSignups } from "@/components/event/event-page-shared";
 import { type EventPageInit, type EventPageState } from "./useEventPageState";
 import { EVENT_PAGE_CACHE_SECONDS } from "@/lib/event-page-cache-config";
@@ -94,7 +94,7 @@ export function useEventPageData(ctx: EventPageState, init: EventPageInit = {}) 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- setters come from useEventPageState and are stable
   }, []);
 
-  const fetchData = useCallback(async (opts?: { background?: boolean }) => {
+  const fetchData = useCallback(async (opts?: { background?: boolean }): Promise<PublicEventPageData | null> => {
     try {
       // One RPC (get_public_event_page) when the database has it, else the old
       // public RPC + parallel table/view reads. Public safe fields only.
@@ -113,7 +113,7 @@ export function useEventPageData(ctx: EventPageState, init: EventPageInit = {}) 
         setItems(page.items);
         setCustomSignups(page.customSignups);
         setEvent(eventData);
-        return;
+        return page;
       }
 
       const mergedSessions = page.sessions;
@@ -121,10 +121,12 @@ export function useEventPageData(ctx: EventPageState, init: EventPageInit = {}) 
       setSessions(mergedSessions);
 
       applyBrowserOnlyState(mergedSessions);
+      return page;
     } catch (err) {
       console.error("Error fetching data:", err);
       // A failed background refresh keeps the server rendered data on screen.
       if (!opts?.background) setError("Failed to load event");
+      return null;
     } finally {
       setLoading(false);
     }
