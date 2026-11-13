@@ -96,6 +96,25 @@ describe("Create form Continue with an incomplete date range", () => {
     expect(calendar).not.toHaveClass("ws-date-range-error");
   });
 
+  it("brings the date range error back on Continue after only a start is picked", async () => {
+    const user = userEvent.setup();
+    render(<UnifiedCreateForm initialTemplateKey="tithing-declaration" />);
+    const continueBtn = screen.getByRole("button", { name: /Continue/ });
+
+    await user.click(continueBtn);
+    expect(screen.getByTestId("date-range-missing-error")).toBeInTheDocument();
+
+    await user.click(dayButton(16));
+    expect(screen.queryByTestId("date-range-missing-error")).not.toBeInTheDocument();
+
+    await user.click(continueBtn);
+    const calendar = document.getElementById("create-date-range-calendar")!;
+    expect(screen.getByTestId("date-range-missing-error")).toBeInTheDocument();
+    expect(calendar).toHaveClass("ws-date-range-error");
+    expect(calendar.getAttribute("aria-describedby")).toBe("create-date-range-calendar-error");
+    expect(calendar.getAttribute("aria-invalid")).toBe("true");
+  });
+
   it("shows the Schedule card in the neutral slots wording", () => {
     render(<UnifiedCreateForm initialTemplateKey="tithing-declaration" />);
     expect(

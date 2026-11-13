@@ -145,7 +145,7 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
           {/* Session duration (match create) */}
           <div>
             <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">
-              Session Duration
+              Slot length
             </label>
             <div className="flex gap-2 flex-wrap">
               {DURATION_PRESETS.map((mins) => (
