@@ -10,6 +10,7 @@ import { type EditEventSettings } from "./useEditEventSettings";
 import { type ScheduleBuilders } from "./useScheduleBuilders";
 import { type SlotActions } from "./useSlotActions";
 import { ITEMS_TIME_ORDER_ERROR, ITEMS_TIME_PARTIAL_ERROR, focusTimeRow, isEndSameAsStart, subtreeHasInvalidTimeSelect } from "@/lib/utils";
+import { savedSlotsToast } from "@/lib/edit-replace-copy";
 
 /** Saves the schedule (with destructive-delete guard) and items events. */
 export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & ScheduleBuilders & SlotActions) {
@@ -27,6 +28,7 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
     itemsList,
     loadedSessionIds,
     pendingDeleteSessionIdsRef,
+    pendingReplaceCount,
     router,
     sessions,
     setCapacityInputDraft,
@@ -36,6 +38,7 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
     setItemsSaving,
     setLastSavedAt,
     setLoadedSessionIds,
+    setPendingReplaceCount,
     setSavedSnapshot,
     setSaving,
     setSessions,
@@ -155,7 +158,7 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
             .from("sessions")
             .upsert(stripSortOrder(toUpsert as unknown as Record<string, unknown>[]) as any, { onConflict: "id" }));
         }
-        if (upsertError) throw new Error("Failed to update sessions");
+        if (upsertError) throw new Error("Failed to update slots");
       }
 
       const toInsert = normalizedSessions
@@ -182,13 +185,13 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
             .from("sessions")
             .insert(stripSortOrder(toInsert as unknown as Record<string, unknown>[]) as any));
         }
-        if (insertError) throw new Error("Failed to create new sessions");
+        if (insertError) throw new Error("Failed to create new slots");
       }
 
       if (toDeleteIds.length > 0) {
         slotWriteAttempted = true;
         const { error: deleteError } = await supabase.from("sessions").delete().in("id", toDeleteIds);
-        if (deleteError) throw new Error("Failed to delete removed sessions");
+        if (deleteError) throw new Error("Failed to delete removed slots");
       }
 
       const { data: reloadedSessions, error: reloadErr } = await supabase
@@ -198,7 +201,7 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
         .order("created_at", { ascending: true })
         .order("id", { ascending: true });
 
-      if (reloadErr) throw new Error("Failed to reload sessions");
+      if (reloadErr) throw new Error("Failed to reload slots");
 
       const mapped = mapDbSessionsToState(reloadedSessions || []);
       setSessions(mapped);
@@ -230,7 +233,12 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
       }
 
       setLastSavedAt(new Date());
-      setToastMessage("Changes saved");
+      if (pendingReplaceCount != null) {
+        setToastMessage(savedSlotsToast(mapped.length));
+        setPendingReplaceCount(null);
+      } else {
+        setToastMessage("Changes saved");
+      }
       setShowToast(true);
       setSaving(false);
     } catch (error: any) {

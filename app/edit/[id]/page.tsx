@@ -18,6 +18,7 @@ import DeleteSessionsConfirmDialog from "@/components/edit/sections/DeleteSessio
 import DayActionMenu from "@/components/edit/sections/DayActionMenu";
 import SectionActionMenu from "@/components/edit/sections/SectionActionMenu";
 import SlotActionMenu from "@/components/edit/sections/SlotActionMenu";
+import { saveSlotsButtonLabel } from "@/lib/edit-replace-copy";
 
 
 export default function EditEventPage() {
@@ -34,6 +35,7 @@ export default function EditEventPage() {
     lastSavedAt,
     loading,
     optionalSettingsEl,
+    pendingReplaceCount,
     router,
     savedSnapshot,
     saving,
@@ -287,7 +289,7 @@ export default function EditEventPage() {
                 : "bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(14,150,176,0.40)]"
             }`}
           >
-            {saving ? "Saving…" : "Save Changes"}
+            {saving ? "Saving…" : pendingReplaceCount != null ? saveSlotsButtonLabel(sessions.length) : "Save Changes"}
           </button>
         </div>
       </div>

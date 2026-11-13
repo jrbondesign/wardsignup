@@ -242,6 +242,12 @@ describe("5 and 6. tithing window guards", () => {
     expect(apply()).toBeEnabled();
   });
 
+  it("shows the Slot length label, not Session Duration", async () => {
+    await renderForm(ctx({}));
+    expect(screen.getByText("Slot length")).toBeInTheDocument();
+    expect(screen.queryByText("Session Duration")).not.toBeInTheDocument();
+  });
+
   it.each([
     ["equal", "09:00", "End time can't be the same as start time."],
     ["overnight", "01:00", "Appointment hours can't run past midnight. Pick an end time after the start time."],

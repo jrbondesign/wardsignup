@@ -22,7 +22,7 @@ export default function RescheduleConfirmDialog({ ctx }: { ctx: EditEventCtx }) 
         </div>
         <h2 className="font-serif text-[20px] text-[#0D2B35] text-center mb-2">Signups will be lost</h2>
         <p className="text-sm text-[#5A8399] text-center mb-6">
-          This event has <span className="font-semibold text-[#0D2B35]">{signupCount} signup{signupCount !== 1 ? 's' : ''}</span> that will be permanently removed when sessions are replaced. This cannot be undone.
+          This event has <span className="font-semibold text-[#0D2B35]">{signupCount} signup{signupCount !== 1 ? 's' : ''}</span> that will be permanently removed when slots are replaced. This cannot be undone.
         </p>
         <div className="flex gap-3">
           <button

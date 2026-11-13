@@ -110,7 +110,7 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
         </div>
         {!isTithingReschedule && (
           <p className="text-[12px] text-[#5A8399] mt-2">
-            Sessions will be created only on these days within the date range.
+            Slots will be created only on these days within the date range.
           </p>
         )}
       </div>
@@ -145,7 +145,7 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
           {/* Session duration (match create) */}
           <div>
             <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-2">
-              Session Duration
+              Slot length
             </label>
             <div className="flex gap-2 flex-wrap">
               {DURATION_PRESETS.map((mins) => (
@@ -196,7 +196,7 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
               Spots available
             </label>
             <p className="text-[12px] text-[#5A8399] mb-2">
-              How many people or families can sign up for this session?
+              How many people or families can sign up for this slot?
             </p>
             <input
               type="number"
@@ -237,7 +237,7 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
               Spots available
             </label>
             <p className="text-[12px] text-[#5A8399] mb-2">
-              How many people or families can sign up for this session?
+              How many people or families can sign up for this slot?
             </p>
             <input
               type="number"
@@ -323,7 +323,7 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
               if (rescheduleDays.length === 0) return "Choose days of week to generate slots.";
               const dayCount = countDaysInRange(rescheduleStart, rescheduleEnd, rescheduleDays);
               return dayCount > 0
-                ? `${dayCount} session${dayCount !== 1 ? "s" : ""} will be created: ${formatTimeRange(rescheduleTime, rescheduleEndTime, { clock: "12h" })}.`
+                ? `${dayCount} slot${dayCount !== 1 ? "s" : ""} will be created: ${formatTimeRange(rescheduleTime, rescheduleEndTime, { clock: "12h" })}.`
                 : "Choose a date range and days of week to generate slots.";
             })()
           : "Choose a date range to see a preview."}

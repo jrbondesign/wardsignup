@@ -53,7 +53,7 @@ export default function SessionsHeader({ ctx }: { ctx: EditEventCtx }) {
                   }}
                   className="w-full text-left px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors"
                 >
-                  Add one session
+                  Add one slot
                   <div className="text-[11px] text-[#5A8399] mt-0.5">Pick a single date or day-of-week</div>
                 </button>
                 <button
@@ -72,7 +72,7 @@ export default function SessionsHeader({ ctx }: { ctx: EditEventCtx }) {
                   }}
                   className="w-full text-left px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors"
                 >
-                  Add multiple sessions
+                  Add multiple slots
                   <div className="text-[11px] text-[#5A8399] mt-0.5">Same time &amp; details across several days</div>
                 </button>
               </div>
@@ -98,7 +98,7 @@ export default function SessionsHeader({ ctx }: { ctx: EditEventCtx }) {
             }}
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 text-sm font-semibold px-4 py-2.5 rounded-xl border-[1.5px] border-amber-300/70 text-amber-800 bg-amber-50 hover:bg-amber-100 transition-colors"
           >
-            Replace all sessions
+            Replace all slots
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className={`w-4 h-4 transition-transform ${showReschedule ? "rotate-180" : ""}`}>
               <polyline points="6 9 12 15 18 9"/>
             </svg>

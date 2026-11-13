@@ -55,7 +55,7 @@ export default function BulkAddSessionsForm({ ctx }: { ctx: EditEventCtx }) {
       <p className="text-[12px] text-[#2E5566] leading-relaxed border-b border-[rgba(14,150,176,0.12)] pb-3">
         <span className="font-semibold text-[#0D2B35]">How this works:</span> Choose a{" "}
         <strong>date range</strong> first (optional). Then choose which{" "}
-        <strong>weekdays</strong> count. We only create sessions on those weekdays that fall
+        <strong>weekdays</strong> count. We only create slots on those weekdays that fall
         inside the range. Leave the calendar empty for <strong>recurring every week</strong>{" "}
         (no specific dates).
       </p>
@@ -141,7 +141,7 @@ export default function BulkAddSessionsForm({ ctx }: { ctx: EditEventCtx }) {
             Spots available *
           </label>
           <p className="text-[12px] text-[#5A8399] mb-2">
-            How many people or families can sign up for this session?
+            How many people or families can sign up for this slot?
           </p>
           <input
             type="number"
@@ -218,7 +218,7 @@ export default function BulkAddSessionsForm({ ctx }: { ctx: EditEventCtx }) {
       >
         {(() => {
           const count = calculateSessionCount();
-          return count > 0 ? `Add ${count} Session${count > 1 ? 's' : ''}` : 'Add Sessions';
+          return count > 0 ? `Add ${count} slot${count > 1 ? 's' : ''}` : 'Add slots';
         })()}
       </button>
     </div>

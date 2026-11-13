@@ -272,7 +272,7 @@ export function discardedFieldsOnSwitch(
   // Only warn when the user has actually customized something — preset
   // defaults alone shouldn't trigger a confirm dialog.
   if (from === "spots" && to !== "spots" && state.dirty.spotsSchedule) {
-    discarded.push("the session schedule you set up");
+    discarded.push("the slot schedule you set up");
   }
   if (from === "items" && to !== "items" && state.dirty.itemsList) {
     const n = state.items.length;
@@ -297,12 +297,12 @@ export function validateForSubmit(state: CreateFormState): ValidationResult {
   if (state.eventType === "spots") {
     if (state.spotsDateMode === "range") {
       if (!state.spotsRangeStart || !state.spotsRangeEnd) {
-        errors.push("Pick a date range for the sessions");
+        errors.push("Pick a date range for the slots");
       }
-      if (!state.spotsStartTime) errors.push("Set a start time for the sessions");
+      if (!state.spotsStartTime) errors.push("Set a start time for the slots");
     } else {
       if (state.spotsPickedDates.length === 0) {
-        errors.push("Pick at least one date for the sessions");
+        errors.push("Pick at least one date for the slots");
       } else if (state.spotsPickedDates.some((p) => !p.start)) {
         errors.push("Set a start time for every picked date");
       }
@@ -316,7 +316,7 @@ export function validateForSubmit(state: CreateFormState): ValidationResult {
         errors.push("Every class/slot needs a name");
       }
     } else if (state.spotsCapacity <= 0) {
-      errors.push("Set a capacity per session");
+      errors.push("Set a capacity per slot");
     }
   }
 
