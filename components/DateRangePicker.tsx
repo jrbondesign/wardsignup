@@ -135,10 +135,10 @@ export default function DateRangePicker({
         >
           <span>{d}</span>
           {showStartTag && (
-            <span className="mt-0.5 text-[8px] font-bold uppercase tracking-wide">Start</span>
+            <span className="mt-0.5 text-[8px] font-semibold tracking-wide">Start</span>
           )}
           {showEndTag && (
-            <span className="mt-0.5 text-[8px] font-bold uppercase tracking-wide">End</span>
+            <span className="mt-0.5 text-[8px] font-semibold tracking-wide">End</span>
           )}
         </button>
       </div>,
