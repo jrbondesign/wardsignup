@@ -6,7 +6,7 @@
  * signups, item_signups, or the capacity signup RPCs) must expire the page
  * cache, or be listed below with the reason its write cannot change what
  * /event/[id] shows. A new write path fails this test until it is wired up or
- * explained, so the 5 minute cache never hides an organizer's change.
+ * explained, so the 15 minute cache never hides an organizer's change.
  *
  * The scanner skips whitespace and comments between .from(...) and the write
  * so a comment on the next line (as in the create-event route) cannot hide a

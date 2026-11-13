@@ -2,9 +2,8 @@ import { captureServerException } from "@/lib/posthog-server";
 import { NextResponse, after } from "next/server";
 import { revalidateEventPage } from "@/lib/event-page-cache";
 import { createClient } from "@supabase/supabase-js";
-import { createHash } from "crypto";
 import { createSignupIfCapacityRpc, mapSignupRpcError } from "@/lib/supabase";
-import { getSignupRateLimitPerIpPerHour } from "@/lib/limits";
+import { consumeSignupRate, SIGNUP_RATE_LIMITED_MESSAGE } from "@/lib/signup-rate-limit";
 import { getClientIp } from "@/lib/request-ip";
 import { verifyTurnstile, turnstileRejectionMessage } from "@/lib/turnstile";
 import { sendParticipantSignupConfirmation } from "@/lib/participant-email";
@@ -22,11 +21,6 @@ import {
 } from "@/lib/signup-idempotency";
 
 export const maxDuration = 30;
-
-function hashIp(ip: string): string {
-  const salt = process.env.RATE_LIMIT_IP_SALT || "wardsignup_signup_rate";
-  return createHash("sha256").update(`${salt}:${ip}`).digest("hex");
-}
 
 export async function POST(request: Request) {
   try {
@@ -89,38 +83,17 @@ export async function POST(request: Request) {
       }
     }
 
+    // Same in-memory bucket as item and bulk signups. Fail-open is inside
+    // consumeSignupRate; a limiter error must not 503 the request.
+    if (!consumeSignupRate(request).allowed) {
+      return NextResponse.json({ error: SIGNUP_RATE_LIMITED_MESSAGE }, { status: 429 });
+    }
+
     const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
     const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
     let admin: ReturnType<typeof createClient> | null = null;
     if (serviceKey && url) {
       admin = createClient(url, serviceKey);
-      const ip = getClientIp(request);
-      const bucket = new Date();
-      bucket.setMinutes(0, 0, 0);
-      const ipHash = hashIp(ip);
-      const maxPerHour = getSignupRateLimitPerIpPerHour();
-
-      const { data: allowed, error: rateErr } = await withSupabaseTimeout(
-        (signal) =>
-          admin!.rpc(
-            "try_consume_signup_rate",
-            {
-              p_ip_hash: ipHash,
-              p_bucket: bucket.toISOString(),
-              p_max: maxPerHour,
-            } as never,
-          ).abortSignal(signal),
-        "try_consume_signup_rate",
-      );
-
-      if (rateErr) {
-        console.error("Signup rate limit RPC error:", rateErr);
-      } else if (allowed === false) {
-        return NextResponse.json(
-          { error: "Too many signups from this network. Please try again later." },
-          { status: 429 }
-        );
-      }
     }
 
     if (isRetry && admin) {

@@ -60,6 +60,7 @@ import { POST as bulkPOST } from "@/app/api/signups/bulk/route";
 import { POST as singlePOST } from "@/app/api/signups/route";
 import { POST as itemPOST } from "@/app/api/item-signups/route";
 import { TURNSTILE_SITEVERIFY_URL } from "@/lib/turnstile";
+import { clearSignupRateLimitMemory } from "@/lib/signup-rate-limit";
 
 const saved = { ...process.env };
 const realFetch = global.fetch;
@@ -98,6 +99,7 @@ function req(name: string, body: Record<string, unknown>) {
 const rateLimitCalls = () => adminRpc.mock.calls.filter((c) => c[0] === "try_consume_signup_rate").length;
 
 beforeEach(() => {
+  clearSignupRateLimitMemory();
   jest.clearAllMocks();
   process.env = { ...saved, SUPABASE_SERVICE_ROLE_KEY: "svc", NEXT_PUBLIC_SUPABASE_URL: "http://sb" };
   delete process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;

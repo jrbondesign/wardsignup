@@ -7,6 +7,7 @@ import { NextRequest } from "next/server";
 import { createSignupIfCapacityRpc } from "@/lib/supabase";
 import { analyticsContextForCampaign } from "@/lib/analytics-context";
 import { clearSignupIdempotencyMemory } from "@/lib/signup-idempotency";
+import { clearSignupRateLimitMemory } from "@/lib/signup-rate-limit";
 
 // Queue after() callbacks so tests can check what runs before vs after the response.
 const afterQueue: Array<() => unknown> = [];
@@ -92,6 +93,7 @@ describe("/api/signups/bulk", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     clearSignupIdempotencyMemory();
+    clearSignupRateLimitMemory();
     afterQueue.length = 0;
     process.env = { ...env, SUPABASE_SERVICE_ROLE_KEY: "svc", NEXT_PUBLIC_SUPABASE_URL: "http://sb" };
     adminFrom.mockReset();
@@ -170,18 +172,6 @@ describe("/api/signups/bulk", () => {
         properties: { kind: "supabase_timeout" },
       }),
     );
-  });
-
-  it("returns a 503 JSON error when the rate limit RPC hangs", async () => {
-    jest.useFakeTimers();
-    adminRpc.mockReturnValue(new Promise(() => {}));
-
-    const pending = POST(bulkRequest());
-    await jest.advanceTimersByTimeAsync(10_000);
-    const response = await pending;
-
-    expect(response.status).toBe(503);
-    expect(mockRpc).not.toHaveBeenCalled();
   });
 
   it("does not insert again when the same idempotency key is retried", async () => {
