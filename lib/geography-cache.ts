@@ -1,4 +1,4 @@
-import { revalidatePath, revalidateTag } from "next/cache";
+import { revalidatePath } from "next/cache";
 import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { isRealOrgId, TEST_ORG_IDS, TEST_OWNER_EMAILS } from "@/lib/test-orgs";
 import {
@@ -17,54 +17,71 @@ export const GEOGRAPHY_PUBLIC_PATH = "/api/geography/public";
  * CDN header for the public map endpoint: fresh for 6h, then served stale for
  * up to 7 days while the CDN refreshes in the background. The map is a daily
  * aggregate (cron at 8 AM Arizona), so it does not need to be real time; a
- * longer window means the homepage almost never reaches Postgres. The cron
- * also purges it right after it writes (revalidatePublicGeography), so a new
- * row usually shows at once and is at most 6h late if that purge misses.
+ * longer window means the homepage almost never reaches Postgres. After a
+ * cron write we revalidate the Next.js path only when a confirming read of
+ * the new row succeeds. We do not purge the CDN tag: a hard purge leaves
+ * the edge empty, and the next homepage view then hits the database. If that
+ * read times out, a cacheable fallback would pin a stale count. Existing
+ * good responses stay until they expire, at most 6h late.
  */
 export const GEOGRAPHY_PUBLIC_CACHE_CONTROL =
   "public, s-maxage=21600, stale-while-revalidate=604800";
 
 /**
  * CDN header when the route had to serve the baked snapshot (cache row read
- * slow, failed or empty). Short, so the next try at the database is at most
- * 5 minutes away, but long enough that a stalled database is not hit again on
- * every homepage view while it is struggling.
+ * slow, failed or empty, and no in-memory last-good payload). Not cacheable,
+ * so the CDN keeps or re-fetches the last good copy instead of pinning the
+ * fallback. A short s-maxage would still overwrite a good edge entry.
  */
-export const GEOGRAPHY_FALLBACK_CACHE_CONTROL = "public, s-maxage=300";
+export const GEOGRAPHY_FALLBACK_CACHE_CONTROL = "private, no-store";
 
-/** Vercel CDN cache tag on public map responses, purged by the cron writer. */
+/** Vercel CDN cache tag on good public map responses. The cron writer no longer hard-purges it. */
 export const GEOGRAPHY_CDN_TAG = "geography-public";
 
 /**
  * Give up on a slow geography_snapshot_cache read. Past this, the public
- * route serves the baked snapshot instead of waiting for the platform to
- * kill the function.
+ * route serves the in-memory last-good payload if this instance has one,
+ * otherwise the baked snapshot, instead of waiting for the platform to kill
+ * the function.
  */
 export const GEOGRAPHY_CACHE_READ_TIMEOUT_MS = 5_000;
 
 /**
- * Purge the cached public map response after the snapshot row changes so the
- * homepage and founder metrics map match right away. revalidatePath covers the
- * Next.js cache; the CDN copy (a force-dynamic route cached by Cache-Control)
- * is purged through its Vercel-Cache-Tag. Never throws: a failed purge must
- * not fail the write; the 6h window covers it.
+ * Headers that actually cache (or refuse to cache) a force-dynamic geography
+ * response at Vercel CDN. Cache-Control alone is rewritten to "public" on
+ * this kind of route, which would drop s-maxage and also drop no-store on a
+ * fallback. CDN-Cache-Control and Vercel-CDN-Cache-Control are what the edge
+ * honors. Open PR #160 adds the same helper; if both land, keep one copy.
+ */
+export function geographyCacheHeaders(
+  cacheControl: string,
+  tag?: string,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Cache-Control": cacheControl,
+    "CDN-Cache-Control": cacheControl,
+    "Vercel-CDN-Cache-Control": cacheControl,
+  };
+  if (tag) headers["Vercel-Cache-Tag"] = tag;
+  return headers;
+}
+
+/**
+ * Refresh the Next.js cache for the public map after a confirmed snapshot
+ * write. Does not purge the Vercel-Cache-Tag: dropping the CDN copy is what
+ * sent the first post-refresh homepage views to Postgres, and a timed-out
+ * fallback then got cached. The 6h s-maxage plus stale-while-revalidate
+ * window already covers a missed path revalidation. Never throws: a failed
+ * revalidate must not fail the write.
  */
 export function revalidatePublicGeography(): boolean {
-  let ok = true;
   try {
     revalidatePath(GEOGRAPHY_PUBLIC_PATH);
+    return true;
   } catch (err) {
     console.warn("geography public revalidate failed:", err);
-    ok = false;
+    return false;
   }
-  try {
-    // "max": mark stale and refresh in the background, no stampede on purge.
-    revalidateTag(GEOGRAPHY_CDN_TAG, "max");
-  } catch (err) {
-    console.warn("geography CDN tag purge failed:", err);
-    ok = false;
-  }
-  return ok;
 }
 
 const POSTHOG_HOST =
@@ -78,6 +95,29 @@ export type GeographySource = "cache" | "live" | "snapshot";
 export type GeographyPayload = ReturnType<typeof toGeographyResponse> & {
   refreshedAt?: string;
 };
+
+/**
+ * Last successfully read (or written) cache payload on this server instance.
+ * Used when a later geography_snapshot_cache read times out or fails, so the
+ * route can keep serving the last good counts instead of the baked snapshot.
+ * Per instance only: a cold instance still falls through to the snapshot.
+ */
+let lastGoodGeography: GeographyPayload | null = null;
+
+export function getLastGoodGeography(): GeographyPayload | null {
+  return lastGoodGeography;
+}
+
+export function rememberLastGoodGeography(payload: GeographyPayload): void {
+  if (payload.source === "cache" && payload.cities.length > 0) {
+    lastGoodGeography = payload;
+  }
+}
+
+/** Test-only. */
+export function clearLastGoodGeography(): void {
+  lastGoodGeography = null;
+}
 
 function hasServiceRole(): boolean {
   return Boolean(
@@ -267,14 +307,31 @@ export async function writeGeographyCache(
       return { ok: false, error: error.message };
     }
 
-    revalidatePublicGeography();
+    const payload: GeographyPayload = {
+      ...normalized,
+      refreshedAt,
+    };
+    rememberLastGoodGeography(payload);
+
+    // Only drop the Next.js cache once we can actually read the new row.
+    // If the confirming read misses, keep the previous cached response so a
+    // later timeout cannot replace it with the baked fallback.
+    const confirmed = await readGeographyCache();
+    if (confirmed && confirmed.cities.length > 0) {
+      rememberLastGoodGeography({
+        ...toGeographyResponse(confirmed.cities, "cache"),
+        refreshedAt: confirmed.refreshedAt,
+      });
+      revalidatePublicGeography();
+    } else {
+      console.warn(
+        "geography cache write succeeded but confirming read missed; skipping revalidate",
+      );
+    }
 
     return {
       ok: true,
-      payload: {
-        ...normalized,
-        refreshedAt,
-      },
+      payload,
     };
   } catch (err) {
     const message = err instanceof Error ? err.message : "write failed";
@@ -294,10 +351,17 @@ export async function writeGeographyCache(
 export async function resolveGeographyPayload(): Promise<GeographyPayload> {
   const cached = await readGeographyCache();
   if (cached) {
-    return {
+    const payload: GeographyPayload = {
       ...toGeographyResponse(cached.cities, "cache"),
       refreshedAt: cached.refreshedAt,
     };
+    rememberLastGoodGeography(payload);
+    return payload;
+  }
+
+  const lastGood = getLastGoodGeography();
+  if (lastGood) {
+    return lastGood;
   }
 
   return { ...toGeographyResponse(GEOGRAPHY_SNAPSHOT, "snapshot") };
