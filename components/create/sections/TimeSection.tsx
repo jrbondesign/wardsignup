@@ -274,6 +274,7 @@ function SpotsTime({
           role={!isSpecific ? "group" : undefined}
           aria-label={!isSpecific ? "Date range calendar" : undefined}
           aria-invalid={!isSpecific && dateRangeError ? true : undefined}
+          aria-describedby={!isSpecific && dateRangeError ? `${CREATE_DATE_RANGE_CALENDAR_ID}-error` : undefined}
           data-error-pulse={!isSpecific ? dateRangeErrorPulse : undefined}
           className={`bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl p-3 outline-none ${
             !isSpecific && dateRangeError ? "ws-date-range-error" : ""
@@ -303,6 +304,7 @@ function SpotsTime({
         </div>
         {!isSpecific && dateRangeError && (
           <div
+            id={`${CREATE_DATE_RANGE_CALENDAR_ID}-error`}
             role="alert"
             aria-live="assertive"
             data-testid="date-range-missing-error"

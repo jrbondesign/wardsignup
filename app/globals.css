@@ -153,3 +153,9 @@ body {
 .ws-date-range-error-pulse {
   animation: ws-date-range-ring 0.65s ease;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .ws-date-range-error-pulse {
+    animation: none;
+  }
+}

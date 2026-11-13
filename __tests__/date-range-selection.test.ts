@@ -41,9 +41,13 @@ describe("nextDateRange", () => {
     expect(nextDateRange(d(16), d(21), d(20))).toEqual({ start: d(16), end: d(20) });
   });
 
-  it("keeps the range when the existing start or end is tapped again", () => {
-    expect(nextDateRange(d(16), d(21), d(16))).toEqual({ start: d(16), end: d(21) });
-    expect(nextDateRange(d(16), d(21), d(21))).toEqual({ start: d(16), end: d(21) });
+  it("makes a one day range when the start or end of a multi day range is tapped again", () => {
+    expect(nextDateRange(d(16), d(21), d(16))).toEqual({ start: d(16), end: d(16) });
+    expect(nextDateRange(d(16), d(21), d(21))).toEqual({ start: d(21), end: d(21) });
+  });
+
+  it("keeps a one day range when its day is tapped again", () => {
+    expect(nextDateRange(d(16), d(16), d(16))).toEqual({ start: d(16), end: d(16) });
   });
 });
 

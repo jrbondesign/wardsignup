@@ -321,7 +321,11 @@ export function focusDateRangeCalendar(elementId: string): void {
   if (typeof document === "undefined") return;
   const el = document.getElementById(elementId);
   if (!el) return;
-  el.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  const reduceMotion =
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  el.scrollIntoView?.({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
   if (typeof el.focus === "function") {
     el.focus({ preventScroll: true });
   }

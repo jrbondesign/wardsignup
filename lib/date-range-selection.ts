@@ -16,7 +16,8 @@ function dayTime(d: Date): number {
  * Next start/end after a tap in range mode.
  * A complete range is never wiped: a tap before start moves start, a tap
  * after end moves end, and a tap inside the range moves the nearer bound
- * (ties go to start).
+ * (ties go to start). Tapping the start or end of a multi day range again
+ * makes it a one day range on that day, so one day stays reachable.
  */
 export function nextDateRange(
   start: Date | null,
@@ -30,6 +31,9 @@ export function nextDateRange(
     return { start, end: date };
   }
 
+  if (!isSameDay(start, end) && (isSameDay(date, start) || isSameDay(date, end))) {
+    return { start: date, end: date };
+  }
   if (dayTime(date) <= dayTime(start)) return { start: date, end };
   if (dayTime(date) >= dayTime(end)) return { start, end: date };
 
