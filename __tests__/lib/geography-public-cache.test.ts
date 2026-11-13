@@ -38,7 +38,10 @@ import {
   GEOGRAPHY_CACHE_READ_TIMEOUT_MS,
   GEOGRAPHY_PUBLIC_CACHE_CONTROL,
   GEOGRAPHY_PUBLIC_PATH,
+  clearLastGoodGeography,
   fetchLiveGeographyFromPostHog,
+  geographyCacheHeaders,
+  getLastGoodGeography,
   resolveGeographyPayload,
   revalidatePublicGeography,
   writeGeographyCache,
@@ -54,12 +57,20 @@ const city = {
   userCount: 3,
 };
 
+const cacheRow = {
+  cities: [city],
+  refreshed_at: "2026-11-13T15:01:03.324Z",
+  source: "posthog",
+  total_cities: 1,
+};
+
 beforeEach(() => {
   mockRevalidatePath.mockReset();
   mockRevalidateTag.mockReset();
   mockUpsert.mockClear();
   mockMaybeSingle.mockReset();
   mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+  clearLastGoodGeography();
   process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-role";
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
 });
@@ -71,19 +82,57 @@ describe("public geography cache window", () => {
     );
   });
 
-  it("keeps a snapshot fallback for only 5 minutes", () => {
-    expect(GEOGRAPHY_FALLBACK_CACHE_CONTROL).toBe("public, s-maxage=300");
+  it("does not let the CDN cache a snapshot fallback", () => {
+    expect(GEOGRAPHY_FALLBACK_CACHE_CONTROL).toBe("private, no-store");
+  });
+
+  it("sets CDN-Cache-Control and Vercel-CDN-Cache-Control so the edge honors s-maxage", () => {
+    const headers = geographyCacheHeaders(GEOGRAPHY_PUBLIC_CACHE_CONTROL, GEOGRAPHY_CDN_TAG);
+    expect(headers["Cache-Control"]).toBe(GEOGRAPHY_PUBLIC_CACHE_CONTROL);
+    expect(headers["CDN-Cache-Control"]).toBe(GEOGRAPHY_PUBLIC_CACHE_CONTROL);
+    expect(headers["Vercel-CDN-Cache-Control"]).toBe(GEOGRAPHY_PUBLIC_CACHE_CONTROL);
+    expect(headers["Vercel-Cache-Tag"]).toBe(GEOGRAPHY_CDN_TAG);
+  });
+
+  it("omits the purge tag on a no-store fallback response", () => {
+    const headers = geographyCacheHeaders(GEOGRAPHY_FALLBACK_CACHE_CONTROL);
+    expect(headers["CDN-Cache-Control"]).toBe("private, no-store");
+    expect(headers["Vercel-Cache-Tag"]).toBeUndefined();
   });
 });
 
 describe("writeGeographyCache", () => {
-  it("revalidates the public route after a successful write", async () => {
+  it("revalidates the Next.js path after a successful write and confirming read, without purging the CDN tag", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: cacheRow,
+      error: null,
+    });
     const result = await writeGeographyCache([city]);
     expect(result.ok).toBe(true);
     expect(mockUpsert).toHaveBeenCalledTimes(1);
+    expect(mockMaybeSingle).toHaveBeenCalledTimes(1);
     expect(mockRevalidatePath).toHaveBeenCalledWith(GEOGRAPHY_PUBLIC_PATH);
-    expect(mockRevalidateTag).toHaveBeenCalledWith(GEOGRAPHY_CDN_TAG, "max");
+    expect(mockRevalidateTag).not.toHaveBeenCalled();
     expect(GEOGRAPHY_PUBLIC_PATH).toBe("/api/geography/public");
+    expect(getLastGoodGeography()?.totalUsers).toBe(3);
+  });
+
+  it("does not revalidate when the write succeeds but the confirming read misses", async () => {
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    mockMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
+    try {
+      const result = await writeGeographyCache([city]);
+      expect(result.ok).toBe(true);
+      expect(mockRevalidatePath).not.toHaveBeenCalled();
+      expect(mockRevalidateTag).not.toHaveBeenCalled();
+      expect(warn).toHaveBeenCalledWith(
+        "geography cache write succeeded but confirming read missed; skipping revalidate",
+      );
+      // The written payload is still remembered so this instance can serve it.
+      expect(getLastGoodGeography()?.totalUsers).toBe(3);
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("does not revalidate when the write fails", async () => {
@@ -97,6 +146,10 @@ describe("writeGeographyCache", () => {
   });
 
   it("still succeeds if revalidatePath throws", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: cacheRow,
+      error: null,
+    });
     mockRevalidatePath.mockImplementationOnce(() => {
       throw new Error("not in a request scope");
     });
@@ -108,31 +161,25 @@ describe("writeGeographyCache", () => {
 });
 
 describe("revalidatePublicGeography", () => {
-  it("purges both the Next.js path and the CDN tag", () => {
+  it("revalidates the Next.js path and does not purge the CDN tag", () => {
     expect(revalidatePublicGeography()).toBe(true);
     expect(mockRevalidatePath).toHaveBeenCalledWith(GEOGRAPHY_PUBLIC_PATH);
-    expect(mockRevalidateTag).toHaveBeenCalledWith("geography-public", "max");
+    expect(mockRevalidateTag).not.toHaveBeenCalled();
   });
 
-  it("still tries the CDN tag when revalidatePath throws, and never throws", () => {
+  it("returns false when revalidatePath throws, and never throws", () => {
     mockRevalidatePath.mockImplementationOnce(() => {
       throw new Error("not in a request scope");
-    });
-    mockRevalidateTag.mockImplementationOnce(() => {
-      throw new Error("no store");
     });
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     expect(() => revalidatePublicGeography()).not.toThrow();
-    expect(mockRevalidateTag).toHaveBeenCalled();
-    warn.mockRestore();
-  });
-
-  it("returns false when revalidatePath throws", () => {
+    // The implementation above already ran (and returned false). Reset and
+    // assert the return value on a fresh throw.
     mockRevalidatePath.mockImplementationOnce(() => {
       throw new Error("not in a request scope");
     });
-    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     expect(revalidatePublicGeography()).toBe(false);
+    expect(mockRevalidateTag).not.toHaveBeenCalled();
     warn.mockRestore();
   });
 });
@@ -204,10 +251,44 @@ describe("resolveGeographyPayload", () => {
       expect(settled).toBe(true);
       expect(payload).toEqual(toGeographyResponse(GEOGRAPHY_SNAPSHOT, "snapshot"));
       expect(payload.cities.length).toBeGreaterThan(0);
+      expect(payload.source).toBe("snapshot");
       expect(warn).toHaveBeenCalledWith(
         "geography cache read failed:",
         expect.objectContaining({ message: "geography cache read timeout" }),
       );
+    } finally {
+      warn.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it("returns the in-memory last-good payload when a later read times out", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: cacheRow,
+      error: null,
+    });
+    const first = await resolveGeographyPayload();
+    expect(first.source).toBe("cache");
+    expect(first.totalUsers).toBe(3);
+    expect(first.refreshedAt).toBe(cacheRow.refreshed_at);
+
+    jest.useFakeTimers();
+    mockMaybeSingle.mockImplementation(() => new Promise(() => {}));
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      let settled = false;
+      const pending = resolveGeographyPayload().then((payload) => {
+        settled = true;
+        return payload;
+      });
+      await jest.advanceTimersByTimeAsync(GEOGRAPHY_CACHE_READ_TIMEOUT_MS);
+      const payload = await pending;
+      expect(settled).toBe(true);
+      expect(payload.source).toBe("cache");
+      expect(payload.totalUsers).toBe(3);
+      expect(payload.totalCities).toBe(1);
+      expect(payload.refreshedAt).toBe(cacheRow.refreshed_at);
+      expect(payload).toEqual(first);
     } finally {
       warn.mockRestore();
       jest.useRealTimers();
