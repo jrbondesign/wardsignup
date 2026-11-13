@@ -68,6 +68,8 @@ export function useEditEventState() {
   /** Signup count per session id, so Edit can show who is in a slot before it is removed. */
   const [signupsBySession, setSignupsBySession] = useState<Record<string, number>>({});
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+  /** Set when Replace all has been Applied but not yet saved. */
+  const [pendingReplaceCount, setPendingReplaceCount] = useState<number | null>(null);
   const [settingsStatus, setSettingsStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [rescheduleStart, setRescheduleStart] = useState<Date | null>(null);
   const [rescheduleEnd, setRescheduleEnd] = useState<Date | null>(null);
@@ -307,6 +309,8 @@ export function useEditEventState() {
     setSignupsBySession,
     lastSavedAt,
     setLastSavedAt,
+    pendingReplaceCount,
+    setPendingReplaceCount,
     settingsStatus,
     setSettingsStatus,
     rescheduleStart,

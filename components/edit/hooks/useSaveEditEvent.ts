@@ -10,6 +10,7 @@ import { type EditEventSettings } from "./useEditEventSettings";
 import { type ScheduleBuilders } from "./useScheduleBuilders";
 import { type SlotActions } from "./useSlotActions";
 import { ITEMS_TIME_ORDER_ERROR, ITEMS_TIME_PARTIAL_ERROR, focusTimeRow, isEndSameAsStart, subtreeHasInvalidTimeSelect } from "@/lib/utils";
+import { savedSlotsToast } from "@/lib/edit-replace-copy";
 
 /** Saves the schedule (with destructive-delete guard) and items events. */
 export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & ScheduleBuilders & SlotActions) {
@@ -27,6 +28,7 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
     itemsList,
     loadedSessionIds,
     pendingDeleteSessionIdsRef,
+    pendingReplaceCount,
     router,
     sessions,
     setCapacityInputDraft,
@@ -36,6 +38,7 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
     setItemsSaving,
     setLastSavedAt,
     setLoadedSessionIds,
+    setPendingReplaceCount,
     setSavedSnapshot,
     setSaving,
     setSessions,
@@ -230,7 +233,12 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
       }
 
       setLastSavedAt(new Date());
-      setToastMessage("Changes saved");
+      if (pendingReplaceCount != null) {
+        setToastMessage(savedSlotsToast(mapped.length));
+        setPendingReplaceCount(null);
+      } else {
+        setToastMessage("Changes saved");
+      }
       setShowToast(true);
       setSaving(false);
     } catch (error: any) {

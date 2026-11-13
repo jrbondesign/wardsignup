@@ -69,6 +69,7 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
     setShowBulk,
     setShowReschedule,
     setShowRescheduleConfirm,
+    setPendingReplaceCount,
     setShowToast,
     setSignupCount,
     setTithingCapacity,
@@ -208,8 +209,7 @@ export function useScheduleBuilders(ctx: EditEventState & EditEventSettings) {
     setShowReschedule(false);
     setShowRescheduleConfirm(false);
     setSignupCount(0);
-    setToastMessage(`Rescheduled to ${newSessions.length} slot${newSessions.length !== 1 ? 's' : ''}`);
-    setShowToast(true);
+    setPendingReplaceCount(newSessions.length);
   };
 
   const calculateSessionCount = () => {

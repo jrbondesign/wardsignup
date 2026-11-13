@@ -9,6 +9,7 @@ import MenuTrigger from "@/components/edit/MenuTrigger";
 import SectionHeader from "@/components/edit/SectionHeader";
 import TimeInput, { TimeRangeRow } from "@/components/TimeInput";
 import { type EditEventCtx } from "@/components/edit/hooks/useEditEvent";
+import { stagedReplaceBanner } from "@/lib/edit-replace-copy";
 
 /** Day-grouped slot cards (or the empty state). */
 export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
@@ -21,6 +22,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
     editingSessionIndex,
     eventEndDate,
     highlightDate,
+    pendingReplaceCount,
     reorderGroupKey,
     reorderSlot,
     sessions,
@@ -43,8 +45,22 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
     updateSession,
   } = ctx;
 
+  const stagedBanner =
+    pendingReplaceCount != null ? (
+      <div
+        role="status"
+        aria-live="polite"
+        data-testid="staged-replace-banner"
+        className="rounded-xl border border-amber-300/80 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950"
+      >
+        {stagedReplaceBanner(sessions.length)}
+      </div>
+    ) : null;
+
   return (
     sessions.length === 0 ? (
+    <>
+    {stagedBanner}
     <div
       id="edit-sessions-empty"
       className="bg-[#F4FAFB] rounded-xl p-6 text-center text-sm text-[#5A8399]"
@@ -53,8 +69,10 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
       above — <span className="font-medium text-[#2E5566]">Add multiple slots</span> or{" "}
       <span className="font-medium text-[#2E5566]">Add one slot</span>.
     </div>
+    </>
   ) : (
     <div className="space-y-6">
+      {stagedBanner}
       {groupSessionsForDisplay(sessions).map((group) => {
         const groupLocs = sharedLocations(group);
         return (
