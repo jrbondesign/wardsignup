@@ -151,7 +151,7 @@ export default function AddSessionForm({ ctx }: { ctx: EditEventCtx }) {
         <div className="min-w-0">
           <label className="block text-[13px] font-semibold text-[#2E5566] tracking-[0.2px] mb-1">Spots available *</label>
           <p className="text-[12px] text-[#5A8399] mb-2">
-            How many people or families can sign up for this session?
+            How many people or families can sign up for this slot?
           </p>
           <input type="number" min="1" value={newSessionCapacity} onChange={(e) => setNewSessionCapacity(parseInt(e.target.value))}
             onFocus={selectAllSpotsOnFocus}
@@ -184,7 +184,7 @@ export default function AddSessionForm({ ctx }: { ctx: EditEventCtx }) {
       ) : null}
       <button type="button" onClick={addSession}
         className="w-full text-base font-semibold px-4 py-[13px] rounded-xl text-white bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] shadow-[0_4px_14px_rgba(14,150,176,0.30)] hover:-translate-y-0.5 hover:shadow-[0_8px_20px_rgba(14,150,176,0.40)] transition-all touch-manipulation">
-        Add Session
+        Add Slot
       </button>
     </div>
   )

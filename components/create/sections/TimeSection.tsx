@@ -297,7 +297,7 @@ function SpotsTime({
                   spotsRangeStart: s ? dateToIso(s) : "",
                   spotsRangeEnd: e ? dateToIso(e) : "",
                 });
-                if (s && e) onDateRangeErrorClear?.();
+                if (s) onDateRangeErrorClear?.();
               }}
             />
           )}

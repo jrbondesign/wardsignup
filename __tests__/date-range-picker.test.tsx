@@ -40,6 +40,19 @@ describe("DateRangePicker range mode", () => {
       screen.getByText(/Start: Mon, Nov 16\./),
     ).toBeInTheDocument();
     expect(screen.getByText("Now tap the end date.")).toBeInTheDocument();
+    expect(dayButton(16)).toHaveClass("bg-[#08647E]");
+    expect(dayButton(16)).toHaveClass("text-white");
+  });
+
+  it("keeps a distinct start fill once the range is complete", async () => {
+    const user = userEvent.setup();
+    render(<Harness />);
+    await user.click(dayButton(16));
+    await user.click(dayButton(21));
+
+    expect(dayButton(16)).not.toHaveClass("bg-[#08647E]");
+    expect(dayButton(21)).toHaveClass("bg-[#08647E]");
+    expect(dayButton(21)).toHaveClass("text-white");
   });
 
   it("does not wipe a complete range when an in-range day is tapped", async () => {

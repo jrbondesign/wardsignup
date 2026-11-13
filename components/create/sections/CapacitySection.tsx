@@ -17,8 +17,8 @@ export default function CapacitySection({ state, set }: Props) {
   const isSpots = state.eventType === "spots";
   if (!isRsvp && !isSpots) return null; // items uses per-item limits
 
-  const labelText = isRsvp ? "Limit how many can sign up" : "Limit per session";
-  const fieldLabel = isRsvp ? "Max attendees" : "People per session";
+  const labelText = isRsvp ? "Limit how many can sign up" : "Limit per slot";
+  const fieldLabel = isRsvp ? "Max attendees" : "People per slot";
 
   return (
     <section className="space-y-3">

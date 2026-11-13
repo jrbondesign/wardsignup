@@ -59,7 +59,7 @@ describe("Create form Continue with an incomplete date range", () => {
     const alert = screen.getByTestId("date-range-missing-error");
     expect(alert).toHaveTextContent(DATE_RANGE_MISSING_ERROR);
     expect(alert).toHaveAttribute("role", "alert");
-    expect(screen.queryByText("Pick a date range for the sessions")).not.toBeInTheDocument();
+    expect(screen.queryByText("Pick a date range for the slots")).not.toBeInTheDocument();
 
     const calendar = document.getElementById("create-date-range-calendar");
     expect(calendar).toBeTruthy();
@@ -69,7 +69,7 @@ describe("Create form Continue with an incomplete date range", () => {
     expect(continueBtn).toBeEnabled();
   });
 
-  it("re-scrolls and re-rings on a second Continue tap, then clears when a range is picked", async () => {
+  it("re-scrolls and re-rings on a second Continue tap, then clears on the first calendar tap", async () => {
     const user = userEvent.setup();
     render(<UnifiedCreateForm initialTemplateKey="tithing-declaration" />);
     const continueBtn = screen.getByRole("button", { name: /Continue/ });
@@ -85,8 +85,22 @@ describe("Create form Continue with an incomplete date range", () => {
     expect(screen.getByTestId("date-range-missing-error")).toBeInTheDocument();
 
     await user.click(dayButton(16));
+    expect(screen.queryByTestId("date-range-missing-error")).not.toBeInTheDocument();
+    expect(calendar).not.toHaveClass("ws-date-range-error");
+    expect(calendar.getAttribute("aria-describedby")).toBeNull();
+    expect(calendar.getAttribute("aria-invalid")).toBeNull();
+    expect(screen.getByText("Now tap the end date.")).toBeInTheDocument();
+
     await user.click(dayButton(21));
     expect(screen.queryByTestId("date-range-missing-error")).not.toBeInTheDocument();
     expect(calendar).not.toHaveClass("ws-date-range-error");
+  });
+
+  it("shows the Schedule card in the neutral slots wording", () => {
+    render(<UnifiedCreateForm initialTemplateKey="tithing-declaration" />);
+    expect(
+      screen.getByText("When slots run and how they are generated."),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/sessions/i)).not.toBeInTheDocument();
   });
 });

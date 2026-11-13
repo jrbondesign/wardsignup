@@ -96,8 +96,9 @@ export default function DateRangePicker({
     const showBandFull = inRange;
     const showStartTag = !singleDate && isStart;
     const showEndTag = !singleDate && isEnd && rangeStart !== null && !isStart;
+    const isStartOnly = showStartTag && !rangeEnd;
 
-    const selectedClass = showEndTag
+    const selectedClass = showEndTag || isStartOnly
       ? "bg-[#08647E] text-white font-semibold shadow-sm"
       : isStart || isEnd || isMultiSelected
         ? "bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white font-semibold shadow-sm"

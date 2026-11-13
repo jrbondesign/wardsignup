@@ -158,7 +158,7 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
             .from("sessions")
             .upsert(stripSortOrder(toUpsert as unknown as Record<string, unknown>[]) as any, { onConflict: "id" }));
         }
-        if (upsertError) throw new Error("Failed to update sessions");
+        if (upsertError) throw new Error("Failed to update slots");
       }
 
       const toInsert = normalizedSessions
@@ -185,13 +185,13 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
             .from("sessions")
             .insert(stripSortOrder(toInsert as unknown as Record<string, unknown>[]) as any));
         }
-        if (insertError) throw new Error("Failed to create new sessions");
+        if (insertError) throw new Error("Failed to create new slots");
       }
 
       if (toDeleteIds.length > 0) {
         slotWriteAttempted = true;
         const { error: deleteError } = await supabase.from("sessions").delete().in("id", toDeleteIds);
-        if (deleteError) throw new Error("Failed to delete removed sessions");
+        if (deleteError) throw new Error("Failed to delete removed slots");
       }
 
       const { data: reloadedSessions, error: reloadErr } = await supabase
@@ -201,7 +201,7 @@ export function useSaveEditEvent(ctx: EditEventState & EditEventSettings & Sched
         .order("created_at", { ascending: true })
         .order("id", { ascending: true });
 
-      if (reloadErr) throw new Error("Failed to reload sessions");
+      if (reloadErr) throw new Error("Failed to reload slots");
 
       const mapped = mapDbSessionsToState(reloadedSessions || []);
       setSessions(mapped);

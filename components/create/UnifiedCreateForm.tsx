@@ -60,7 +60,7 @@ function SessionsPreview({ state }: { state: CreateFormState }) {
   if (count === 0) {
     return (
       <div className="rounded-xl border border-dashed border-[rgba(14,150,176,0.25)] bg-[#F4FAFB] px-4 py-3 text-[13px] text-[#5A8399]">
-        Set a date {state.spotsDateMode === "range" ? "range and time window" : "and time"} above to see how many sessions will be created.
+        Set a date {state.spotsDateMode === "range" ? "range and time window" : "and time"} above to see how many slots will be created.
       </div>
     );
   }
@@ -319,12 +319,12 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
         }
         setDateRangeError(false);
         if (!state.spotsStartTime) {
-          setError("Set a start time for the sessions");
+          setError("Set a start time for the slots");
           return;
         }
       } else {
         if (state.spotsPickedDates.length === 0) {
-          setError("Pick at least one date for the sessions");
+          setError("Pick at least one date for the slots");
           return;
         }
         if (state.spotsPickedDates.some((p) => !p.start)) {
@@ -334,7 +334,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
       }
       plannedSpotsSessions = generateSpotsSessions(state);
       if (plannedSpotsSessions.length === 0) {
-        setError("No sessions would be created. Please check the date range, weekdays, and time window.");
+        setError("No slots would be created. Please check the date range, weekdays, and time window.");
         return;
       }
       if (plannedSpotsSessions.length > MAX_SESSIONS_PER_EVENT) {
@@ -592,7 +592,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
         title={state.eventType === "spots" ? "Schedule" : "Date & time"}
         description={
           state.eventType === "spots"
-            ? "When sessions run and how slots are generated."
+            ? "When slots run and how they are generated."
             : "When your event happens."
         }
         icon={
@@ -613,7 +613,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
       {(state.eventType === "rsvp" || state.eventType === "spots") && (
         <ComponentCard
           title="Capacity"
-          description={state.eventType === "spots" ? "Cap how many can claim each session." : "Optionally cap total signups."}
+          description={state.eventType === "spots" ? "Cap how many can claim each slot." : "Optionally cap total signups."}
           icon={
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
