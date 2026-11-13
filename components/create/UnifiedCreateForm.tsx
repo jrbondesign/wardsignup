@@ -26,7 +26,10 @@ import {
   isMultiDayRsvp,
   type CreateFormState,
 } from "@/lib/create-form-state";
-import { focusTimeRow } from "@/lib/utils";
+import { focusDateRangeCalendar, focusTimeRow } from "@/lib/utils";
+import {
+  CREATE_DATE_RANGE_CALENDAR_ID,
+} from "@/lib/date-range-selection";
 import { generateSpotsSessions } from "@/lib/spots-session-generator";
 import { applyPreset, getAlternateRsvpDescription } from "@/lib/event-presets";
 import { getEventTemplate, type TemplateKey } from "@/lib/event-template-data";
@@ -168,6 +171,8 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [dateRangeError, setDateRangeError] = useState(false);
+  const [dateRangeErrorPulse, setDateRangeErrorPulse] = useState(0);
   // When slot creation fails after the event row exists, keep the unsent
   // slots here so the organizer can retry without retyping anything.
   const pendingRef = useRef<PendingSessions | null>(null);
@@ -307,9 +312,12 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
     if (state.eventType === "spots") {
       if (state.spotsDateMode === "range") {
         if (!state.spotsRangeStart || !state.spotsRangeEnd) {
-          setError("Pick a date range for the sessions");
+          setDateRangeError(true);
+          setDateRangeErrorPulse((n) => n + 1);
+          focusDateRangeCalendar(CREATE_DATE_RANGE_CALENDAR_ID);
           return;
         }
+        setDateRangeError(false);
         if (!state.spotsStartTime) {
           setError("Set a start time for the sessions");
           return;
@@ -593,7 +601,13 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
           </svg>
         }
       >
-        <TimeSection state={state} set={(patch) => dispatch({ type: "set", patch })} />
+        <TimeSection
+          state={state}
+          set={(patch) => dispatch({ type: "set", patch })}
+          dateRangeError={dateRangeError}
+          dateRangeErrorPulse={dateRangeErrorPulse}
+          onDateRangeErrorClear={() => setDateRangeError(false)}
+        />
       </ComponentCard>
 
       {(state.eventType === "rsvp" || state.eventType === "spots") && (

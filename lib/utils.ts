@@ -313,6 +313,20 @@ export function focusTimeRow(rowId: string, fallbackIndex = 0): void {
   target?.focus({ preventScroll: true });
 }
 
+/**
+ * Scroll the create-form date range calendar into view and move focus to it,
+ * matching focusTimeRow so Continue can point at a missing range.
+ */
+export function focusDateRangeCalendar(elementId: string): void {
+  if (typeof document === "undefined") return;
+  const el = document.getElementById(elementId);
+  if (!el) return;
+  el.scrollIntoView?.({ block: "center", behavior: "smooth" });
+  if (typeof el.focus === "function") {
+    el.focus({ preventScroll: true });
+  }
+}
+
 /** True when a DOM subtree has an incomplete TimeInput (native :invalid or data flag). */
 export function subtreeHasInvalidTimeSelect(root: ParentNode | null | undefined): boolean {
   if (!root || typeof (root as Element).querySelector !== "function") return false;

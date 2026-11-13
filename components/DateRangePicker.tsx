@@ -1,14 +1,13 @@
 "use client";
 
 import { useState } from "react";
-
-function isSameDay(a: Date, b: Date) {
-  return (
-    a.getFullYear() === b.getFullYear() &&
-    a.getMonth() === b.getMonth() &&
-    a.getDate() === b.getDate()
-  );
-}
+import {
+  DATE_RANGE_EMPTY_FOOTER,
+  formatRangeDay,
+  isSameDay,
+  nextDateRange,
+  rangeCompleteFooter,
+} from "@/lib/date-range-selection";
 
 function fmt(d: Date): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -70,17 +69,8 @@ export default function DateRangePicker({
       }
       return;
     }
-    if (!rangeStart || (rangeStart && rangeEnd)) {
-      onChange(date, null);
-    } else {
-      if (date < rangeStart) {
-        onChange(date, null);
-      } else if (isSameDay(date, rangeStart)) {
-        onChange(rangeStart, rangeStart);
-      } else {
-        onChange(rangeStart, date);
-      }
-    }
+    const next = nextDateRange(rangeStart, rangeEnd, date);
+    onChange(next.start, next.end);
   };
 
   const cells: React.ReactNode[] = [];
@@ -104,9 +94,23 @@ export default function DateRangePicker({
     const showBandRight = isStart && effectiveEnd !== null && !isLastInRow;
     const showBandLeft = (rangeEnd ? isEnd : false) && rangeStart !== null && !isFirstInRow;
     const showBandFull = inRange;
+    const showStartTag = !singleDate && isStart;
+    const showEndTag = !singleDate && isEnd && rangeStart !== null && !isStart;
+
+    const selectedClass = showEndTag
+      ? "bg-[#08647E] text-white font-semibold shadow-sm"
+      : isStart || isEnd || isMultiSelected
+        ? "bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white font-semibold shadow-sm"
+        : isToday && !inRange
+          ? "border-[1.5px] border-[#0E96B0] text-[#0E96B0] font-semibold hover:bg-[#E6F7FB]/90"
+          : inRange
+            ? "text-[#0D2B35] font-medium hover:bg-[#0E96B0]/15"
+            : isPast
+              ? ""
+              : "text-[#0D2B35] hover:bg-[#0E96B0]/12 hover:ring-1 hover:ring-[#0E96B0]/25";
 
     cells.push(
-      <div key={d} className="relative h-11 flex items-center justify-center select-none">
+      <div key={d} className="relative h-12 flex items-center justify-center select-none">
         {showBandFull && (
           <div className="absolute inset-y-1 inset-x-0 bg-[#0E96B0]/12 pointer-events-none z-0" />
         )}
@@ -122,21 +126,20 @@ export default function DateRangePicker({
           onClick={() => handleDayClick(date)}
           onMouseEnter={() => !isPast && setHoverDate(date)}
           onMouseLeave={() => setHoverDate(null)}
-          className={`relative z-10 min-h-[44px] min-w-[44px] max-w-full rounded-xl flex items-center justify-center text-sm transition-colors touch-manipulation
+          aria-label={
+            showStartTag ? `${d}, Start` : showEndTag ? `${d}, End` : undefined
+          }
+          className={`relative z-10 min-h-[44px] min-w-[44px] max-w-full rounded-xl flex flex-col items-center justify-center text-sm transition-colors touch-manipulation leading-none
             ${isPast ? "text-[#C8DDE6] cursor-default" : "cursor-pointer"}
-            ${
-              isStart || isEnd || isMultiSelected
-                ? "bg-gradient-to-br from-[#22C8D8] via-[#0E96B0] to-[#08647E] text-white font-semibold shadow-sm"
-                : isToday && !inRange
-                  ? "border-[1.5px] border-[#0E96B0] text-[#0E96B0] font-semibold hover:bg-[#E6F7FB]/90"
-                  : inRange
-                    ? "text-[#0D2B35] font-medium hover:bg-[#0E96B0]/15"
-                    : isPast
-                      ? ""
-                      : "text-[#0D2B35] hover:bg-[#0E96B0]/12 hover:ring-1 hover:ring-[#0E96B0]/25"
-            }`}
+            ${selectedClass}`}
         >
-          {d}
+          <span>{d}</span>
+          {showStartTag && (
+            <span className="mt-0.5 text-[8px] font-bold uppercase tracking-wide">Start</span>
+          )}
+          {showEndTag && (
+            <span className="mt-0.5 text-[8px] font-bold uppercase tracking-wide">End</span>
+          )}
         </button>
       </div>,
     );
@@ -203,7 +206,7 @@ export default function DateRangePicker({
         <div className="grid grid-cols-7 gap-y-0.5">{cells}</div>
       </div>
 
-      <div className="border-t border-[rgba(14,150,176,0.10)] px-4 py-2.5 bg-[#F4FAFB] flex items-center justify-between">
+      <div className="border-t border-[rgba(14,150,176,0.10)] px-4 py-2.5 bg-[#F4FAFB] flex items-center justify-between gap-2">
         {singleDate ? (
           (selectedDates?.length ?? 0) > 0 ? (
             <span className="text-[13px] font-semibold text-[#0D2B35]">
@@ -218,19 +221,20 @@ export default function DateRangePicker({
           <>
             <span className="text-[13px] font-semibold text-[#0D2B35]">
               {isSingleCalendarDay
-                ? fmt(rangeStart)
-                : `${fmt(rangeStart)} – ${fmt(rangeEnd)}`}
+                ? formatRangeDay(rangeStart)
+                : rangeCompleteFooter(rangeStart, rangeEnd)}
             </span>
             <span className="text-[12px] text-[#0E96B0] font-medium">
               {isSingleCalendarDay ? "1 day" : `${rangeDayCount} days`}
             </span>
           </>
         ) : rangeStart ? (
-          <span className="text-[13px] text-[#5A8399]">
-            Tap end date, or the same day again for one day only
+          <span className="text-[13px] font-semibold text-[#0D2B35]">
+            Start: {formatRangeDay(rangeStart)}.
+            <span className="font-medium text-[#08647E]"> Now tap the end date.</span>
           </span>
         ) : (
-          <span className="text-[13px] text-[#5A8399]">Select a start date</span>
+          <span className="text-[13px] text-[#5A8399]">{DATE_RANGE_EMPTY_FOOTER}</span>
         )}
       </div>
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import TimeInput, { TimeRangeRow, TimeTextLabel } from "@/components/TimeInput";
 import DateRangePicker from "@/components/DateRangePicker";
 import EventDatesPicker from "@/components/create/EventDatesPicker";
@@ -14,6 +14,10 @@ import {
   type CreateFormState,
   type LabeledTime,
 } from "@/lib/create-form-state";
+import {
+  CREATE_DATE_RANGE_CALENDAR_ID,
+  DATE_RANGE_MISSING_ERROR,
+} from "@/lib/date-range-selection";
 import {
   TIME_ORDER_ERROR,
   isEndSameAsStart,
@@ -35,12 +39,29 @@ const linkBtnCls =
 interface Props {
   state: CreateFormState;
   set: (patch: Partial<CreateFormState>) => void;
+  dateRangeError?: boolean;
+  dateRangeErrorPulse?: number;
+  onDateRangeErrorClear?: () => void;
 }
 
-export default function TimeSection({ state, set }: Props) {
+export default function TimeSection({
+  state,
+  set,
+  dateRangeError = false,
+  dateRangeErrorPulse = 0,
+  onDateRangeErrorClear,
+}: Props) {
   if (state.eventType === "rsvp") return <RsvpTime state={state} set={set} />;
   if (state.eventType === "items") return <ItemsTime state={state} set={set} />;
-  return <SpotsTime state={state} set={set} />;
+  return (
+    <SpotsTime
+      state={state}
+      set={set}
+      dateRangeError={dateRangeError}
+      dateRangeErrorPulse={dateRangeErrorPulse}
+      onDateRangeErrorClear={onDateRangeErrorClear}
+    />
+  );
 }
 
 // ── rsvp ──────────────────────────────────────────────────────────────────
@@ -140,7 +161,13 @@ function ItemsTime({ state, set }: Props) {
 
 // ── spots ─────────────────────────────────────────────────────────────────
 
-function SpotsTime({ state, set }: Props) {
+function SpotsTime({
+  state,
+  set,
+  dateRangeError = false,
+  dateRangeErrorPulse = 0,
+  onDateRangeErrorClear,
+}: Props) {
   const toggleDay = (d: number) => {
     const next = state.spotsWeekdays.includes(d)
       ? state.spotsWeekdays.filter((x) => x !== d)
@@ -194,6 +221,15 @@ function SpotsTime({ state, set }: Props) {
   const rangeStartDate = state.spotsRangeStart ? toDate(state.spotsRangeStart) : null;
   const rangeEndDate = state.spotsRangeEnd ? toDate(state.spotsRangeEnd) : null;
 
+  useEffect(() => {
+    if (!dateRangeError || dateRangeErrorPulse < 1) return;
+    const el = document.getElementById(CREATE_DATE_RANGE_CALENDAR_ID);
+    if (!el) return;
+    el.classList.remove("ws-date-range-error-pulse");
+    void el.offsetWidth;
+    el.classList.add("ws-date-range-error-pulse");
+  }, [dateRangeError, dateRangeErrorPulse]);
+
   return (
     <section className="space-y-5">
       <div>
@@ -232,7 +268,17 @@ function SpotsTime({ state, set }: Props) {
             ? "Click each date you want a slot for. They don't have to be consecutive."
             : "One slot per day is created for every calendar day in this range."}
         </p>
-        <div className="bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl p-3">
+        <div
+          id={!isSpecific ? CREATE_DATE_RANGE_CALENDAR_ID : undefined}
+          tabIndex={!isSpecific ? -1 : undefined}
+          role={!isSpecific ? "group" : undefined}
+          aria-label={!isSpecific ? "Date range calendar" : undefined}
+          aria-invalid={!isSpecific && dateRangeError ? true : undefined}
+          data-error-pulse={!isSpecific ? dateRangeErrorPulse : undefined}
+          className={`bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl p-3 outline-none ${
+            !isSpecific && dateRangeError ? "ws-date-range-error" : ""
+          }`}
+        >
           {isSpecific ? (
             <DateRangePicker
               singleDate
@@ -250,10 +296,27 @@ function SpotsTime({ state, set }: Props) {
                   spotsRangeStart: s ? dateToIso(s) : "",
                   spotsRangeEnd: e ? dateToIso(e) : "",
                 });
+                if (s && e) onDateRangeErrorClear?.();
               }}
             />
           )}
         </div>
+        {!isSpecific && dateRangeError && (
+          <div
+            role="alert"
+            aria-live="assertive"
+            data-testid="date-range-missing-error"
+            className="mt-2 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-medium text-red-700"
+          >
+            <span
+              aria-hidden
+              className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-red-500 text-[10px] font-bold text-white"
+            >
+              !
+            </span>
+            {DATE_RANGE_MISSING_ERROR}
+          </div>
+        )}
       </div>
 
       {isSpecific && (
