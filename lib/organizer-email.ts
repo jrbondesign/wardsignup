@@ -68,9 +68,9 @@ function formatSignedUpAt(
   iso: string | null | undefined,
   eventTimezone?: string | null,
 ): string {
-  if (!iso) return "Not given";
+  if (!iso) return "Unknown";
   const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return "Not given";
+  if (!Number.isFinite(d.getTime())) return "Unknown";
   // Without an explicit zone the server's zone leaks in (UTC on Vercel), so
   // organizers would see "Signed up" times shifted by several hours.
   return d.toLocaleString("en-US", {
