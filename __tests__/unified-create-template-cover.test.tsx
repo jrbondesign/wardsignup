@@ -29,12 +29,22 @@ jest.mock("@/lib/apply-template-cover", () => {
   };
 });
 
-jest.mock("@/components/create/EventTypePicker", () => () => <div data-testid="event-type-picker" />);
+jest.mock("@/components/create/EventTypePicker", () => {
+  function EventTypePickerMock() {
+    return <div data-testid="event-type-picker" />;
+  }
+  return EventTypePickerMock;
+});
 jest.mock("@/components/create/sections/TimeSection", () => () => null);
 jest.mock("@/components/create/sections/LocationSection", () => () => null);
 jest.mock("@/components/create/sections/CapacitySection", () => () => null);
 jest.mock("@/components/create/sections/AttendeeFieldsSection", () => () => null);
-jest.mock("@/components/create/sections/ItemsSection", () => () => <div data-testid="items-section" />);
+jest.mock("@/components/create/sections/ItemsSection", () => {
+  function ItemsSectionMock() {
+    return <div data-testid="items-section" />;
+  }
+  return ItemsSectionMock;
+});
 jest.mock("@/components/create/sections/VisibilitySection", () => () => null);
 jest.mock("@/components/create/sections/NotificationsSection", () => () => null);
 jest.mock("@/components/create/sections/GoogleCalendarSection", () => () => null);
