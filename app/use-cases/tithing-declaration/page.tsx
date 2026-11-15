@@ -322,12 +322,12 @@ export default async function TithingDeclarationPage() {
             How one ward ran it
           </h2>
           <p className="text-sm text-[#0E96B0] mb-8 italic">
-            A real Arizona ward path from ChatGPT discovery to a shared signup sheet.
+            A real Arizona ward path from finding Ward Signup to a shared signup sheet.
           </p>
 
           <div className="prose prose-slate max-w-none">
             <p className="text-[17px] text-[#2E5566] leading-[1.75] mb-5">
-              In fall 2026, a leader in an Arizona ward asked ChatGPT how to schedule tithing declaration appointments. The answer pointed them to Ward Signup. They opened the product, created tithing-declaration events with the bishop&rsquo;s available windows and spot limits, and shared a flyer (and the signup link) with the ward.
+              In fall 2026, a leader in an Arizona ward went looking for a way to schedule tithing declaration appointments and found Ward Signup. They opened the product, created tithing declaration events with the bishop&rsquo;s available windows and spot limits, and shared a flyer (and the signup link) with the ward.
             </p>
 
             <p className="text-[17px] text-[#2E5566] leading-[1.75] mb-5">
@@ -335,7 +335,7 @@ export default async function TithingDeclarationPage() {
             </p>
 
             <p className="text-[17px] text-[#2E5566] leading-[1.75]">
-              That path — discover in ChatGPT → create the declaration events → share a flyer or link → run signups → <Link href="/faq" className="text-[#0E96B0] hover:underline">invite a co-admin</Link> — is the same workflow this page describes.
+              That path, from finding Ward Signup to creating the declaration events, sharing a flyer or link, running signups and <Link href="/faq" className="text-[#0E96B0] hover:underline">inviting a co-admin</Link>, is the same workflow this page describes.
             </p>
           </div>
         </div>

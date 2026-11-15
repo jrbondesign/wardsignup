@@ -10,17 +10,13 @@ import Navigation from "@/components/Navigation";
 import { LoadingSpinner } from "@/components/LoadingSpinner";
 import UnifiedCreateForm from "@/components/create/UnifiedCreateForm";
 import OrgNameModal from "@/components/OrgNameModal";
-import { AiEventInput } from "@/components/AiEventInput";
 import { getTemplatesForBrand, getEventTemplate, type TemplateKey } from "@/lib/event-template-data";
-import type { AiEventResult } from "@/lib/ai-event-extraction";
 import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } from "@/lib/limits";
 
 function CreateInner() {
   const brand = useBrand();
   const router = useRouter();
   const searchParams = useSearchParams();
-
-  const isAiEnabled = process.env.NEXT_PUBLIC_AI_EVENT_CREATE_ENABLED === "1";
 
   // Templates available to this brand. Built-in templates are Ward-only (LDS copy);
   // other brands simply see none until brand-neutral templates are authored.
@@ -36,13 +32,8 @@ function CreateInner() {
     ? (rawTemplate as TemplateKey)
     : null;
 
-  const [aiResult, setAiResult] = useState<AiEventResult | null>(null);
-  // Bumped whenever AI fires so the form remounts with a fresh baseline.
-  const [aiVersion, setAiVersion] = useState(0);
-  const [aiOpen, setAiOpen] = useState(false);
-
   // The composer owns its state; it reports whether the user has started filling it
-  // in so we can confirm before a template/AI selection remounts and wipes that work.
+  // in so we can confirm before a template selection remounts and wipes that work.
   const formDirtyRef = useRef(false);
 
   const [checkingAuth, setCheckingAuth] = useState(true);
@@ -85,9 +76,9 @@ function CreateInner() {
   const isUnlimited = isUnlimitedEventsUser(userEmail);
   const atLimit = !isUnlimited && eventCount !== null && eventCount >= maxEvents;
 
-  // Stable form key — bumps when the template or AI baseline changes, remounting the
+  // Stable form key: bumps when the template baseline changes, remounting the
   // composer with a fresh state. Guarded below so it doesn't silently wipe edits.
-  const formKey = `${initialTemplateKey ?? "blank"}-${aiVersion}`;
+  const formKey = initialTemplateKey ?? "blank";
 
   // Confirm before discarding in-progress work when picking a new starting point.
   const confirmReplace = (what: string) =>
@@ -185,12 +176,12 @@ function CreateInner() {
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">
             <h1 className="font-serif text-[26px] text-[#0D2B35] mb-1">Create a new event</h1>
             <p className="text-[13px] text-[#5A8399] mb-3">
-              Build it from the components below — or start faster with a template or AI.
+              Build it from the components below, or start faster with a template.
             </p>
             
             <div className="mb-5 px-3 py-2 bg-[#E6F7FB] border border-[#0E96B0]/20 rounded-lg">
               <p className="text-xs text-[#08647E] font-medium">
-                ✨ Members don&apos;t need an account — they&apos;ll sign up with just their name.
+                ✨ Members don&apos;t need an account. They&apos;ll sign up with just their name.
               </p>
             </div>
 
@@ -241,29 +232,6 @@ function CreateInner() {
                 </div>
               )}
 
-              {/* Describe with AI — collapsed by default so it stays an accelerator. */}
-              {isAiEnabled && (
-                <div className={brandTemplates.length > 0 ? "pt-3 border-t border-[rgba(14,150,176,0.12)]" : ""}>
-                  {aiOpen ? (
-                    <AiEventInput
-                      onResult={(result) => {
-                        if (!confirmReplace("this AI-generated draft")) return;
-                        setAiResult(result);
-                        setAiVersion((v) => v + 1);
-                      }}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => setAiOpen(true)}
-                      className="inline-flex items-center gap-1.5 text-[12px] font-semibold text-[#0E96B0] hover:text-[#08647E] transition-colors"
-                    >
-                      <span aria-hidden>✨</span> Describe it with AI instead
-                    </button>
-                  )}
-                </div>
-              )}
-
               {brandTemplates.length > 0 && (
                 <p className="text-[12px] text-[#5A8399]">
                   Don&apos;t see the template you need?{" "}
@@ -281,7 +249,6 @@ function CreateInner() {
             <UnifiedCreateForm
               key={formKey}
               initialTemplateKey={initialTemplateKey}
-              initialAiResult={aiResult}
               organizationId={orgId ?? undefined}
               onDirtyChange={(dirty) => {
                 formDirtyRef.current = dirty;

@@ -16,7 +16,6 @@ const CHOICES: Array<{ value: HeardAboutChoice; label: string }> = [
   { value: "friend_or_ward", label: "Friend or ward member" },
   { value: "search", label: "Search" },
   { value: "facebook", label: "Facebook" },
-  { value: "ai_chat", label: "AI chat" },
   { value: "other", label: "Other" },
 ];
 

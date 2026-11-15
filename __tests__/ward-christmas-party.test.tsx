@@ -91,10 +91,10 @@ describe("/use-cases/ward-christmas-party", () => {
     expect(JSON.stringify(faq)).toContain("branch, ward or stake");
   });
 
-  it("is linked from the use cases index, footer and llms.txt", () => {
+  it("is linked from the use cases index, footer and home page", () => {
     const fs = require("fs"), path = require("path");
     const read = (p: string) => fs.readFileSync(path.join(__dirname, "..", p), "utf8");
-    for (const f of ["app/use-cases/page.tsx", "components/MarketingFooter.tsx", "components/HomePage.tsx", "public/llms.txt"]) {
+    for (const f of ["app/use-cases/page.tsx", "components/MarketingFooter.tsx", "components/HomePage.tsx"]) {
       expect(read(f)).toContain("/use-cases/ward-christmas-party");
     }
   });

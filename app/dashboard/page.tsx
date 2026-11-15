@@ -21,8 +21,6 @@ import {
   type DashboardData,
   type DashboardEvent,
 } from "@/lib/dashboard-data";
-import ConnectToClaudeCard from "@/components/ConnectToClaudeCard";
-import { CLAUDE_MCP_ENABLED } from "@/lib/claude-mcp";
 import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } from "@/lib/limits";
 import { EVENT_TEMPLATES, TEMPLATES_INITIAL_VISIBLE } from "@/lib/event-template-data";
 import { downloadEventQr } from "@/lib/download-qr";
@@ -471,12 +469,6 @@ export default function DashboardPage() {
                   </div>
                 );
               })}
-            </div>
-          )}
-
-          {CLAUDE_MCP_ENABLED && (
-            <div className="mt-8 max-w-sm">
-              <ConnectToClaudeCard />
             </div>
           )}
 

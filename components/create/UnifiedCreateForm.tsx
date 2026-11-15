@@ -34,8 +34,6 @@ import { generateSpotsSessions } from "@/lib/spots-session-generator";
 import { applyPreset, getAlternateRsvpDescription } from "@/lib/event-presets";
 import { getEventTemplate, type TemplateKey } from "@/lib/event-template-data";
 import { templateCoverAssetForCreate, uploadTemplateCover } from "@/lib/apply-template-cover";
-import { aiResultToFormPatch } from "@/lib/ai-result-to-form";
-import type { AiEventResult } from "@/lib/ai-event-extraction";
 import type { EventType } from "@/lib/types";
 
 // Must match the server caps in lib/limits.ts (MAX_SESSIONS_PER_REQUEST and
@@ -77,7 +75,6 @@ function SessionsPreview({ state }: { state: CreateFormState }) {
 type Action =
   | { type: "set"; patch: Partial<CreateFormState> }
   | { type: "applyPreset"; key: TemplateKey }
-  | { type: "applyAi"; result: AiEventResult }
   | { type: "switchEventType"; next: EventType }
   | { type: "switchDualModeToRsvp"; previousTemplate: TemplateKey | null };
 
@@ -100,14 +97,6 @@ function reducer(state: CreateFormState, action: Action): CreateFormState {
     case "applyPreset":
       // Preset (re)application is the canonical "clean" state — clear flags.
       return { ...applyPreset(state, action.key), dirty: { spotsSchedule: false, itemsList: false } };
-
-    case "applyAi": {
-      // AI prefill is treated like a preset: it produces a clean baseline that
-      // the user can edit afterward. Schedule/items dirty flags reset so the
-      // type-switch confirm doesn't fire just because AI populated fields.
-      const patch = aiResultToFormPatch(action.result);
-      return { ...state, ...patch, dirty: { spotsSchedule: false, itemsList: false } };
-    }
 
     case "switchEventType": {
       // Caller is responsible for confirming destructive switches before dispatching.
@@ -142,32 +131,24 @@ function reducer(state: CreateFormState, action: Action): CreateFormState {
 
 interface Props {
   initialTemplateKey: TemplateKey | null;
-  /** Optional AI-extracted result to apply as the initial form state. Used when
-   *  the page-level AI input fires; the form re-mounts with this baseline. */
-  initialAiResult?: AiEventResult | null;
   /** Reports whether the user has started filling the form, so the page can confirm
-   *  before a template/AI pick remounts (and wipes) in-progress work. */
+   *  before a template pick remounts (and wipes) in-progress work. */
   onDirtyChange?: (dirty: boolean) => void;
   /** Organization ID for feature gating (e.g. Google Calendar sync). */
   organizationId?: string;
 }
 
-export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult, onDirtyChange, organizationId }: Props) {
+export default function UnifiedCreateForm({ initialTemplateKey, onDirtyChange, organizationId }: Props) {
   const router = useRouter();
   const [state, dispatch] = useReducer(
     reducer,
     INITIAL_FORM_STATE,
     (init) => {
-      // AI wins over template when both are present (the user just hit "Fill in
-      // with AI" and that should beat a stale template URL param).
-      if (initialAiResult) return { ...init, ...aiResultToFormPatch(initialAiResult) };
       if (initialTemplateKey) return applyPreset(init, initialTemplateKey);
       return init;
     }
   );
-  const [activeTemplate, setActiveTemplate] = useState<TemplateKey | null>(
-    initialAiResult ? null : initialTemplateKey
-  );
+  const [activeTemplate, setActiveTemplate] = useState<TemplateKey | null>(initialTemplateKey);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -244,7 +225,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, initialAiResult,
     }
   }, []);
 
-  // Report dirtiness up so the page can guard a remount-on-template/AI pick.
+  // Report dirtiness up so the page can guard a remount-on-template pick.
   useEffect(() => {
     const dirty =
       state.name.trim() !== "" ||
