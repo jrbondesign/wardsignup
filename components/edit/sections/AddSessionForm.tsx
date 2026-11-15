@@ -41,7 +41,7 @@ export default function AddSessionForm({ ctx }: { ctx: EditEventCtx }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-[#0D2B35]">Add one slot</div>
-          <div className="text-xs text-[#5A8399]">Pick a single date or day-of-week</div>
+          <div className="text-xs text-[#5A8399]">Pick a single date or a day of the week</div>
         </div>
         <button
           type="button"
@@ -88,7 +88,7 @@ export default function AddSessionForm({ ctx }: { ctx: EditEventCtx }) {
             Day of week *
           </label>
           <p className="text-[12px] text-[#5A8399] mb-2">
-            Recurring weekly — not tied to one calendar date. People pick “Fridays” (for
+            Recurring weekly, not tied to one calendar date. People pick “Fridays” (for
             example) until you remove the slot.
           </p>
           <div className="grid grid-cols-4 sm:grid-cols-7 gap-2">

@@ -101,7 +101,7 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     allowGuestsDefault: false,
     defaultName: "Tithing Declaration",
     defaultDescription:
-      "Meet with the Bishop to declare your tithing for the year. It's a brief and meaningful moment — we're grateful for your faithfulness.",
+      "Meet with the Bishop to declare your tithing for the year. It's a brief and meaningful moment, and we're grateful for your faithfulness.",
   },
   {
     key: "missionary-dinners",
@@ -115,13 +115,13 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     allowGuestsDefault: false,
     defaultName: "Missionary Dinners",
     defaultDescription:
-      "Open your home to the missionaries for a simple meal and a moment of fellowship. Your warmth and hospitality are a meaningful gift — no elaborate preparation needed.",
+      "Open your home to the missionaries for a simple meal and a moment of fellowship. Your warmth and hospitality are a meaningful gift. No elaborate preparation needed.",
   },
   {
     key: "ward-potluck",
     icon: "🥗",
     label: "Ward Potluck",
-    desc: "Pre-filled list: main dish, salad, rolls, dessert, drinks.",
+    desc: "Prefilled list: main dish, salad, rolls, dessert, drinks.",
     catId: "bring",
     catLabel: "Bring or Do",
     badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -129,7 +129,7 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     allowGuestsDefault: false,
     defaultName: "Ward Potluck",
     defaultDescription:
-      "Sign up to bring a dish to our ward potluck! Check what's still needed and claim a spot. There's no wrong answer — everything is appreciated.",
+      "Sign up to bring a dish to our ward potluck! Check what's still needed and claim a spot. There's no wrong answer. Everything is appreciated.",
     defaultDescriptionRsvp:
       "Join us for our ward potluck! RSVP so we know how many to expect. Bring your appetite and come ready to enjoy good food and great company.",
     defaultItems: [
@@ -160,7 +160,7 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     key: "interviews",
     icon: "💬",
     label: "Interviews",
-    desc: "One-on-one appointments with Bishop or counselors.",
+    desc: "One on one appointments with Bishop or counselors.",
     catId: "sessions",
     catLabel: "Scheduled Sessions",
     badgeColor: "bg-violet-50 text-violet-700 border-violet-200",
@@ -206,7 +206,7 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     key: "service-project",
     icon: "🔨",
     label: "Service Project",
-    desc: "Roles and supplies — truck, tools, cleanup crew.",
+    desc: "Roles and supplies: truck, tools, cleanup crew.",
     catId: "bring",
     catLabel: "Bring or Do",
     badgeColor: "bg-emerald-50 text-emerald-700 border-emerald-200",
@@ -214,7 +214,7 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     allowGuestsDefault: false,
     defaultName: "Service Project",
     defaultDescription:
-      "We need your help! Sign up for a role or claim something to bring. Every contribution — big or small — makes this project a success.",
+      "We need your help! Sign up for a role or claim something to bring. Every contribution, big or small, makes this project a success.",
     defaultDescriptionRsvp:
       "Join us for a ward service project! RSVP so we can plan accordingly. Wear clothes you can get dirty in and come ready to work.",
   },
@@ -239,7 +239,7 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     key: "fathers-sons",
     icon: "⛺",
     label: "Fathers & Sons",
-    desc: "Multi-day campout — register attendees by name.",
+    desc: "Campout over several days. Register attendees by name.",
     catId: "single",
     catLabel: "Single Event",
     badgeColor: "bg-sky-50 text-sky-700 border-sky-200",
@@ -247,13 +247,13 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     allowGuestsDefault: true,
     defaultName: "Fathers & Sons Campout",
     defaultDescription:
-      "Join us for our annual Fathers & Sons campout! Register yourself and the boys you're bringing — each name counts toward our headcount for food and supplies.",
+      "Join us for our annual Fathers & Sons campout! Register yourself and the boys you're bringing. Each name counts toward our headcount for food and supplies.",
   },
   {
     key: "service-day",
     icon: "🤝",
     label: "Service Day",
-    desc: "Show up and help — headcount only, no time slots.",
+    desc: "Show up and help. Headcount only, no time slots.",
     catId: "single",
     catLabel: "Single Event",
     badgeColor: "bg-sky-50 text-sky-700 border-sky-200",
@@ -269,7 +269,7 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     key: "fireside",
     icon: "🕯",
     label: "Fireside / Devotional",
-    desc: "Evening gathering — people say they're coming.",
+    desc: "Evening gathering. People say they're coming.",
     catId: "single",
     catLabel: "Single Event",
     badgeColor: "bg-sky-50 text-sky-700 border-sky-200",
@@ -277,13 +277,13 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     allowGuestsDefault: true,
     defaultName: "Ward Fireside",
     defaultDescription:
-      "You're invited to an evening of uplifting messages and music. All are welcome — bring your family and friends.",
+      "You're invited to an evening of uplifting messages and music. All are welcome. Bring your family and friends.",
   },
   {
     key: "temple-trip",
     icon: "🏛",
     label: "Temple Trip",
-    desc: "Bus seats or carpools — cap by available space.",
+    desc: "Bus seats or carpools, capped by available space.",
     catId: "single",
     catLabel: "Single Event",
     badgeColor: "bg-sky-50 text-sky-700 border-sky-200",
@@ -295,7 +295,7 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
     singleSessionForEntireEvent: true,
     defaultName: "Ward Temple Trip",
     defaultDescription:
-      "Join us for a ward temple trip. Space is limited — sign up early to reserve your seat on the bus.",
+      "Join us for a ward temple trip. Space is limited, so sign up early to reserve your seat on the bus.",
   },
 ];
 

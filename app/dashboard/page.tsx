@@ -21,8 +21,6 @@ import {
   type DashboardData,
   type DashboardEvent,
 } from "@/lib/dashboard-data";
-import ConnectToClaudeCard from "@/components/ConnectToClaudeCard";
-import { CLAUDE_MCP_ENABLED } from "@/lib/claude-mcp";
 import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } from "@/lib/limits";
 import { EVENT_TEMPLATES, TEMPLATES_INITIAL_VISIBLE } from "@/lib/event-template-data";
 import { downloadEventQr } from "@/lib/download-qr";
@@ -256,15 +254,15 @@ export default function DashboardPage() {
               <p className="text-xs text-[#5A8399] mt-3 max-w-xl leading-relaxed">
                 {isUnlimited
                   ? isWardBrand
-                    ? "Share links with your ward—people who sign up don’t need an account."
-                    : "Share links with your group—people who sign up don’t need an account."
+                    ? "Share links with your ward. People who sign up don’t need an account."
+                    : "Share links with your group. People who sign up don’t need an account."
                   : <>
                       Free to use: up to {maxEvents} events per account.{" "}
                       {atLimit
                         ? "Delete an event below to create a new one."
                         : isWardBrand
-                          ? "Share links with your ward—people who sign up don’t need an account."
-                          : "Share links with your group—people who sign up don’t need an account."}
+                          ? "Share links with your ward. People who sign up don’t need an account."
+                          : "Share links with your group. People who sign up don’t need an account."}
                     </>
                 }
               </p>
@@ -312,7 +310,7 @@ export default function DashboardPage() {
           {isWardBrand && !atLimit && (
             <div className="mb-8">
               <div className="text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.6px] mb-3">
-                Quick-start templates
+                Quick start templates
               </div>
               {/* Horizontal scrollable chip row — mobile; wrapping row — desktop */}
               <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible scrollbar-hide">
@@ -474,15 +472,9 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {CLAUDE_MCP_ENABLED && (
-            <div className="mt-8 max-w-sm">
-              <ConnectToClaudeCard />
-            </div>
-          )}
-
           {isTipJarEnabled(brand) && (
             <p className="mt-6 text-sm text-[#5A8399] leading-relaxed max-w-md">
-              Ward Signup stays free. Optional hosting support is welcome — never required.{" "}
+              Ward Signup stays free. Optional hosting support is welcome, never required.{" "}
               <Link
                 href="/support-the-project"
                 className="text-[#0E96B0] font-medium hover:text-[#08647E] transition-colors no-underline"

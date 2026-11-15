@@ -229,7 +229,7 @@ export default function OrgMembersSection({ organizationId, isOwner, currentUser
     <section id="co-admins" className="scroll-mt-20 mt-8 bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">
       <h2 className="font-serif text-[20px] text-[#0D2B35] mb-1">Co-admins</h2>
       <p className="text-[13px] text-[#5A8399] mb-5">
-        Co-admins can edit and delete events, manage signups, view analytics, and change the organization and Ward/Unit. Only the owner can invite or remove co-admins.
+        Co-admins can edit and delete events, manage signups, view analytics, and change the organization and ward. Only the owner can invite or remove co-admins.
       </p>
 
       {isOwner && (
@@ -304,7 +304,7 @@ export default function OrgMembersSection({ organizationId, isOwner, currentUser
                     {m.status === "accepted" ? "Active" : m.status === "pending" ? "Pending" : "Revoked"}
                     {isPendingHandoff && (
                       <span className="ml-2 inline-block px-2 py-0.5 rounded-full bg-[#FFF3D6] text-[#8A6300] text-[11px] font-semibold">
-                        Pending owner — transfers on acceptance
+                        Pending owner: transfers when accepted.
                       </span>
                     )}
                   </div>

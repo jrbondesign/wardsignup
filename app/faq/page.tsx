@@ -56,7 +56,7 @@ export default async function FAQPage() {
         "name": "Can I limit how many people sign up for each slot?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. Set how many spots each time slot has — when it's full, the slot closes automatically."
+          "text": "Yes. Set how many spots each time slot has. When it's full, the slot closes automatically."
         }
       },
       {
@@ -64,7 +64,7 @@ export default async function FAQPage() {
         "name": "How much does Ward Signup cost?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Ward Signup is free to use. No credit card required. Optional contributions to offset hosting costs are welcome but never required — see /support-the-project."
+          "text": "Ward Signup is free to use. No credit card required. Optional contributions to offset hosting costs are welcome but never required. See /support-the-project."
         }
       },
       {
@@ -215,7 +215,7 @@ export default async function FAQPage() {
                   Can I limit how many people sign up for each slot?
                 </h3>
                 <p className="text-[17px] leading-[1.7] text-[#2E5566]">
-                  <strong>Yes.</strong> Set how many spots each time slot has — when it's full, the slot closes automatically.
+                  <strong>Yes.</strong> Set how many spots each time slot has. When it's full, the slot closes automatically.
                 </p>
               </div>
 
@@ -233,7 +233,7 @@ export default async function FAQPage() {
                   Can I add more slots after I share the link?
                 </h3>
                 <p className="text-[17px] leading-[1.7] text-[#2E5566]">
-                  Yes. Go to your dashboard, open the event, and add more slots. The same link still works — members will see the updated options.
+                  Yes. Go to your dashboard, open the event, and add more slots. The same link still works, and members will see the updated options.
                 </p>
               </div>
             </div>
@@ -252,7 +252,7 @@ export default async function FAQPage() {
                 </h3>
                 <p className="text-[17px] leading-[1.7] text-[#2E5566]">
                   Ward Signup is <strong>free to use</strong>. No credit card required.
-                  Optional contributions to offset hosting costs are welcome but never required — see{" "}
+                  Optional contributions to offset hosting costs are welcome but never required. See{" "}
                   <Link href="/support-the-project" className="text-[#0E96B0] font-medium hover:text-[#08647E] transition-colors">
                     Support the Project
                   </Link>
@@ -305,7 +305,7 @@ export default async function FAQPage() {
                   Can I use this for tithing declaration appointments?
                 </h3>
                 <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-3">
-                  Yes. Ward Signup is commonly used for tithing settlement scheduling. Create 15-minute slots, set one spot per slot, and share the link with your ward. Members pick a time without back-and-forth texts or calls.
+                  Yes. Ward Signup is commonly used for tithing settlement scheduling. Create 15 minute slots, set one spot per slot, and share the link with your ward. Members pick a time without back and forth texts or calls.
                 </p>
                 <p className="text-[17px] leading-[1.7] text-[#2E5566]">
                   See our <Link href="/use-cases/tithing-declaration" className="text-[#0E96B0] font-medium hover:text-[#08647E] transition-colors">tithing declaration guide</Link> for a complete walkthrough.
@@ -358,13 +358,13 @@ export default async function FAQPage() {
                 <Link href="/use-cases/tithing-declaration" className="text-[#0E96B0] hover:text-[#08647E] underline">
                   Tithing Declaration Scheduling
                 </Link>
-                {" "}— step-by-step guide
+                {": "}step by step guide
               </div>
               <div>
                 <Link href="/compare/signupgenius" className="text-[#0E96B0] hover:text-[#08647E] underline">
                   Ward Signup vs SignUpGenius
                 </Link>
-                {" "}— comparison for wards
+                {": "}comparison for wards
               </div>
             </div>
           </div>

@@ -12,9 +12,9 @@ const WARDSIGNUP: BrandDefinition = {
   id: "wardsignup",
   name: "Ward Signup",
   shortName: "Ward Signup",
-  metadataTitle: "Ward Signup — Simple scheduling for your ward",
+  metadataTitle: "Ward Signup | Simple scheduling for your ward",
   metadataDescription:
-    "Create time slots, set spots per session, and share a signup link — no logins required for members.",
+    "Create time slots, set spots per session, and share a signup link. No logins required for members.",
   twitterDescription: "Simple scheduling for your ward",
   siteUrl: "https://wardsignup.com",
   supportEmail: "support@wardsignup.com",
@@ -27,15 +27,15 @@ const WARDSIGNUP: BrandDefinition = {
   heroLine2Prefix: "for ",
   heroLine2Em: "your ward",
   homeSubhead:
-    "Create time slots, set spots per session, and share a signup link — no logins required for members.",
+    "Create time slots, set spots per session, and share a signup link. No logins required for members.",
   email: {
     organizerFrom: "Ward Signup <noreply@wardsignup.com>",
     inviteFrom: "Ward Signup <noreply@wardsignup.com>",
     welcomeFrom: "Jonathan <jonathan@wardsignup.com>",
     creatorNotifyFrom: "Ward Signup <noreply@wardsignup.com>",
-    welcomeSubject: "You're in — a few things to know about Ward Signup",
+    welcomeSubject: "You're in! A few things to know about Ward Signup",
     welcomeQuickStartBold:
-      "Create an event, share the link, and members claim their slots on their phone — no login required. You can edit anytime and changes show up instantly.",
+      "Create an event, share the link, and members claim their slots on their phone. No login required. You can edit anytime and changes show up instantly.",
   },
   hosts: ["wardsignup.com", "www.wardsignup.com"],
 };

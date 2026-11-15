@@ -24,7 +24,7 @@ export const ORGANIZER_EMAIL_PRIVACY_LINE =
 
 /** Participant confirmation / reminder — privacy line (plain text). */
 export const PARTICIPANT_EMAIL_PRIVACY_LINE =
-  "You receive this because you signed up for an event. Your contact info is shared with the event organizer only — we never sell your data.";
+  "You receive this because you signed up for an event. Your contact info is shared with the event organizer only. We never sell your data.";
 
 export function buildOrganizerEmailFooterHtml(
   brand: PublicBrand = getDefaultPublicBrand(),
@@ -43,7 +43,7 @@ export function buildOrganizerEmailFooterHtml(
   });
   const tipLine = isTipJarEnabled(brand)
     ? `<tr><td style="${tdStyle}padding-top:10px;">
-        ${brand.name} stays free — optional hosting support is welcome, never required.
+        ${brand.name} stays free. Optional hosting support is welcome, never required.
         <a href="${supportUrl}" style="color:#0E96B0;text-decoration:none;">Learn more</a>.
       </td></tr>`
     : "";

@@ -55,11 +55,11 @@ export default function SlotEditor({
   headingHint = "(at least one)",
   sectionEnabled = true,
   labelPlaceholders = DEFAULT_HINTS,
-  sectionPlaceholder = "Section (optional) — e.g. Women's Side",
+  sectionPlaceholder = "Section (optional), e.g. Women's Side",
   setLimitLabel = "Set a limit",
   addLabel = "Add another item",
   datalistId = "slot-section-options",
-  removeDisabledTitle = "Can't remove — people have already signed up",
+  removeDisabledTitle = "Can't remove. People have already signed up",
 }: Props) {
   const updateRow = (idx: number, patch: Partial<SlotRow>) =>
     onChange(rows.map((row, i) => (i === idx ? { ...row, ...patch } : row)));

@@ -217,7 +217,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
         gcal_invalid_state: "The connection session expired. Please try again.",
         gcal_org_not_enabled: "Google Calendar sync is not enabled for your organization.",
         gcal_not_org_member: "You need to be an admin of this organization to connect Google Calendar.",
-        gcal_no_refresh_token: "Google did not return a lasting sign-in. Click Reconnect and allow access again.",
+        gcal_no_refresh_token: "Google did not return a lasting sign in. Click Reconnect and allow access again.",
         gcal_token_revoked: "Your previous Google Calendar access was revoked. Please disconnect your Google account from Google security settings, then try connecting again.",
         gcal_token_exchange_failed: "Could not complete the connection with Google. Please try again.",
         gcal_db_error: "Could not save the connection. Please try again.",
@@ -268,7 +268,7 @@ export default function GoogleCalendarIntegrations({ organizationId }: GoogleCal
     <section className="mt-6 bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">
       <h2 className="font-serif text-[22px] text-[#0D2B35] mb-1">Integrations</h2>
       <p className="text-[13px] text-[#5A8399] mb-5">
-        Connect third-party services to enhance your events.
+        Connect outside services to enhance your events.
       </p>
 
       <div className="space-y-4">

@@ -197,7 +197,7 @@ export default function Home() {
           Everything your secretary needs
         </h2>
         <p className="text-[17px] text-[#5A8399] text-center max-w-[500px] mx-auto mb-14 leading-[1.65]">
-          Designed for ward leadership — simple enough for anyone, powerful enough for every calling.
+          Designed for ward leadership. Simple enough for anyone, powerful enough for every calling.
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
@@ -215,7 +215,7 @@ export default function Home() {
               Time Slots
             </div>
             <p className="text-sm text-[#5A8399] leading-[1.65]">
-              Create specific days and times with a set number of spots per slot. No double-booking, ever.
+              Create specific days and times with a set number of spots per slot. No double booking, ever.
             </p>
           </div>
 
@@ -264,7 +264,7 @@ export default function Home() {
               Shareable Links
             </div>
             <p className="text-sm text-[#5A8399] leading-[1.65]">
-              One link for any event. Share by email, text, or bulletin — no app download required.
+              One link for any event. Share by email, text, or bulletin. No app download required.
             </p>
           </div>
 
@@ -282,7 +282,7 @@ export default function Home() {
               Spot limits
             </div>
             <p className="text-sm text-[#5A8399] leading-[1.65]">
-              Set how many spots each slot has. Slots close automatically when full — no manual oversight needed.
+              Set how many spots each slot has. Slots close automatically when full, so no manual oversight is needed.
             </p>
           </div>
 
@@ -298,7 +298,7 @@ export default function Home() {
               ✨ No Account Needed
             </div>
             <p className="text-sm text-[#5A8399] leading-[1.65]">
-              People just pick a slot and enter their name — zero friction, zero barriers. As simple as a paper sheet, but online.
+              People just pick a slot and enter their name. Zero friction, zero barriers. As simple as a paper sheet, but online.
             </p>
           </div>
         </div>
@@ -375,7 +375,7 @@ export default function Home() {
                   Watch it fill up
                 </div>
                 <p className="text-sm text-white/50 leading-[1.65]">
-                  Participants pick a slot and confirm — you see it update in real time, no back-and-forth needed.
+                  Participants pick a slot and confirm. You see it update in real time, with no back and forth needed.
                 </p>
               </div>
             </div>
@@ -421,7 +421,7 @@ export default function Home() {
               Ready to simplify your ward scheduling?
             </h2>
             <p className="text-[17px] text-white/75 mb-9 max-w-[480px] mx-auto leading-[1.6]">
-              Free to use — no credit card, no setup fee, no complexity.
+              Free to use. No credit card, no setup fee, no complexity.
               {showSupport && (
                 <>
                   {" "}

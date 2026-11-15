@@ -208,7 +208,7 @@ function AuthCallbackContent() {
 
         const dedupe = exchangeDedupeKey(code, token_hash);
         if (!dedupe) {
-          setError("Sign-in incomplete. Please try again.");
+          setError("Sign in incomplete. Please try again.");
           return;
         }
 
@@ -260,7 +260,7 @@ function AuthCallbackContent() {
           return;
         }
 
-        setError("Sign-in incomplete. Please try again.");
+        setError("Sign in incomplete. Please try again.");
         return;
       }
 

@@ -40,7 +40,7 @@ function checkRateLimit(userId: string): { allowed: boolean; retryAfterMs: numbe
 export async function POST(request: Request) {
   if (!isAiEventCreateEnabled()) {
     return NextResponse.json(
-      { error: "AI event creation is currently disabled." },
+      { error: "This feature is not available." },
       { status: 503 },
     );
   }
@@ -55,7 +55,7 @@ export async function POST(request: Request) {
   if (!allowed) {
     const retryAfterSecs = Math.ceil(retryAfterMs / 1000);
     return NextResponse.json(
-      { error: "Too many AI requests. Please wait a bit and try again." },
+      { error: "This feature is not available." },
       {
         status: 429,
         headers: { "Retry-After": String(retryAfterSecs) },

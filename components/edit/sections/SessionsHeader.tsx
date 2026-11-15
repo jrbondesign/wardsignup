@@ -54,7 +54,7 @@ export default function SessionsHeader({ ctx }: { ctx: EditEventCtx }) {
                   className="w-full text-left px-4 py-2.5 text-sm text-[#2E5566] hover:bg-[#E6F7FB] hover:text-[#0D2B35] transition-colors"
                 >
                   Add one slot
-                  <div className="text-[11px] text-[#5A8399] mt-0.5">Pick a single date or day-of-week</div>
+                  <div className="text-[11px] text-[#5A8399] mt-0.5">Pick a single date or a day of the week</div>
                 </button>
                 <button
                   type="button"

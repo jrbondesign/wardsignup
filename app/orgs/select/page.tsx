@@ -99,7 +99,7 @@ function OrgSelectInner() {
           <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">
             <h1 className="font-serif text-[26px] text-[#0D2B35] mb-1">Choose an organization</h1>
             <p className="text-[13px] text-[#5A8399] mb-6">
-              You belong to more than one organization on {brand.name}. Pick which one to use right now — you can switch any time.
+              You belong to more than one organization on {brand.name}. Pick which one to use right now. You can switch any time.
             </p>
 
             {error && (

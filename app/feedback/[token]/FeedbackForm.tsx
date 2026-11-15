@@ -61,7 +61,7 @@ export function FeedbackForm({
     return (
       <div>
         <h2 className="text-lg font-semibold text-gray-900 mb-2">
-          Got it — thank you!
+          Got it, thank you!
         </h2>
         <p className="text-gray-600">
           Your feedback goes straight to the founder. It genuinely shapes

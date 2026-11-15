@@ -65,7 +65,7 @@ export default function BulkAddSessionsForm({ ctx }: { ctx: EditEventCtx }) {
           Date range <span className="font-normal text-[#5A8399]">(optional)</span>
         </label>
         <p className="text-[12px] text-[#5A8399] mb-2">
-          Tap start, then end — tap the same day twice for a single day. Skip this step for
+          Tap start, then end. Tap the same day twice for a single day. Skip this step for
           weekly recurring slots.
         </p>
         <div className="p-2 -m-1 rounded-xl">

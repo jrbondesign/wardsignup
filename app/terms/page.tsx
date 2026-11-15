@@ -7,7 +7,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
-  const title = `Terms of Service — ${brand.shortName}`;
+  const title = `Terms of Service | ${brand.shortName}`;
   const description = `Terms and conditions for using ${brand.name}.`;
   const url = `${brand.siteUrl}/terms`;
   return {
@@ -72,7 +72,7 @@ export default async function TermsOfService() {
               2. Description of Service
             </h2>
             <p>
-              {brand.name} provides a time-slot scheduling platform for religious organizations, community
+              {brand.name} provides a time slot scheduling platform for religious organizations, community
               groups, and ministries to coordinate appointments, meetings, volunteer shifts, and similar
               events. The service allows users to create events with specific time slots and share signup
               links with participants.

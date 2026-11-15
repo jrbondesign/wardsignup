@@ -12,13 +12,13 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     title: `Tithing Declaration Appointments · ${brand.shortName}`,
-    description: "Schedule tithing settlement online with Ward Signup. Create 15-minute appointment slots, set capacity, and share one link. Members pick a time with no account needed.",
+    description: "Schedule tithing settlement online with Ward Signup. Create 15 minute appointment slots, set capacity, and share one link. Members pick a time with no account needed.",
     alternates: {
       canonical: "/use-cases/tithing-declaration",
     },
     openGraph: {
       title: `Tithing Declaration Appointments · ${brand.shortName}`,
-      description: "Schedule tithing settlement online — create slots, share one link, members sign up with no account.",
+      description: "Schedule tithing settlement online. Create slots, share one link, and members sign up with no account.",
       url: `${brand.siteUrl}/use-cases/tithing-declaration`,
       siteName: brand.shortName,
       type: "website",
@@ -48,7 +48,7 @@ export default async function TithingDeclarationPage() {
         "name": "Can I limit how many appointments are scheduled per time slot?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. Set one spot per 15-minute slot to prevent double-booking. When a slot is claimed, it automatically becomes unavailable for others."
+          "text": "Yes. Set one spot per 15 minute slot to prevent double booking. When a slot is claimed, it automatically becomes unavailable for others."
         }
       },
       {
@@ -82,7 +82,7 @@ export default async function TithingDeclarationPage() {
     "@context": "https://schema.org",
     "@type": "HowTo",
     "name": "How to Schedule Tithing Declaration Appointments Online",
-    "description": "Step-by-step guide to scheduling tithing settlement appointments for your ward using Ward Signup.",
+    "description": "Step by step guide to scheduling tithing settlement appointments for your ward using Ward Signup.",
     "step": [
       {
         "@type": "HowToStep",
@@ -92,7 +92,7 @@ export default async function TithingDeclarationPage() {
       {
         "@type": "HowToStep",
         "name": "Add time slots",
-        "text": "Create 15-minute appointment slots across multiple days. Set each slot to 1 spot to prevent double-booking."
+        "text": "Create 15 minute appointment slots across multiple days. Set each slot to 1 spot to prevent double booking."
       },
       {
         "@type": "HowToStep",
@@ -123,7 +123,7 @@ export default async function TithingDeclarationPage() {
             Schedule tithing declaration appointments online
           </h1>
           <p className="text-[clamp(17px,2.4vw,20px)] text-white/85 mb-8 max-w-[560px] mx-auto leading-[1.6]">
-            Create 15-minute slots, share one link, and let ward members pick their own time — no paper signup sheets, no back-and-forth texts.
+            Create 15 minute slots, share one link, and let ward members pick their own time. No paper signup sheets, no back and forth texts.
           </p>
           <div className="flex gap-3 flex-wrap justify-center">
             <Link href="/create" className="text-base font-semibold px-8 py-3.5 rounded-full bg-white text-[#08647E] border-none no-underline shadow-[0_8px_28px_rgba(0,0,0,0.20)] transition-all duration-200 inline-flex items-center gap-2 hover:-translate-y-0.5 hover:shadow-[0_12px_36px_rgba(0,0,0,0.25)]">
@@ -171,7 +171,7 @@ export default async function TithingDeclarationPage() {
                   Add time slots
                 </h3>
                 <p className="text-[16px] text-[#5A8399] leading-[1.7]">
-                  Create 15-minute appointment slots across multiple days. Set each slot to <strong>1 spot</strong> to prevent double-booking.
+                  Create 15 minute appointment slots across multiple days. Set each slot to <strong>1 spot</strong> to prevent double booking.
                 </p>
               </div>
             </div>
@@ -276,11 +276,11 @@ export default async function TithingDeclarationPage() {
               {/* Rows */}
               {[
                 { feature: "Members need an account", paper: "No", digital: "No" },
-                { feature: "Real-time availability", paper: "No — paper gets outdated", digital: "Yes — updates instantly" },
-                { feature: "Double-booking risk", paper: "High — manual tracking", digital: "Zero — slots close when full" },
-                { feature: "Confirmation emails", paper: "No", digital: "Yes — automatic" },
+                { feature: "Live availability", paper: "No, paper gets outdated", digital: "Yes, updates instantly" },
+                { feature: "Double booking risk", paper: "High, manual tracking", digital: "Zero, slots close when full" },
+                { feature: "Confirmation emails", paper: "No", digital: "Yes, automatic" },
                 { feature: "Reminder emails", paper: "No", digital: "Yes, by email if provided" },
-                { feature: "Accessible from anywhere", paper: "No — foyer only", digital: "Yes — share one link" },
+                { feature: "Accessible from anywhere", paper: "No, foyer only", digital: "Yes, share one link" },
                 { feature: "Setup time", paper: "Print, post, hope people see it", digital: "10 minutes to live" },
               ].map((row, i) => (
                 <div key={i} className="contents">
@@ -322,12 +322,12 @@ export default async function TithingDeclarationPage() {
             How one ward ran it
           </h2>
           <p className="text-sm text-[#0E96B0] mb-8 italic">
-            A real Arizona ward path from ChatGPT discovery to a shared signup sheet.
+            A real Arizona ward path from finding Ward Signup to a shared signup sheet.
           </p>
 
           <div className="prose prose-slate max-w-none">
             <p className="text-[17px] text-[#2E5566] leading-[1.75] mb-5">
-              In fall 2026, a leader in an Arizona ward asked ChatGPT how to schedule tithing declaration appointments. The answer pointed them to Ward Signup. They opened the product, created tithing-declaration events with the bishop&rsquo;s available windows and spot limits, and shared a flyer (and the signup link) with the ward.
+              In fall 2026, a leader in an Arizona ward went looking for a way to schedule tithing declaration appointments and found Ward Signup. They opened the product, created tithing declaration events with the bishop&rsquo;s available windows and spot limits, and shared a flyer (and the signup link) with the ward.
             </p>
 
             <p className="text-[17px] text-[#2E5566] leading-[1.75] mb-5">
@@ -335,7 +335,7 @@ export default async function TithingDeclarationPage() {
             </p>
 
             <p className="text-[17px] text-[#2E5566] leading-[1.75]">
-              That path — discover in ChatGPT → create the declaration events → share a flyer or link → run signups → <Link href="/faq" className="text-[#0E96B0] hover:underline">invite a co-admin</Link> — is the same workflow this page describes.
+              That path, from finding Ward Signup to creating the declaration events, sharing a flyer or link, running signups and <Link href="/faq" className="text-[#0E96B0] hover:underline">inviting a co-admin</Link>, is the same workflow this page describes.
             </p>
           </div>
         </div>
@@ -363,7 +363,7 @@ export default async function TithingDeclarationPage() {
                 Can I limit how many appointments are scheduled per time slot?
               </h3>
               <p className="text-[17px] leading-[1.7] text-[#2E5566]">
-                <strong>Yes.</strong> Set one spot per 15-minute slot to prevent double-booking. When a slot is claimed, it automatically becomes unavailable for others.
+                <strong>Yes.</strong> Set one spot per 15 minute slot to prevent double booking. When a slot is claimed, it automatically becomes unavailable for others.
               </p>
             </div>
 

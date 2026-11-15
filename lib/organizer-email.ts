@@ -68,9 +68,9 @@ function formatSignedUpAt(
   iso: string | null | undefined,
   eventTimezone?: string | null,
 ): string {
-  if (!iso) return "—";
+  if (!iso) return "Not given";
   const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return "—";
+  if (!Number.isFinite(d.getTime())) return "Not given";
   // Without an explicit zone the server's zone leaks in (UTC on Vercel), so
   // organizers would see "Signed up" times shifted by several hours.
   return d.toLocaleString("en-US", {
@@ -107,7 +107,7 @@ function buildNewSignupsBannerHtml(
   return `
     <div style="margin:0 0 24px;padding:16px;background:#FFF8E6;border:1px solid #F5D78A;border-radius:12px;">
       <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#b45309;margin:0 0 10px;">New signups since last notice</div>
-      <p style="font-size:12px;color:#5A8399;margin:0 0 10px;line-height:1.5;">Newest first — only signups that arrived after your previous faster alert.</p>
+      <p style="font-size:12px;color:#5A8399;margin:0 0 10px;line-height:1.5;">Newest first. Only signups that arrived after your previous faster alert.</p>
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;font-size:13px;">
         <tr style="background:rgba(255,255,255,0.65);">
           <th align="left" style="padding:6px;color:#2E5566;">Name</th>
@@ -272,8 +272,8 @@ function buildSessionsTableHtml(
               .map(
                 (u) => `<tr>
               <td style="border-top:1px solid #e6f0f3;">${escapeHtml(u.member_name)}</td>
-              <td style="border-top:1px solid #e6f0f3;">${u.member_email ? escapeHtml(u.member_email) : "—"}</td>
-              <td style="border-top:1px solid #e6f0f3;">${u.member_phone ? escapeHtml(u.member_phone) : "—"}</td>
+              <td style="border-top:1px solid #e6f0f3;">${u.member_email ? escapeHtml(u.member_email) : "Not given"}</td>
+              <td style="border-top:1px solid #e6f0f3;">${u.member_phone ? escapeHtml(u.member_phone) : "Not given"}</td>
               ${
                 showSignedUpCol
                   ? `<td style="border-top:1px solid #e6f0f3;font-size:12px;color:#054F64;white-space:nowrap;">${escapeHtml(formatSignedUpAt(u.signed_up_at, options?.eventTimezone))}</td>`
@@ -370,7 +370,7 @@ function buildOrganizerItemsEmailHtml(params: {
       }).join("");
 
   const customBlock = customSignups.length === 0 ? "" : `
-    <h2 style="font-size:15px;color:#2E5566;margin:24px 0 12px;">Also bringing (write-ins)</h2>
+    <h2 style="font-size:15px;color:#2E5566;margin:24px 0 12px;">Also bringing (added by members)</h2>
     ${customSignups.map((sig) => `
       <div style="font-size:13px;color:#0D2B35;margin-bottom:6px;">
         <strong>${escapeHtml(sig.custom_label || "(unnamed)")}</strong>
@@ -511,18 +511,18 @@ function subjectForKind(
 ): string {
   const label = brand.shortName;
   const n = eventName.trim() || "Your event";
-  if (kind === "manual") return `${label} · ${n} — your report`;
+  if (kind === "manual") return `${label} · ${n}: your report`;
   if (kind === "faster") {
     const c = typeof newCount === "number" ? newCount : 0;
-    return `${label} · ${n} — ${c} new signup${c === 1 ? "" : "s"}`;
+    return `${label} · ${n}: ${c} new signup${c === 1 ? "" : "s"}`;
   }
-  return `${label} · ${n} — daily summary`;
+  return `${label} · ${n}: daily summary`;
 }
 
 function headlineForKind(kind: "digest" | "manual" | "faster"): string {
   if (kind === "manual") return "Here is your current signup report.";
   if (kind === "faster")
-    return `New signups since your last faster alert — full roster below.`;
+    return `New signups since your last faster alert. Full roster below.`;
   return "Here is your signup summary.";
 }
 

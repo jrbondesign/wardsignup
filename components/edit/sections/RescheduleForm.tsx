@@ -317,7 +317,7 @@ export default function RescheduleForm({ ctx }: { ctx: EditEventCtx }) {
                 if (tithingError) return "Fix the end time above to generate slots.";
                 return total > 0
                   ? `${total} slot${total !== 1 ? "s" : ""} will be created: ${tithingDuration}-min appointments, ${formatTimeRange(rescheduleTime, rescheduleEndTime, { clock: "12h" })}.`
-                  : "Configure the schedule above to auto-generate slots.";
+                  : "Configure the schedule above to create slots automatically.";
               }
 
               if (rescheduleDays.length === 0) return "Choose days of week to generate slots.";

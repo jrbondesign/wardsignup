@@ -63,7 +63,7 @@ export function exchangePkceClientDeduped(code: string): Promise<{
       const accessToken = data.session?.access_token;
       if (!accessToken) {
         clientPkceByCode.delete(code);
-        return { ok: false, message: "Sign-in incomplete." };
+        return { ok: false, message: "Sign in incomplete." };
       }
       return { ok: true, accessToken };
     })();

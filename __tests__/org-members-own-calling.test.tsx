@@ -87,7 +87,7 @@ describe("Org settings identity fields", () => {
         canEditOrg
       />,
     );
-    expect(screen.getByLabelText("Ward/Unit")).not.toBeDisabled();
+    expect(screen.getByLabelText("Ward")).not.toBeDisabled();
     expect(screen.getByLabelText("Organization")).not.toBeDisabled();
     expect(screen.queryByLabelText(/Your calling/)).not.toBeInTheDocument();
     expect(screen.queryByText("Only the owner can change this.")).not.toBeInTheDocument();

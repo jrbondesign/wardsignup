@@ -9,8 +9,8 @@ export async function generateMetadata(): Promise<Metadata> {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
-  const title = "Ward Signup use cases — sheets for secretaries and leaders";
-  const description = "How Latter-day Saint wards use Ward Signup: tithing declaration, Christmas party food and jobs, secretary signup sheets, and more. Free during beta.";
+  const title = "Ward Signup use cases: sheets for secretaries and leaders";
+  const description = "How Latter-day Saint wards use Ward Signup: tithing declaration, Christmas party food and jobs, secretary signup sheets, and more. Free to use.";
   const url = `${brand.siteUrl}/use-cases`;
   
   return {
@@ -65,7 +65,7 @@ export default async function UseCasesIndexPage() {
               </h1>
               
               <p className="text-[18px] text-[#2E5566] leading-[1.75] mb-10">
-                Ward Signup is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set spots, and share one link — members sign up with no account. These pages show common sheets secretaries and other leaders run.
+                Ward Signup is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set spots, and share one link. Members sign up with no account. These pages show common sheets secretaries and other leaders run.
               </p>
 
               <section className="mb-12">
@@ -81,7 +81,7 @@ export default async function UseCasesIndexPage() {
                       </Link>
                     </h3>
                     <p className="text-[17px] text-[#2E5566] leading-[1.7]">
-                      Open the bishop&apos;s windows, set household spot caps, and share one link or QR — including how one Arizona ward ran it.
+                      Open the bishop&apos;s windows, set household spot caps, and share one link or QR, including how one Arizona ward ran it.
                     </p>
                   </div>
 
@@ -122,7 +122,7 @@ export default async function UseCasesIndexPage() {
                       <Link href="/compare/signupgenius" className="text-[#0E96B0] hover:text-[#08647E] font-medium">
                         Ward Signup vs SignUpGenius
                       </Link>
-                      {" "}— calm comparison for leaders who already know SUG
+                      {": "}a calm comparison for leaders who already know SUG
                     </span>
                   </li>
                   <li className="flex items-start gap-3">
@@ -133,7 +133,7 @@ export default async function UseCasesIndexPage() {
                       <Link href="/faq" className="text-[#0E96B0] hover:text-[#08647E] font-medium">
                         FAQ
                       </Link>
-                      {" "}— accounts, free during beta, multi-leader admins, privacy pointer
+                      {": "}accounts, co-admins for other leaders, privacy pointer
                     </span>
                   </li>
                   <li className="flex items-start gap-3">
@@ -144,7 +144,7 @@ export default async function UseCasesIndexPage() {
                       <Link href="/about" className="text-[#0E96B0] hover:text-[#08647E] font-medium">
                         About
                       </Link>
-                      {" "}— independent product, made in Arizona
+                      {": "}independent product, made in Arizona
                     </span>
                   </li>
                 </ul>
@@ -162,7 +162,7 @@ export default async function UseCasesIndexPage() {
                   Create a signup
                 </Link>
                 <p className="text-sm text-[#5A8399] mt-4">
-                  Free during beta.
+                  Free to use.
                 </p>
               </section>
 

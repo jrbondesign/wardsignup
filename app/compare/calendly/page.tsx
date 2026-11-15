@@ -10,7 +10,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
   const title = "Ward Signup vs Calendly for ward appointment sheets";
-  const description = "A fair look at Calendly and Ward Signup for Latter-day Saint ward logistics — calendar sync vs a capped signup sheet.";
+  const description = "A fair look at Calendly and Ward Signup for Latter-day Saint ward logistics: calendar sync vs a capped signup sheet.";
   const url = `${brand.siteUrl}/compare/calendly`;
   
   return {
@@ -48,7 +48,7 @@ export default async function CompareCalendly() {
         "@id": `${brand.siteUrl}/compare/calendly`,
         "url": `${brand.siteUrl}/compare/calendly`,
         "name": "Ward Signup vs Calendly for ward appointment sheets",
-        "description": "A fair look at Calendly and Ward Signup for Latter-day Saint ward logistics — calendar sync vs a capped signup sheet.",
+        "description": "A fair look at Calendly and Ward Signup for Latter-day Saint ward logistics: calendar sync vs a capped signup sheet.",
         "isPartOf": {
           "@type": "WebSite",
           "url": brand.siteUrl,
@@ -71,7 +71,7 @@ export default async function CompareCalendly() {
             "name": "When should a ward use Calendly instead?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Use Calendly when availability should come from a leader's real calendar and bookings are mostly 1:1. Use Ward Signup when you need spots-per-slot and a shared sheet many members can open with no account.",
+              "text": "Use Calendly when availability should come from a leader's real calendar and bookings are mostly 1:1. Use Ward Signup when you need spots per slot and a shared sheet many members can open with no account.",
             },
           },
           {
@@ -79,7 +79,7 @@ export default async function CompareCalendly() {
             "name": "Can we use both?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Yes. Many wards keep Calendly for calendar-owned interviews and use Ward Signup for declaration-style sheets and volunteer shifts.",
+              "text": "Yes. Many wards keep Calendly for calendar based interviews and use Ward Signup for declaration sheets and volunteer shifts.",
             },
           },
         ],
@@ -106,7 +106,7 @@ export default async function CompareCalendly() {
 
             <div className="prose prose-lg max-w-none text-[#2E5566] space-y-6">
               <p>
-                Calendly is excellent when one person's calendar should drive availability. Many wards use it that way for a bishop's interview grid. <strong>Ward Signup</strong> is a different tool: a <strong>signup sheet</strong> with time slots, spot limits, and one shareable link — closer to the paper on the office door than to a personal calendar sync.
+                Calendly is excellent when one person's calendar should drive availability. Many wards use it that way for a bishop's interview grid. <strong>Ward Signup</strong> is a different tool: a <strong>signup sheet</strong> with time slots, spot limits, and one shareable link. It is closer to the paper on the office door than to a personal calendar sync.
               </p>
 
               <p>
@@ -114,7 +114,7 @@ export default async function CompareCalendly() {
               </p>
 
               <p>
-                <strong>Ward Signup</strong> is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set spots, and share one link. Members pick a time and enter their name — no account. Free during beta.
+                <strong>Ward Signup</strong> is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set spots, and share one link. Members pick a time and enter their name with no account. Free to use.
               </p>
 
               <h2 className="font-serif text-2xl text-[#0D2B35] mt-10 mb-4">
@@ -140,14 +140,14 @@ export default async function CompareCalendly() {
                     </tr>
                     <tr>
                       <td className="border border-[#0E96B0]/20 px-4 py-3">Mix of both</td>
-                      <td className="border border-[#0E96B0]/20 px-4 py-3">Use Calendly for true calendar-owned 1:1s; use Ward Signup for declaration-style sheets and multi-spot shifts</td>
+                      <td className="border border-[#0E96B0]/20 px-4 py-3">Use Calendly for true calendar based 1:1s; use Ward Signup for declaration sheets and shifts with several spots</td>
                     </tr>
                   </tbody>
                 </table>
               </div>
 
               <h2 className="font-serif text-2xl text-[#0D2B35] mt-10 mb-4">
-                A fair side-by-side
+                A fair side by side
               </h2>
 
               <div className="overflow-x-auto -mx-4 md:mx-0">
@@ -171,9 +171,9 @@ export default async function CompareCalendly() {
                       <td className="border border-[#0E96B0]/20 px-4 py-3">Invitee usually books without organizing an account; host connects a calendar</td>
                     </tr>
                     <tr>
-                      <td className="border border-[#0E96B0]/20 px-4 py-3 font-medium">Spot caps / multi-person slots</td>
+                      <td className="border border-[#0E96B0]/20 px-4 py-3 font-medium">Spot caps / slots for several people</td>
                       <td className="border border-[#0E96B0]/20 px-4 py-3">Built around spots per session</td>
-                      <td className="border border-[#0E96B0]/20 px-4 py-3">Strong for 1:1; multi-spot sheet workflows are not its main job</td>
+                      <td className="border border-[#0E96B0]/20 px-4 py-3">Strong for 1:1; sheets with several spots per slot are not its main job</td>
                     </tr>
                     <tr className="bg-[#F4FAFB]">
                       <td className="border border-[#0E96B0]/20 px-4 py-3 font-medium">Ward bulletin / QR sheet feel</td>
@@ -182,7 +182,7 @@ export default async function CompareCalendly() {
                     </tr>
                     <tr>
                       <td className="border border-[#0E96B0]/20 px-4 py-3 font-medium">Pricing (on this site)</td>
-                      <td className="border border-[#0E96B0]/20 px-4 py-3">Free during beta</td>
+                      <td className="border border-[#0E96B0]/20 px-4 py-3">Always free, no paid plan</td>
                       <td className="border border-[#0E96B0]/20 px-4 py-3">
                         See{" "}
                         <a
@@ -193,7 +193,7 @@ export default async function CompareCalendly() {
                         >
                           Calendly's site
                         </a>
-                        {" "}for current plans — we do not invent competitor pricing
+                        {" "}for current plans. We do not invent competitor pricing
                       </td>
                     </tr>
                   </tbody>
@@ -205,9 +205,9 @@ export default async function CompareCalendly() {
               </h2>
 
               <ul className="list-disc ml-6 space-y-2">
-                <li>You want a <strong>paper-sheet replacement</strong> for tithing declaration, nursery shifts, or similar capped openings</li>
+                <li>You want a <strong>paper sheet replacement</strong> for tithing declaration, nursery shifts, or similar capped openings</li>
                 <li>Members should book from one link <strong>without</strong> tying the sheet to one person's Google/Outlook free/busy</li>
-                <li>You care most about spot limits and a secretary-style progress view</li>
+                <li>You care most about spot limits and a progress view built for secretaries</li>
               </ul>
 
               <p className="bg-[#E6F7FB] border-l-4 border-[#0E96B0] p-4 rounded">
@@ -227,8 +227,8 @@ export default async function CompareCalendly() {
 
               <ul className="list-disc ml-6 space-y-2">
                 <li>The bishop (or one leader) should own availability from a live calendar</li>
-                <li>You need deep calendar sync, buffers, and round-robin style host scheduling Calendly is known for</li>
-                <li>Your workflow is truly 1:1 booking, not a multi-spot foyer sheet</li>
+                <li>You need deep calendar sync, buffers, and round robin host scheduling Calendly is known for</li>
+                <li>Your workflow is truly 1:1 booking, not a foyer sheet with several spots</li>
               </ul>
 
               <h2 className="font-serif text-2xl text-[#0D2B35] mt-10 mb-4">
@@ -262,7 +262,7 @@ export default async function CompareCalendly() {
                     When should a ward use Calendly instead?
                   </h3>
                   <p>
-                    Use Calendly when availability should come from a leader's real calendar and bookings are mostly 1:1. Use Ward Signup when you need spots-per-slot and a shared sheet many members can open with no account.
+                    Use Calendly when availability should come from a leader's real calendar and bookings are mostly 1:1. Use Ward Signup when you need spots per slot and a shared sheet many members can open with no account.
                   </p>
                 </div>
 
@@ -271,7 +271,7 @@ export default async function CompareCalendly() {
                     Can we use both?
                   </h3>
                   <p>
-                    Yes. Many wards keep Calendly for calendar-owned interviews and use Ward Signup for declaration-style sheets and volunteer shifts.
+                    Yes. Many wards keep Calendly for calendar based interviews and use Ward Signup for declaration sheets and volunteer shifts.
                   </p>
                 </div>
               </div>

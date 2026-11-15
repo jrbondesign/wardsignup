@@ -14,7 +14,7 @@ describe("email footers", () => {
     const html = buildOrganizerEmailFooterHtml(getDefaultPublicBrand());
     expect(html).toContain("/support-the-project");
     expect(html).toContain("utm_source=organizer_email");
-    expect(html).toContain("optional hosting support");
+    expect(html).toContain("Optional hosting support");
     expect(html).toContain("Know someone who could use this?");
   });
 
