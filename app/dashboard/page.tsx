@@ -310,7 +310,7 @@ export default function DashboardPage() {
           {isWardBrand && !atLimit && (
             <div className="mb-8">
               <div className="text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.6px] mb-3">
-                Quick-start templates
+                Quick start templates
               </div>
               {/* Horizontal scrollable chip row — mobile; wrapping row — desktop */}
               <div className="flex gap-2 overflow-x-auto pb-1 sm:flex-wrap sm:overflow-visible scrollbar-hide">

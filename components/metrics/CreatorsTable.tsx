@@ -58,7 +58,7 @@ export function CreatorsTable({
     <>
       {(!callingsAvailable || !wardsAvailable) && (
         <p className="text-[12px] text-[#5A8399] mb-3" data-testid="identity-unavailable">
-          Ward/Unit and Calling will fill in once the database update for them is applied.
+          Ward and Calling will fill in once the database update for them is applied.
         </p>
       )}
       <div
@@ -70,7 +70,7 @@ export function CreatorsTable({
           <thead>
             <tr className="text-[11px] font-semibold text-[#5A8399] uppercase tracking-[0.4px] border-b border-[rgba(14,150,176,0.10)]">
               <th scope="col" className="text-left pb-3 font-semibold w-[42%]">Email</th>
-              <th scope="col" className="text-left pb-3 pl-3 font-semibold">Ward/Unit</th>
+              <th scope="col" className="text-left pb-3 pl-3 font-semibold">Ward</th>
               <th scope="col" className="text-left pb-3 pl-3 font-semibold">Organization</th>
             </tr>
           </thead>

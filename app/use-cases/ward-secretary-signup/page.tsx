@@ -193,7 +193,7 @@ export default async function WardSecretarySignupPage() {
                     <svg className="w-5 h-5 text-[#0E96B0] flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
-                    <span>Nursery coverage, teaching assignments, missionary dinners, service shifts, Fast Sunday sheets, with timed shifts or labeled openings using the same sheet model</span>
+                    <span>Nursery coverage, teaching assignments, missionary dinners, service shifts, Fast Sunday sheets. These use timed shifts or labeled openings on the same sheet model.</span>
                   </li>
                 </ul>
                 <p className="text-[17px] text-[#5A8399] mt-4 italic">
@@ -222,14 +222,14 @@ export default async function WardSecretarySignupPage() {
                     </thead>
                     <tbody className="text-[#2E5566]">
                       <tr className="border-b border-[#0E96B0]/8">
-                        <td className="py-3 px-4">Real-time slot tracking</td>
+                        <td className="py-3 px-4">Live slot tracking</td>
                         <td className="text-center py-3 px-4">❌</td>
                         <td className="text-center py-3 px-4">❌</td>
                         <td className="text-center py-3 px-4">✓</td>
                         <td className="text-center py-3 px-4 text-[#0E96B0]">✓</td>
                       </tr>
                       <tr className="border-b border-[#0E96B0]/8">
-                        <td className="py-3 px-4">Auto-close when full</td>
+                        <td className="py-3 px-4">Slots close automatically when full</td>
                         <td className="text-center py-3 px-4">❌</td>
                         <td className="text-center py-3 px-4">❌</td>
                         <td className="text-center py-3 px-4">✓</td>

@@ -310,7 +310,7 @@ export async function POST(
 
     const subject = transferOwnership
       ? `You've been invited to take over ${org.name}`
-      : `You've been invited to co-manage ${org.name}`;
+      : `You've been invited to help manage ${org.name}`;
     const introLine = transferOwnership
       ? `${inviterEsc} invited you to take over ownership of <strong style="color:#054F64;">${orgNameEsc}</strong> on ${escapeHtml(hostBrand.name)}. When you accept, ${inviterEsc} becomes a co-admin and you become the new owner.`
       : `${inviterEsc} invited you to help manage events for <strong style="color:#054F64;">${orgNameEsc}</strong> on ${escapeHtml(hostBrand.name)}.`;
@@ -357,7 +357,7 @@ export async function POST(
               This link expires in ${TOKEN_TTL_DAYS} days.
             </p>
             <p style="font-size:12px;line-height:1.6;color:#5A8399;margin:0 0 12px;">
-              You received this because someone invited you to co-manage their organization. If you weren't expecting it, you can safely ignore this email.
+              You received this because someone invited you to help manage their organization. If you weren't expecting it, you can safely ignore this email.
             </p>
             ${buildBrandSignatureFooterHtml(hostBrand)}
           </div>

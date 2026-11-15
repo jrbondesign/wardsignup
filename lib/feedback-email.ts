@@ -150,9 +150,9 @@ export async function sendFeedbackResponseNotification(params: {
     params;
 
   const pmfLabel = PMF_LABELS[pmf] ?? pmf;
-  const retentionLabel = retention ? RETENTION_LABELS[retention] ?? retention : "—";
-  const valueText = value?.trim() || "—";
-  const blockerText = blocker?.trim() || "—";
+  const retentionLabel = retention ? RETENTION_LABELS[retention] ?? retention : "Not given";
+  const valueText = value?.trim() || "Not given";
+  const blockerText = blocker?.trim() || "Not given";
   const when = formatPhoenixDateTime(respondedAt);
 
   const text = `New ${brand.name} feedback from ${creatorEmail}
@@ -262,10 +262,10 @@ export function buildFeedbackDigestEmailHtml(params: {
       const when = r.responded_at
         ? phoenixDateKey(r.responded_at)
         : "";
-      const pmf = r.answer_pmf ? PMF_LABELS[r.answer_pmf] ?? r.answer_pmf : "—";
+      const pmf = r.answer_pmf ? PMF_LABELS[r.answer_pmf] ?? r.answer_pmf : "Not given";
       const retention = r.answer_retention
         ? RETENTION_LABELS[r.answer_retention] ?? r.answer_retention
-        : "—";
+        : "Not given";
       return `
         <tr>
           <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 13px; vertical-align: top; white-space: nowrap;">
@@ -275,10 +275,10 @@ export function buildFeedbackDigestEmailHtml(params: {
             ${escapeHtml(pmf)}<br /><span style="color: #6b7280;">next: ${escapeHtml(retention)}</span>
           </td>
           <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 13px; vertical-align: top;">
-            ${escapeHtml(r.answer_value?.trim() || "—")}
+            ${escapeHtml(r.answer_value?.trim() || "Not given")}
           </td>
           <td style="padding: 8px; border-bottom: 1px solid #e5e7eb; font-size: 13px; vertical-align: top;">
-            ${escapeHtml(r.answer_blocker?.trim() || "—")}
+            ${escapeHtml(r.answer_blocker?.trim() || "Not given")}
           </td>
         </tr>`;
     })

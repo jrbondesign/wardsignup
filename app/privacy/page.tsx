@@ -177,12 +177,12 @@ export default async function PrivacyPolicy() {
               5. Data Security
             </h2>
             <p>
-              We use industry-standard security measures to protect your information, including:
+              We use industry standard security measures to protect your information, including:
             </p>
             <ul className="list-disc ml-6 space-y-2 mt-3">
               <li>Encrypted data transmission (HTTPS/SSL)</li>
               <li>Secure authentication via Supabase</li>
-              <li>Database security with row-level security policies</li>
+              <li>Database security with row level security policies</li>
               <li>
                 Encrypted storage of Google Calendar refresh tokens, with access limited to our server
                 processes that perform calendar sync
@@ -227,7 +227,7 @@ export default async function PrivacyPolicy() {
             </h2>
             <p>
               {brand.name} uses essential cookies to maintain your authentication session. We do not use
-              advertising cookies or third-party tracking.
+              advertising cookies or third party tracking.
             </p>
           </section>
 

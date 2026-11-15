@@ -19,7 +19,7 @@ describe("admin metrics Creators table", () => {
 
     expect(screen.getAllByRole("columnheader").map((h) => h.textContent)).toEqual([
       "Email",
-      "Ward/Unit",
+      "Ward",
       "Organization",
     ]);
     const primary = screen.getByTestId("creator-row");

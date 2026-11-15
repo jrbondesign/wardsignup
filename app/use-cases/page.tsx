@@ -10,7 +10,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
   const title = "Ward Signup use cases: sheets for secretaries and leaders";
-  const description = "How Latter-day Saint wards use Ward Signup: tithing declaration, Christmas party food and jobs, secretary signup sheets, and more. Free during beta.";
+  const description = "How Latter-day Saint wards use Ward Signup: tithing declaration, Christmas party food and jobs, secretary signup sheets, and more. Free to use.";
   const url = `${brand.siteUrl}/use-cases`;
   
   return {
@@ -133,7 +133,7 @@ export default async function UseCasesIndexPage() {
                       <Link href="/faq" className="text-[#0E96B0] hover:text-[#08647E] font-medium">
                         FAQ
                       </Link>
-                      {": "}accounts, free during beta, admins for more than one leader, privacy pointer
+                      {": "}accounts, co-admins for other leaders, privacy pointer
                     </span>
                   </li>
                   <li className="flex items-start gap-3">
@@ -162,7 +162,7 @@ export default async function UseCasesIndexPage() {
                   Create a signup
                 </Link>
                 <p className="text-sm text-[#5A8399] mt-4">
-                  Free during beta.
+                  Free to use.
                 </p>
               </section>
 

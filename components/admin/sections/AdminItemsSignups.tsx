@@ -101,7 +101,7 @@ export default function AdminItemsSignups({ ctx }: { ctx: AdminEventView }) {
       {customSignups.length > 0 && (
         <div className="bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] overflow-hidden">
           <div className="px-5 py-4 border-b border-[#0E96B0]/8 bg-gradient-to-r from-[#F4FAFB] to-white">
-            <div className="font-semibold text-[15px] text-[#0D2B35]">Also bringing (write-ins)</div>
+            <div className="font-semibold text-[15px] text-[#0D2B35]">Also bringing (added by members)</div>
             <div className="text-xs text-[#5A8399] mt-0.5">Items attendees added that weren&apos;t on your list.</div>
           </div>
           <div className="px-5 py-3 space-y-1.5">

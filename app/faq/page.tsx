@@ -305,7 +305,7 @@ export default async function FAQPage() {
                   Can I use this for tithing declaration appointments?
                 </h3>
                 <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-3">
-                  Yes. Ward Signup is commonly used for tithing settlement scheduling. Create 15-minute slots, set one spot per slot, and share the link with your ward. Members pick a time without back-and-forth texts or calls.
+                  Yes. Ward Signup is commonly used for tithing settlement scheduling. Create 15 minute slots, set one spot per slot, and share the link with your ward. Members pick a time without back and forth texts or calls.
                 </p>
                 <p className="text-[17px] leading-[1.7] text-[#2E5566]">
                   See our <Link href="/use-cases/tithing-declaration" className="text-[#0E96B0] font-medium hover:text-[#08647E] transition-colors">tithing declaration guide</Link> for a complete walkthrough.

@@ -41,7 +41,7 @@ export default function AddSessionForm({ ctx }: { ctx: EditEventCtx }) {
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-[#0D2B35]">Add one slot</div>
-          <div className="text-xs text-[#5A8399]">Pick a single date or day-of-week</div>
+          <div className="text-xs text-[#5A8399]">Pick a single date or a day of the week</div>
         </div>
         <button
           type="button"

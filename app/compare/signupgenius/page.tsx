@@ -79,7 +79,7 @@ export default async function CompareSignUpGenius() {
             "name": "When should a ward keep SignUpGenius?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Keep SignUpGenius if it already fits how your ward runs and you rely on workflows outside Ward Signup's scope. Consider Ward Signup when the job is mainly a capped appointment or volunteer sheet you want to publish and share like a bulletin announcement. For one-person calendar sync, Calendly is often the better match than either sheet-style tool.",
+              "text": "Keep SignUpGenius if it already fits how your ward runs and you rely on workflows outside Ward Signup's scope. Consider Ward Signup when the job is mainly a capped appointment or volunteer sheet you want to publish and share like a bulletin announcement. For calendar sync for one person, Calendly is often the better match than either sheet tool.",
             },
           },
         ],
@@ -118,7 +118,7 @@ export default async function CompareSignUpGenius() {
               </h2>
 
               <p>
-                For bishop-office and calling logistics, the job is usually narrow:
+                For bishop's office and calling logistics, the job is usually narrow:
               </p>
 
               <ul className="list-disc ml-6 space-y-2">
@@ -133,7 +133,7 @@ export default async function CompareSignUpGenius() {
               </p>
 
               <h2 className="font-serif text-2xl text-[#0D2B35] mt-10 mb-4">
-                A fair side-by-side
+                A fair side by side
               </h2>
 
               <div className="overflow-x-auto -mx-4 md:mx-0">
@@ -153,7 +153,7 @@ export default async function CompareSignUpGenius() {
                     </tr>
                     <tr className="bg-[#F4FAFB]">
                       <td className="border border-[#0E96B0]/20 px-4 py-3 font-medium">Member account</td>
-                      <td className="border border-[#0E96B0]/20 px-4 py-3">Not required, name on a shared link</td>
+                      <td className="border border-[#0E96B0]/20 px-4 py-3">Not required. Members add their name on a shared link.</td>
                       <td className="border border-[#0E96B0]/20 px-4 py-3">Often usable without a member login; organizer setup varies by how you use it</td>
                     </tr>
                     <tr>
@@ -163,7 +163,7 @@ export default async function CompareSignUpGenius() {
                     </tr>
                     <tr className="bg-[#F4FAFB]">
                       <td className="border border-[#0E96B0]/20 px-4 py-3 font-medium">Language / examples</td>
-                      <td className="border border-[#0E96B0]/20 px-4 py-3">Wards, branches, secretary-style appointment sheets</td>
+                      <td className="border border-[#0E96B0]/20 px-4 py-3">Wards, branches, appointment sheets for secretaries</td>
                       <td className="border border-[#0E96B0]/20 px-4 py-3">Generic organizer language across many use cases</td>
                     </tr>
                     <tr>
@@ -195,9 +195,9 @@ export default async function CompareSignUpGenius() {
               </h2>
 
               <ul className="list-disc ml-6 space-y-2">
-                <li>You want the <strong>paper-sheet model</strong> online for ward appointments and callings</li>
+                <li>You want the <strong>paper sheet model</strong> online for ward appointments and callings</li>
                 <li>You care most about <strong>no member login</strong>, spot limits, and publishing a link quickly</li>
-                <li>Your near-term jobs look like tithing declaration, interviews, nursery coverage, Fast Sunday sheets, or similar capped windows</li>
+                <li>Your upcoming jobs look like tithing declaration, interviews, nursery coverage, Fast Sunday sheets, or similar capped windows</li>
               </ul>
 
               <p className="bg-[#E6F7FB] border-l-4 border-[#0E96B0] p-4 rounded">
@@ -213,7 +213,7 @@ export default async function CompareSignUpGenius() {
 
               <ul className="list-disc ml-6 space-y-2">
                 <li>Your ward already depends on SignUpGenius workflows or features outside what Ward Signup offers today. Staying put can be the calm choice</li>
-                <li>You need a large, general-purpose signup toolkit for many non-ward contexts in one account</li>
+                <li>You need a large, general purpose signup toolkit for many contexts outside the ward in one account</li>
                 <li>You specifically need <strong>personal calendar sync</strong> for one leader's availability. Many wards use <strong>Calendly</strong> for that job. Ward Signup is a <strong>sheet</strong> tool (slots + spots + link), not a calendar sync product</li>
               </ul>
 
@@ -286,7 +286,7 @@ export default async function CompareSignUpGenius() {
                     When should a ward keep SignUpGenius?
                   </h3>
                   <p>
-                    Keep SignUpGenius if it already fits how your ward runs and you rely on workflows outside Ward Signup's scope. Consider Ward Signup when the job is mainly a capped appointment or volunteer sheet you want to publish and share like a bulletin announcement. For one-person calendar sync, Calendly is often the better match than either sheet-style tool.
+                    Keep SignUpGenius if it already fits how your ward runs and you rely on workflows outside Ward Signup's scope. Consider Ward Signup when the job is mainly a capped appointment or volunteer sheet you want to publish and share like a bulletin announcement. For calendar sync for one person, Calendly is often the better match than either sheet tool.
                   </p>
                 </div>
               </div>

@@ -40,7 +40,7 @@ export async function GET(request: NextRequest) {
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Unsubscribe</title></head>
      <body style="font-family: system-ui, sans-serif; max-width: 480px; margin: 80px auto; padding: 0 20px; color: #111;">
        <h1 style="font-size: 20px;">Unsubscribe from notification emails?</h1>
-       <p style="color: #444;">You'll stop receiving summaries, reminders, and other notification emails at this address. Sign-in links still work.</p>
+       <p style="color: #444;">You'll stop receiving summaries, reminders, and other notification emails at this address. Sign in links still work.</p>
        <form method="POST" action="/api/unsubscribe?${qs}">
          <button type="submit" style="background: #0e7490; color: #fff; border: 0; border-radius: 8px; padding: 10px 18px; font-size: 15px; cursor: pointer;">Unsubscribe</button>
        </form>
@@ -68,7 +68,7 @@ export async function POST(request: NextRequest) {
     `<!doctype html><html><head><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Unsubscribed</title></head>
      <body style="font-family: system-ui, sans-serif; max-width: 480px; margin: 80px auto; padding: 0 20px; color: #111;">
        <h1 style="font-size: 20px;">You're unsubscribed</h1>
-       <p style="color: #444;">This address won't receive notification emails anymore. Sign-in links still work if you ever need them.</p>
+       <p style="color: #444;">This address won't receive notification emails anymore. Sign in links still work if you ever need them.</p>
      </body></html>`,
     { status: 200, headers: { "Content-Type": "text/html; charset=utf-8" } },
   );

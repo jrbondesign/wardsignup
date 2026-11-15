@@ -423,8 +423,8 @@ function buildGoogleEvent(
   // Title: event name + first signup name (or "Multiple signups")
   const firstName = signups[0]?.member_name || 'Unknown';
   const title = signups.length === 1
-    ? `${campaign.name}: ${firstName}`
-    : `${campaign.name}: ${firstName} + ${signups.length - 1} more`;
+    ? `${campaign.name} — ${firstName}`
+    : `${campaign.name} — ${firstName} + ${signups.length - 1} more`;
 
   // Description: member details + admin link
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://wardsignup.com';

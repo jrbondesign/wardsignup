@@ -184,7 +184,7 @@ export default function OrganizationSettingsPage() {
       }
       setMessage(
         wardNotSaved
-          ? { kind: "error", text: "Saved, but Ward/Unit can't be saved yet. Please try again later." }
+          ? { kind: "error", text: "Saved, but the ward can't be saved yet. Please try again later." }
           : { kind: "ok", text: "Saved." },
       );
     } catch {
@@ -437,7 +437,7 @@ export default function OrganizationSettingsPage() {
             <section className="mt-6 bg-white rounded-2xl shadow-[0_4px_24px_rgba(8,100,126,0.08)] p-6 sm:p-8">
               <h2 className="font-serif text-[18px] text-[#0D2B35] mb-1">Leave this organization</h2>
               <p className="text-[13px] text-[#5A8399] mb-4">
-                You&rsquo;ll lose access to this organization&rsquo;s events. The owner can re-invite you later.
+                You&rsquo;ll lose access to this organization&rsquo;s events. The owner can invite you again later.
               </p>
               <button
                 type="button"

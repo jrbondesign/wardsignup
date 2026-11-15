@@ -68,9 +68,9 @@ function formatSignedUpAt(
   iso: string | null | undefined,
   eventTimezone?: string | null,
 ): string {
-  if (!iso) return "—";
+  if (!iso) return "Not given";
   const d = new Date(iso);
-  if (!Number.isFinite(d.getTime())) return "—";
+  if (!Number.isFinite(d.getTime())) return "Not given";
   // Without an explicit zone the server's zone leaks in (UTC on Vercel), so
   // organizers would see "Signed up" times shifted by several hours.
   return d.toLocaleString("en-US", {
@@ -272,8 +272,8 @@ function buildSessionsTableHtml(
               .map(
                 (u) => `<tr>
               <td style="border-top:1px solid #e6f0f3;">${escapeHtml(u.member_name)}</td>
-              <td style="border-top:1px solid #e6f0f3;">${u.member_email ? escapeHtml(u.member_email) : "—"}</td>
-              <td style="border-top:1px solid #e6f0f3;">${u.member_phone ? escapeHtml(u.member_phone) : "—"}</td>
+              <td style="border-top:1px solid #e6f0f3;">${u.member_email ? escapeHtml(u.member_email) : "Not given"}</td>
+              <td style="border-top:1px solid #e6f0f3;">${u.member_phone ? escapeHtml(u.member_phone) : "Not given"}</td>
               ${
                 showSignedUpCol
                   ? `<td style="border-top:1px solid #e6f0f3;font-size:12px;color:#054F64;white-space:nowrap;">${escapeHtml(formatSignedUpAt(u.signed_up_at, options?.eventTimezone))}</td>`
@@ -370,7 +370,7 @@ function buildOrganizerItemsEmailHtml(params: {
       }).join("");
 
   const customBlock = customSignups.length === 0 ? "" : `
-    <h2 style="font-size:15px;color:#2E5566;margin:24px 0 12px;">Also bringing (write-ins)</h2>
+    <h2 style="font-size:15px;color:#2E5566;margin:24px 0 12px;">Also bringing (added by members)</h2>
     ${customSignups.map((sig) => `
       <div style="font-size:13px;color:#0D2B35;margin-bottom:6px;">
         <strong>${escapeHtml(sig.custom_label || "(unnamed)")}</strong>

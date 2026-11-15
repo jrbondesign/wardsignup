@@ -48,7 +48,7 @@ export default function EventDatesPicker({ dates, onChange }: Props) {
         Dates <span className={sublabelCls}>(pick each date this repeats, e.g. 3 Thursdays)</span>
       </label>
       <p className="text-[12px] text-[#5A8399] mb-2">
-        One sign-up covers every date. The time below applies to all of them.
+        One signup covers every date. The time below applies to all of them.
       </p>
       <div className="bg-[#F4FAFB] border border-[rgba(14,150,176,0.18)] rounded-xl p-3">
         <DateRangePicker

@@ -72,7 +72,7 @@ export default async function TermsOfService() {
               2. Description of Service
             </h2>
             <p>
-              {brand.name} provides a time-slot scheduling platform for religious organizations, community
+              {brand.name} provides a time slot scheduling platform for religious organizations, community
               groups, and ministries to coordinate appointments, meetings, volunteer shifts, and similar
               events. The service allows users to create events with specific time slots and share signup
               links with participants.

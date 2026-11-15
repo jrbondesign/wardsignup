@@ -6,7 +6,7 @@ import { CLAUDE_MCP_ENABLED } from "@/lib/claude-mcp";
 
 function disabledResponse() {
   return NextResponse.json(
-    { error: "Claude MCP is currently disabled" },
+    { error: "This feature is not available." },
     { status: 410 },
   );
 }

@@ -101,7 +101,7 @@ function RsvpTime({ state, set }: Props) {
           }
           className={`${linkBtnCls} mt-2`}
         >
-          {state.multiDay ? "← Make this a single day" : "Make this multi-day →"}
+          {state.multiDay ? "← Make this a single day" : "Make this span multiple days →"}
         </button>
       </div>
 
@@ -482,7 +482,7 @@ function SpotsTime({
             className="w-4 h-4 rounded border-[rgba(14,150,176,0.4)] text-[#0E96B0] focus:ring-[#0E96B0]"
           />
           <span className="text-[13px] font-medium text-[#2E5566]">
-            Split the window into fixed-length appointment slots
+            Split the window into appointment slots of equal length
           </span>
         </label>
         {state.spotsAutoSplit && (

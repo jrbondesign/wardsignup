@@ -107,7 +107,7 @@ export default function LoginPage() {
     try {
       const { error: googleError } = await signInWithGoogle();
       if (googleError) {
-        setError(`Google sign-in failed: ${googleError.message}`);
+        setError(`Google sign in failed: ${googleError.message}`);
         setGoogleLoading(false);
       }
       // On success browser navigates away — no cleanup needed

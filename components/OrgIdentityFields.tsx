@@ -59,7 +59,7 @@ export default function OrgIdentityFields({
     >
       <div>
         <label htmlFor={`${idPrefix}-ward`} className={labelClass}>
-          Ward/Unit
+          Ward
         </label>
         <input
           id={`${idPrefix}-ward`}

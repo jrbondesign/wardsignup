@@ -25,16 +25,16 @@ describe("OrgNameModal Ward/Unit, Organization and calling", () => {
     const labels = Array.from(screen.getByTestId("org-identity-fields").querySelectorAll("label")).map((l) =>
       l.textContent?.trim(),
     );
-    expect(labels).toEqual(["Ward/Unit", "Organization", "Your calling (optional)"]);
-    expect(screen.getByLabelText("Ward/Unit")).toBeInTheDocument();
+    expect(labels).toEqual(["Ward", "Organization", "Your calling (optional)"]);
+    expect(screen.getByLabelText("Ward")).toBeInTheDocument();
     expect(screen.getByLabelText("Organization")).toBeInTheDocument();
     expect(screen.getByText(ORG_NAME_HINT)).toBeInTheDocument();
     expect(screen.getByText(WARD_NAME_HINT)).toBeInTheDocument();
   });
 
-  it("uses unit only in the Ward/Unit label, and no dashes", () => {
+  it("never says unit, and has no dashes", () => {
     renderModal();
-    const text = (document.body.textContent ?? "").replace("Ward/Unit", "");
+    const text = document.body.textContent ?? "";
     expect(text).not.toMatch(/\bunit\b/i);
     expect(text).not.toMatch(/[–—]/);
   });
@@ -50,7 +50,7 @@ describe("OrgNameModal Ward/Unit, Organization and calling", () => {
 
   it("requires the organization", async () => {
     const onComplete = renderModal();
-    fireEvent.change(screen.getByLabelText("Ward/Unit"), { target: { value: "Maple Ridge Ward" } });
+    fireEvent.change(screen.getByLabelText("Ward"), { target: { value: "Maple Ridge Ward" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText("Please enter your organization.")).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
@@ -60,7 +60,7 @@ describe("OrgNameModal Ward/Unit, Organization and calling", () => {
   it("saves Ward/Unit on the new org right after creating it", async () => {
     const onComplete = renderModal();
     fireEvent.change(screen.getByLabelText("Organization"), { target: { value: "Relief Society" } });
-    fireEvent.change(screen.getByLabelText("Ward/Unit"), { target: { value: "  Maple Ridge   Ward " } });
+    fireEvent.change(screen.getByLabelText("Ward"), { target: { value: "  Maple Ridge   Ward " } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith("Relief Society"));
     expect(fetchMock.mock.calls[1][0]).toBe("/api/organizations/org-1");
@@ -75,7 +75,7 @@ describe("OrgNameModal Ward/Unit, Organization and calling", () => {
     const warn = jest.spyOn(console, "warn").mockImplementation(() => {});
     const onComplete = renderModal();
     fireEvent.change(screen.getByLabelText("Organization"), { target: { value: "Primary" } });
-    fireEvent.change(screen.getByLabelText("Ward/Unit"), { target: { value: "Maple Ridge Ward" } });
+    fireEvent.change(screen.getByLabelText("Ward"), { target: { value: "Maple Ridge Ward" } });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
     await waitFor(() => expect(onComplete).toHaveBeenCalledWith("Primary"));
     warn.mockRestore();

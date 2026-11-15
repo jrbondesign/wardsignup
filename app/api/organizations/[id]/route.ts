@@ -35,12 +35,12 @@ export async function PATCH(
     const hasWard = body && typeof body === "object" && "ward_name" in body;
     const rawWard = hasWard ? (body as { ward_name?: unknown }).ward_name : undefined;
     if (hasWard && rawWard !== null && typeof rawWard !== "string") {
-      return NextResponse.json({ error: "Ward/Unit must be text" }, { status: 400 });
+      return NextResponse.json({ error: "Ward must be text" }, { status: 400 });
     }
     const wardName = hasWard ? normalizeWardName(rawWard) : null;
     if (wardName && wardName.length > WARD_NAME_MAX_LENGTH) {
       return NextResponse.json(
-        { error: `Ward/Unit must be ${WARD_NAME_MAX_LENGTH} characters or fewer` },
+        { error: `Ward must be ${WARD_NAME_MAX_LENGTH} characters or fewer` },
         { status: 400 },
       );
     }

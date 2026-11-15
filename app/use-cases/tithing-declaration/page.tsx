@@ -12,7 +12,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     title: `Tithing Declaration Appointments · ${brand.shortName}`,
-    description: "Schedule tithing settlement online with Ward Signup. Create 15-minute appointment slots, set capacity, and share one link. Members pick a time with no account needed.",
+    description: "Schedule tithing settlement online with Ward Signup. Create 15 minute appointment slots, set capacity, and share one link. Members pick a time with no account needed.",
     alternates: {
       canonical: "/use-cases/tithing-declaration",
     },
@@ -48,7 +48,7 @@ export default async function TithingDeclarationPage() {
         "name": "Can I limit how many appointments are scheduled per time slot?",
         "acceptedAnswer": {
           "@type": "Answer",
-          "text": "Yes. Set one spot per 15-minute slot to prevent double-booking. When a slot is claimed, it automatically becomes unavailable for others."
+          "text": "Yes. Set one spot per 15 minute slot to prevent double booking. When a slot is claimed, it automatically becomes unavailable for others."
         }
       },
       {
@@ -82,7 +82,7 @@ export default async function TithingDeclarationPage() {
     "@context": "https://schema.org",
     "@type": "HowTo",
     "name": "How to Schedule Tithing Declaration Appointments Online",
-    "description": "Step-by-step guide to scheduling tithing settlement appointments for your ward using Ward Signup.",
+    "description": "Step by step guide to scheduling tithing settlement appointments for your ward using Ward Signup.",
     "step": [
       {
         "@type": "HowToStep",
@@ -92,7 +92,7 @@ export default async function TithingDeclarationPage() {
       {
         "@type": "HowToStep",
         "name": "Add time slots",
-        "text": "Create 15-minute appointment slots across multiple days. Set each slot to 1 spot to prevent double-booking."
+        "text": "Create 15 minute appointment slots across multiple days. Set each slot to 1 spot to prevent double booking."
       },
       {
         "@type": "HowToStep",
@@ -171,7 +171,7 @@ export default async function TithingDeclarationPage() {
                   Add time slots
                 </h3>
                 <p className="text-[16px] text-[#5A8399] leading-[1.7]">
-                  Create 15-minute appointment slots across multiple days. Set each slot to <strong>1 spot</strong> to prevent double-booking.
+                  Create 15 minute appointment slots across multiple days. Set each slot to <strong>1 spot</strong> to prevent double booking.
                 </p>
               </div>
             </div>
@@ -363,7 +363,7 @@ export default async function TithingDeclarationPage() {
                 Can I limit how many appointments are scheduled per time slot?
               </h3>
               <p className="text-[17px] leading-[1.7] text-[#2E5566]">
-                <strong>Yes.</strong> Set one spot per 15-minute slot to prevent double-booking. When a slot is claimed, it automatically becomes unavailable for others.
+                <strong>Yes.</strong> Set one spot per 15 minute slot to prevent double booking. When a slot is claimed, it automatically becomes unavailable for others.
               </p>
             </div>
 

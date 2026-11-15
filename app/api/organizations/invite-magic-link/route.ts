@@ -199,7 +199,7 @@ export async function POST(request: NextRequest) {
         if (lease === "busy" || lease === "blocked") {
           return NextResponse.json(
             lease === "busy"
-              ? { error: "A sign-in link for this invitation is already being sent." }
+              ? { error: "A sign in link for this invitation is already being sent." }
               : { ok: true, delivery: "unconfirmed" },
             { status: lease === "busy" ? 409 : 200 },
           );

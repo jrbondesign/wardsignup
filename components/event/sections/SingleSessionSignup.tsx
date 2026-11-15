@@ -67,7 +67,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
                       <span className="text-[#5A8399]"> +{sig.guest_names.length}</span>
                     )}
                     {sig.signup_note && (
-                      <span className="text-[#5A8399]">, {sig.signup_note}</span>
+                      <span className="text-[#5A8399]"> · {sig.signup_note}</span>
                     )}
                   </div>
                 ))}
@@ -112,7 +112,7 @@ export default function SingleSessionSignup({ ctx }: { ctx: EventPageView }) {
                       <span className="text-[#5A8399]"> +{sig.guest_names.length}</span>
                     )}
                     {sig.signup_note && (
-                      <span className="text-[#5A8399]">, {sig.signup_note}</span>
+                      <span className="text-[#5A8399]"> · {sig.signup_note}</span>
                     )}
                   </div>
                 ))}

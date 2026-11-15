@@ -215,7 +215,7 @@ export default function Home() {
               Time Slots
             </div>
             <p className="text-sm text-[#5A8399] leading-[1.65]">
-              Create specific days and times with a set number of spots per slot. No double-booking, ever.
+              Create specific days and times with a set number of spots per slot. No double booking, ever.
             </p>
           </div>
 

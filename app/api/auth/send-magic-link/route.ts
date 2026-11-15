@@ -102,7 +102,7 @@ export async function POST(request: NextRequest) {
     const rate = await consumeActionRate("magic_link", request, 10);
     if (!rate.allowed) {
       return NextResponse.json(
-        { error: "Too many sign-in requests from this network. Please try again later." },
+        { error: "Too many sign in requests from this network. Please try again later." },
         { status: 429 },
       );
     }
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
     const firstInWindow = await consumeOwnedEmailSlot("magic_link_dedupe", dedupeKey, 1, thisMinute, slotOwner);
     if (firstInWindow === "unavailable") {
       return NextResponse.json(
-        { error: "Could not start the sign-in email. Please try again.", retryable: true },
+        { error: "Could not start the sign in email. Please try again.", retryable: true },
         { status: 503 },
       );
     }
@@ -144,7 +144,7 @@ export async function POST(request: NextRequest) {
     );
     if (!perRecipient) {
       return NextResponse.json(
-        { error: "Too many sign-in links requested for this address. Please try again later." },
+        { error: "Too many sign in links requested for this address. Please try again later." },
         { status: 429 },
       );
     }
@@ -176,7 +176,7 @@ export async function POST(request: NextRequest) {
         {
           error:
             error?.message ??
-            "Could not create a sign-in link. Please try again.",
+            "Could not create a sign in link. Please try again.",
         },
         { status: 500 },
       );

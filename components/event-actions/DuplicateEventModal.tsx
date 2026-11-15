@@ -57,7 +57,7 @@ function DuplicateModal({ eventName, anchorDate, duplicating, onConfirm, onCance
         <h2 id={titleId} className="font-serif text-2xl text-[#0D2B35] mb-2">Duplicate Event</h2>
         <p className="text-sm text-[#5A8399] leading-relaxed mb-5">
           Creates a copy of <strong className="text-[#0D2B35] font-semibold">{eventName}</strong> with all its
-          spots and items, but no signups. You can fine-tune everything afterward.
+          spots and items, but no signups. You can adjust everything afterward.
         </p>
 
         <label className="block text-xs font-semibold text-[#2E5566] mb-1.5">New event name</label>

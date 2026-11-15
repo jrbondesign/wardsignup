@@ -299,7 +299,7 @@ export default function MetricsPage({ preview }: { preview?: MetricsData } = {})
                     </div>
                   </div>
                   <div>
-                    <div className="text-[13px] text-[#5A8399] mb-1">4-week average (new creators)</div>
+                    <div className="text-[13px] text-[#5A8399] mb-1">4 week average (new creators)</div>
                     <div className="text-[40px] sm:text-[48px] font-semibold text-[#0D2B35] leading-none tabular-nums">
                       {data.northStar.fourWeekAvgNewCreators.toFixed(1)}
                     </div>
@@ -649,7 +649,7 @@ export default function MetricsPage({ preview }: { preview?: MetricsData } = {})
                   What organizers have done in the app, among{" "}
                   {data.authUsersListed.toLocaleString()} creators (org owners)
                   {data.authUsersFetchComplete === false ? " (partial fetch)" : ""}.
-                  &quot;Invites sent&quot; counts only <strong className="text-[#2E5566] font-semibold">in-app email invites</strong> stored in the database, not copy link, SMS, or WhatsApp shares.
+                  &quot;Invites sent&quot; counts only <strong className="text-[#2E5566] font-semibold">in app email invites</strong> stored in the database, not copy link, SMS, or WhatsApp shares.
                 </p>
                 <div data-testid="metrics-hscroll" className="min-w-0 max-w-full overflow-x-auto overscroll-x-contain">
                   <table className="w-full text-[13px]">
@@ -664,7 +664,7 @@ export default function MetricsPage({ preview }: { preview?: MetricsData } = {})
                       {[
                         ["Created an event", data.activation.usersWithEvent, data.activation.shareOfAllUsers.withEvent],
                         ["Added at least one slot", data.activation.usersWithSession, data.activation.shareOfAllUsers.withSession],
-                        ["Sent an in-app email invite", data.activation.usersWithInAppInvite, data.activation.shareOfAllUsers.withInAppInvite],
+                        ["Sent an in app email invite", data.activation.usersWithInAppInvite, data.activation.shareOfAllUsers.withInAppInvite],
                         ["Got ≥1 signup on their events", data.activation.usersWithMemberSignup, data.activation.shareOfAllUsers.withMemberSignup],
                       ].map(([label, count, share]) => (
                         <tr key={String(label)}>
@@ -688,7 +688,7 @@ export default function MetricsPage({ preview }: { preview?: MetricsData } = {})
                         {[
                           ["Created an event", data.activationCohort7d.shareOfNewUsers.withEvent],
                           ["Added a slot", data.activationCohort7d.shareOfNewUsers.withSession],
-                          ["In-app email invite", data.activationCohort7d.shareOfNewUsers.withInAppInvite],
+                          ["In app email invite", data.activationCohort7d.shareOfNewUsers.withInAppInvite],
                           ["Signup on their events", data.activationCohort7d.shareOfNewUsers.withMemberSignup],
                         ].map(([label, share]) => (
                           <tr key={String(label)}>
@@ -709,7 +709,7 @@ export default function MetricsPage({ preview }: { preview?: MetricsData } = {})
                         {[
                           ["Created an event", data.activationCohort30d.shareOfNewUsers.withEvent],
                           ["Added a slot", data.activationCohort30d.shareOfNewUsers.withSession],
-                          ["In-app email invite", data.activationCohort30d.shareOfNewUsers.withInAppInvite],
+                          ["In app email invite", data.activationCohort30d.shareOfNewUsers.withInAppInvite],
                           ["Signup on their events", data.activationCohort30d.shareOfNewUsers.withMemberSignup],
                         ].map(([label, share]) => (
                           <tr key={String(label)}>
@@ -807,7 +807,7 @@ export default function MetricsPage({ preview }: { preview?: MetricsData } = {})
                   </div>
                 </div>
                 <p className="mt-4 text-[11px] text-[#7A9BAE] leading-relaxed border-t border-[rgba(14,150,176,0.10)] pt-4">
-                  Instrumentation: segments use Supabase Auth <code className="text-[11px] bg-[#F4FAFB] px-1 rounded">last_sign_in_at</code> only (no per-login history). For DAU/WAU-style login frequency or funnels, add product analytics (e.g. PostHog or Vercel custom events).
+                  Instrumentation: segments use Supabase Auth <code className="text-[11px] bg-[#F4FAFB] px-1 rounded">last_sign_in_at</code> only (no history for each login). For DAU/WAU login frequency or funnels, add product analytics (e.g. PostHog or Vercel custom events).
                 </p>
               </div>
 
