@@ -107,7 +107,7 @@ function buildNewSignupsBannerHtml(
   return `
     <div style="margin:0 0 24px;padding:16px;background:#FFF8E6;border:1px solid #F5D78A;border-radius:12px;">
       <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em;color:#b45309;margin:0 0 10px;">New signups since last notice</div>
-      <p style="font-size:12px;color:#5A8399;margin:0 0 10px;line-height:1.5;">Newest first — only signups that arrived after your previous faster alert.</p>
+      <p style="font-size:12px;color:#5A8399;margin:0 0 10px;line-height:1.5;">Newest first. Only signups that arrived after your previous faster alert.</p>
       <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;font-size:13px;">
         <tr style="background:rgba(255,255,255,0.65);">
           <th align="left" style="padding:6px;color:#2E5566;">Name</th>
@@ -511,18 +511,18 @@ function subjectForKind(
 ): string {
   const label = brand.shortName;
   const n = eventName.trim() || "Your event";
-  if (kind === "manual") return `${label} · ${n} — your report`;
+  if (kind === "manual") return `${label} · ${n}: your report`;
   if (kind === "faster") {
     const c = typeof newCount === "number" ? newCount : 0;
-    return `${label} · ${n} — ${c} new signup${c === 1 ? "" : "s"}`;
+    return `${label} · ${n}: ${c} new signup${c === 1 ? "" : "s"}`;
   }
-  return `${label} · ${n} — daily summary`;
+  return `${label} · ${n}: daily summary`;
 }
 
 function headlineForKind(kind: "digest" | "manual" | "faster"): string {
   if (kind === "manual") return "Here is your current signup report.";
   if (kind === "faster")
-    return `New signups since your last faster alert — full roster below.`;
+    return `New signups since your last faster alert. Full roster below.`;
   return "Here is your signup summary.";
 }
 

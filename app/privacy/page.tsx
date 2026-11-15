@@ -7,7 +7,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
-  const title = `Privacy Policy — ${brand.shortName}`;
+  const title = `Privacy Policy | ${brand.shortName}`;
   const description = `How ${brand.name} collects, uses, and protects your information.`;
   const url = `${brand.siteUrl}/privacy`;
   return {
@@ -155,8 +155,8 @@ export default async function PrivacyPolicy() {
               If calendar sync is enabled for an event, each filled time slot is written as a Google Calendar
               event. That event includes the event name and the signup name. It may also include phone number,
               email address, guest names, and notes. Contact details and notes are placed in the event
-              description, not the title. Anyone with access to that Google Calendar — including people the
-              organizer has shared it with — can see those details. If the organizer turns on leader
+              description, not the title. Anyone with access to that Google Calendar, including people the
+              organizer has shared it with, can see those details. If the organizer turns on leader
               invitations, we may add the event leader’s email as an attendee so Google can send a calendar
               invitation.
             </p>

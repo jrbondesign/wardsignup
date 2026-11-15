@@ -41,7 +41,7 @@ export default function ItemsSection({ state, set }: Props) {
       labelPlaceholders={PLACEHOLDER_HINTS}
       addLabel="Add another item"
       datalistId="item-section-options"
-      removeDisabledTitle="Can't remove — people have already signed up for this item"
+      removeDisabledTitle="Can't remove. People have already signed up for this item"
     />
   );
 }

@@ -304,7 +304,7 @@ export default function OrgMembersSection({ organizationId, isOwner, currentUser
                     {m.status === "accepted" ? "Active" : m.status === "pending" ? "Pending" : "Revoked"}
                     {isPendingHandoff && (
                       <span className="ml-2 inline-block px-2 py-0.5 rounded-full bg-[#FFF3D6] text-[#8A6300] text-[11px] font-semibold">
-                        Pending owner — transfers on acceptance
+                        Pending owner, transfers on acceptance
                       </span>
                     )}
                   </div>

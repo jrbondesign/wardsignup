@@ -252,7 +252,7 @@ export function buildFeedbackDigestEmailHtml(params: {
   const summary = withPmf.length
     ? `PMF benchmark: <strong>${pmfPct}%</strong> would be "very disappointed" if they could no longer use the product (${veryCount}/${withPmf.length} answered). ${
         withPmf.length < 40
-          ? "Sample still small — directional only."
+          ? "Sample still small, directional only."
           : ""
       }`
     : "No PMF answers yet.";
@@ -286,7 +286,7 @@ export function buildFeedbackDigestEmailHtml(params: {
 
   return `
     <div style="font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; max-width: 760px; margin: 0 auto; padding: 24px; color: #111827;">
-      <h2 style="margin: 0 0 8px; font-size: 18px;">${escapeHtml(brand.name)} — creator feedback this week (${responses.length})</h2>
+      <h2 style="margin: 0 0 8px; font-size: 18px;">${escapeHtml(brand.name)}: creator feedback this week (${responses.length})</h2>
       <p style="margin: 0 0 16px; font-size: 14px; color: #374151;">${summary}</p>
       <table style="width: 100%; border-collapse: collapse;">
         <thead>

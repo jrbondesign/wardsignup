@@ -72,7 +72,7 @@ function RsvpTime({ state, set }: Props) {
 <div>
         <label htmlFor="event-date" className={labelCls}>
           Date {!state.multiDay && <span className={sublabelCls}>(required)</span>}
-          {state.multiDay && <span className={sublabelCls}>— start</span>}
+          {state.multiDay && <span className={sublabelCls}>(start)</span>}
         </label>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <input
@@ -586,7 +586,7 @@ function SpotsSlots({ state, set }: Props) {
     <div className="pt-4 border-t border-[rgba(14,150,176,0.12)]">
       <p className="text-[12px] text-[#5A8399] mb-3">
         <span className="font-semibold text-[#2E5566]">Optional:</span> offer named slots on{" "}
-        <span className="font-semibold">each</span> date — e.g. classes grouped by section, each with
+        <span className="font-semibold">each</span> date, e.g. classes grouped by section, each with
         its own capacity. People pick a date, then claim a slot. Leave empty for plain time slots.
       </p>
       <SlotEditor
@@ -605,7 +605,7 @@ function SpotsSlots({ state, set }: Props) {
         heading="Classes / slots people can claim on each date"
         headingHint="(optional)"
         labelPlaceholders={["Class", "Class 1", "Station A", "Group 1"]}
-        sectionPlaceholder="Section (optional) — e.g. Men's Side"
+        sectionPlaceholder="Section (optional), e.g. Men's Side"
         setLimitLabel="Set capacity"
         addLabel="Add another slot"
         datalistId="spots-slot-section-options"

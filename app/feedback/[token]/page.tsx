@@ -58,7 +58,7 @@ export default async function FeedbackPage({
         {state === "already_submitted" && (
           <>
             <h1 className="text-xl font-semibold text-gray-900 mb-2">
-              Thanks — we already got your feedback!
+              Thanks, we already got your feedback!
             </h1>
             <p className="text-gray-600">
               If you have more to share, just reply to the email.
@@ -71,7 +71,7 @@ export default async function FeedbackPage({
               Thanks for testing it out 🙏
             </h1>
             <p className="text-gray-600 mb-6">
-              A few quick questions — under a minute, and a sentence or two is
+              A few quick questions. It takes under a minute, and a sentence or two is
               plenty.
             </p>
             <FeedbackForm token={token} productName={productName} />

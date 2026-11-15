@@ -386,7 +386,7 @@ export async function sendParticipantBatchSignupConfirmation(params: {
       </tr>
       <tr>
         <td>
-          ${icsAllUrl ? `<a href="${escapeHtml(icsAllUrl)}" style="display:inline-block;margin:0 8px 8px 0;padding:8px 16px;border-radius:8px;border:1.5px solid rgba(14,150,176,0.30);font-size:13px;font-weight:600;color:#0E96B0;text-decoration:none;">Apple / Outlook (.ics) — all ${params.sessions.length} slots</a>` : ""}
+          ${icsAllUrl ? `<a href="${escapeHtml(icsAllUrl)}" style="display:inline-block;margin:0 8px 8px 0;padding:8px 16px;border-radius:8px;border:1.5px solid rgba(14,150,176,0.30);font-size:13px;font-weight:600;color:#0E96B0;text-decoration:none;">Apple / Outlook (.ics), all ${params.sessions.length} slots</a>` : ""}
           ${calendarButtons}
         </td>
       </tr>

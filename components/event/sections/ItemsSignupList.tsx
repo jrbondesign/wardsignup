@@ -113,7 +113,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
                       <div key={sig.id} className="text-xs text-[#2E5566]">
                         <span className="font-medium">{sig.member_name}</span>
                         {sig.signup_note && (
-                          <span className="text-[#5A8399]"> — {sig.signup_note}</span>
+                          <span className="text-[#5A8399]">, {sig.signup_note}</span>
                         )}
                       </div>
                     ))}
@@ -252,7 +252,7 @@ export default function ItemsSignupList({ ctx }: { ctx: EventPageView }) {
             {customSignups.map((sig) => (
               <div key={sig.id} className="text-xs text-[#2E5566]">
                 <span className="font-medium">{sig.member_name}</span>
-                <span className="text-[#5A8399]"> — {sig.custom_label}</span>
+                <span className="text-[#5A8399]">, {sig.custom_label}</span>
                 {sig.signup_note && <span className="text-[#5A8399]"> · {sig.signup_note}</span>}
               </div>
             ))}

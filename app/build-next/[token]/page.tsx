@@ -57,7 +57,7 @@ export default async function BuildNextPage({
           {state === "already_voted" && (
             <>
               <h1 className="font-serif text-[clamp(36px,6vw,52px)] tracking-[-1px] text-[#0D2B35] mb-6 leading-[1.1]">
-                Thanks — we already got your vote!
+                Thanks, we already got your vote!
               </h1>
               <p className="text-[17px] leading-[1.7] text-[#2E5566]">
                 If you have more to share, just reply to the email.

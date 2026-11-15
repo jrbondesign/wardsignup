@@ -10,7 +10,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
   const title = "Ward Signup vs Calendly for ward appointment sheets";
-  const description = "A fair look at Calendly and Ward Signup for Latter-day Saint ward logistics — calendar sync vs a capped signup sheet.";
+  const description = "A fair look at Calendly and Ward Signup for Latter-day Saint ward logistics: calendar sync vs a capped signup sheet.";
   const url = `${brand.siteUrl}/compare/calendly`;
   
   return {
@@ -48,7 +48,7 @@ export default async function CompareCalendly() {
         "@id": `${brand.siteUrl}/compare/calendly`,
         "url": `${brand.siteUrl}/compare/calendly`,
         "name": "Ward Signup vs Calendly for ward appointment sheets",
-        "description": "A fair look at Calendly and Ward Signup for Latter-day Saint ward logistics — calendar sync vs a capped signup sheet.",
+        "description": "A fair look at Calendly and Ward Signup for Latter-day Saint ward logistics: calendar sync vs a capped signup sheet.",
         "isPartOf": {
           "@type": "WebSite",
           "url": brand.siteUrl,
@@ -106,7 +106,7 @@ export default async function CompareCalendly() {
 
             <div className="prose prose-lg max-w-none text-[#2E5566] space-y-6">
               <p>
-                Calendly is excellent when one person's calendar should drive availability. Many wards use it that way for a bishop's interview grid. <strong>Ward Signup</strong> is a different tool: a <strong>signup sheet</strong> with time slots, spot limits, and one shareable link — closer to the paper on the office door than to a personal calendar sync.
+                Calendly is excellent when one person's calendar should drive availability. Many wards use it that way for a bishop's interview grid. <strong>Ward Signup</strong> is a different tool: a <strong>signup sheet</strong> with time slots, spot limits, and one shareable link. It is closer to the paper on the office door than to a personal calendar sync.
               </p>
 
               <p>
@@ -114,7 +114,7 @@ export default async function CompareCalendly() {
               </p>
 
               <p>
-                <strong>Ward Signup</strong> is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set spots, and share one link. Members pick a time and enter their name — no account. Free during beta.
+                <strong>Ward Signup</strong> is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set spots, and share one link. Members pick a time and enter their name with no account. Free during beta.
               </p>
 
               <h2 className="font-serif text-2xl text-[#0D2B35] mt-10 mb-4">
@@ -193,7 +193,7 @@ export default async function CompareCalendly() {
                         >
                           Calendly's site
                         </a>
-                        {" "}for current plans — we do not invent competitor pricing
+                        {" "}for current plans. We do not invent competitor pricing
                       </td>
                     </tr>
                   </tbody>

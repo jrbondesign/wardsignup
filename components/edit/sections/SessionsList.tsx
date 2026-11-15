@@ -66,7 +66,7 @@ export default function SessionsList({ ctx }: { ctx: EditEventCtx }) {
       className="bg-[#F4FAFB] rounded-xl p-6 text-center text-sm text-[#5A8399]"
     >
       No slots yet. Use <span className="font-medium text-[#2E5566]">Add slots</span>{" "}
-      above — <span className="font-medium text-[#2E5566]">Add multiple slots</span> or{" "}
+      above: <span className="font-medium text-[#2E5566]">Add multiple slots</span> or{" "}
       <span className="font-medium text-[#2E5566]">Add one slot</span>.
     </div>
     </>

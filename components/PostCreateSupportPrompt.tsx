@@ -47,7 +47,7 @@ export default function PostCreateSupportPrompt({ visible }: { visible: boolean 
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
         <div className="min-w-0 flex-1">
           <h2 className="font-serif text-[18px] sm:text-[19px] text-[#0D2B35] tracking-[-0.2px] mb-0.5 leading-snug">
-            Ward Signup is free — always.
+            Ward Signup is free, always.
           </h2>
           <p className="text-[13px] sm:text-[14px] leading-snug text-[#2E5566] m-0">
             If this saved you time, consider a small contribution to help cover hosting costs.

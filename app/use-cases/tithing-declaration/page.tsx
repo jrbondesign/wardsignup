@@ -18,7 +18,7 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     openGraph: {
       title: `Tithing Declaration Appointments · ${brand.shortName}`,
-      description: "Schedule tithing settlement online — create slots, share one link, members sign up with no account.",
+      description: "Schedule tithing settlement online. Create slots, share one link, and members sign up with no account.",
       url: `${brand.siteUrl}/use-cases/tithing-declaration`,
       siteName: brand.shortName,
       type: "website",
@@ -123,7 +123,7 @@ export default async function TithingDeclarationPage() {
             Schedule tithing declaration appointments online
           </h1>
           <p className="text-[clamp(17px,2.4vw,20px)] text-white/85 mb-8 max-w-[560px] mx-auto leading-[1.6]">
-            Create 15-minute slots, share one link, and let ward members pick their own time — no paper signup sheets, no back-and-forth texts.
+            Create 15 minute slots, share one link, and let ward members pick their own time. No paper signup sheets, no back and forth texts.
           </p>
           <div className="flex gap-3 flex-wrap justify-center">
             <Link href="/create" className="text-base font-semibold px-8 py-3.5 rounded-full bg-white text-[#08647E] border-none no-underline shadow-[0_8px_28px_rgba(0,0,0,0.20)] transition-all duration-200 inline-flex items-center gap-2 hover:-translate-y-0.5 hover:shadow-[0_12px_36px_rgba(0,0,0,0.25)]">
@@ -276,11 +276,11 @@ export default async function TithingDeclarationPage() {
               {/* Rows */}
               {[
                 { feature: "Members need an account", paper: "No", digital: "No" },
-                { feature: "Real-time availability", paper: "No — paper gets outdated", digital: "Yes — updates instantly" },
-                { feature: "Double-booking risk", paper: "High — manual tracking", digital: "Zero — slots close when full" },
-                { feature: "Confirmation emails", paper: "No", digital: "Yes — automatic" },
+                { feature: "Live availability", paper: "No, paper gets outdated", digital: "Yes, updates instantly" },
+                { feature: "Double booking risk", paper: "High, manual tracking", digital: "Zero, slots close when full" },
+                { feature: "Confirmation emails", paper: "No", digital: "Yes, automatic" },
                 { feature: "Reminder emails", paper: "No", digital: "Yes, by email if provided" },
-                { feature: "Accessible from anywhere", paper: "No — foyer only", digital: "Yes — share one link" },
+                { feature: "Accessible from anywhere", paper: "No, foyer only", digital: "Yes, share one link" },
                 { feature: "Setup time", paper: "Print, post, hope people see it", digital: "10 minutes to live" },
               ].map((row, i) => (
                 <div key={i} className="contents">

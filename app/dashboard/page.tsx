@@ -254,15 +254,15 @@ export default function DashboardPage() {
               <p className="text-xs text-[#5A8399] mt-3 max-w-xl leading-relaxed">
                 {isUnlimited
                   ? isWardBrand
-                    ? "Share links with your ward—people who sign up don’t need an account."
-                    : "Share links with your group—people who sign up don’t need an account."
+                    ? "Share links with your ward. People who sign up don’t need an account."
+                    : "Share links with your group. People who sign up don’t need an account."
                   : <>
                       Free to use: up to {maxEvents} events per account.{" "}
                       {atLimit
                         ? "Delete an event below to create a new one."
                         : isWardBrand
-                          ? "Share links with your ward—people who sign up don’t need an account."
-                          : "Share links with your group—people who sign up don’t need an account."}
+                          ? "Share links with your ward. People who sign up don’t need an account."
+                          : "Share links with your group. People who sign up don’t need an account."}
                     </>
                 }
               </p>
@@ -474,7 +474,7 @@ export default function DashboardPage() {
 
           {isTipJarEnabled(brand) && (
             <p className="mt-6 text-sm text-[#5A8399] leading-relaxed max-w-md">
-              Ward Signup stays free. Optional hosting support is welcome — never required.{" "}
+              Ward Signup stays free. Optional hosting support is welcome, never required.{" "}
               <Link
                 href="/support-the-project"
                 className="text-[#0E96B0] font-medium hover:text-[#08647E] transition-colors no-underline"

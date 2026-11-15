@@ -244,7 +244,7 @@ export default function FlyerPage({
         </div>
         <div className="max-w-[8.5in] mx-auto px-6 pb-3">
           <p className="text-xs text-[#5A8399] leading-snug">
-            Tip: In the print dialog, choose <strong>Save as PDF</strong> to get a file you can email or share — or print directly to hand out in Elders Quorum, post on bulletin boards, etc.
+            Tip: In the print dialog, choose <strong>Save as PDF</strong> to get a file you can email or share, or print directly to hand out in Elders Quorum, post on bulletin boards, etc.
           </p>
         </div>
       </div>
@@ -266,9 +266,9 @@ export default function FlyerPage({
             </div>
             <div className="flyer-hero-label">Scan to sign up</div>
             <div className="flyer-hero-sub">
-              Point your phone camera at the code — no app needed.
+              Point your phone camera at the code. No app needed.
             </div>
-            <div className="flyer-hero-or">— or visit —</div>
+            <div className="flyer-hero-or">or visit</div>
             <div className="flyer-hero-host">{visitLabel}</div>
             <div className="flyer-hero-url">{signupUrl}</div>
           </div>
@@ -316,7 +316,7 @@ export default function FlyerPage({
         <div className="flyer-spacer" />
 
         <div className="flyer-footer">
-          Made with <span style={{ color: "#e11d48" }}>♥</span> from Arizona — {displayHost}
+          Made with <span style={{ color: "#e11d48" }}>♥</span> from Arizona · {displayHost}
         </div>
       </div>
 
@@ -646,7 +646,7 @@ function ItemsList({ items }: { items: CampaignItemWithSignups[] }) {
             <span className="flyer-item-label">{item.label}</span>
             <span className="flyer-item-meta">
               {isFull
-                ? `Full — ${claimed} claimed`
+                ? `Full, ${claimed} claimed`
                 : limit !== null
                 ? `${claimed} of ${limit} claimed`
                 : claimed > 0

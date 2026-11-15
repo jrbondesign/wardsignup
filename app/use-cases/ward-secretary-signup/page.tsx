@@ -10,7 +10,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
   const title = "Online signup sheets for ward secretaries | Ward Signup";
-  const description = "Create time slots, set spot limits, and share one link. Built for Latter-day Saint ward secretaries — members sign up with no account. Free to use.";
+  const description = "Create time slots, set spot limits, and share one link. Built for Latter-day Saint ward secretaries. Members sign up with no account. Free to use.";
   const url = `${brand.siteUrl}/use-cases/ward-secretary-signup`;
   
   return {
@@ -44,7 +44,7 @@ const faqSchema = {
       "name": "What is an online ward signup sheet?",
       "acceptedAnswer": {
         "@type": "Answer",
-        "text": "An online ward signup sheet is a scheduling tool that lets ward secretaries publish available time slots (for example, tithing declaration appointments or interview windows), set capacity limits, and share one link. Members pick a slot, enter their name, and confirm — no account required. The secretary sees progress in real time and follows up only on gaps."
+        "text": "An online ward signup sheet is a scheduling tool that lets ward secretaries publish available time slots (for example, tithing declaration appointments or interview windows), set capacity limits, and share one link. Members pick a slot, enter their name, and confirm. No account required. The secretary sees progress in real time and follows up only on gaps."
       }
     },
     {
@@ -88,7 +88,7 @@ export default async function WardSecretarySignupPage() {
               </h1>
               
               <p className="text-[18px] text-[#2E5566] leading-[1.75] mb-10">
-                A <strong>ward signup sheet</strong> is how executive secretaries and other leaders fill openings without phone tag: publish available times (or labeled openings), limit how many people can take each one, and share a single link. <strong>Ward Signup</strong> is that sheet online — time slots, spot limits, one link, no member accounts. Free to use.
+                A <strong>ward signup sheet</strong> is how executive secretaries and other leaders fill openings without phone tag: publish available times (or labeled openings), limit how many people can take each one, and share a single link. <strong>Ward Signup</strong> is that sheet online: time slots, spot limits, one link, no member accounts. Free to use.
               </p>
 
               <section className="mb-12">
@@ -143,7 +143,7 @@ export default async function WardSecretarySignupPage() {
                       Share one link
                     </h3>
                     <p className="text-[17px] text-[#2E5566] leading-[1.7]">
-                      Copy the signup link. Put it in the bulletin, send it by text or email, or print a foyer QR. Optional email invites are fine when you want them — the sheet still works as a shared link.
+                      Copy the signup link. Put it in the bulletin, send it by text or email, or print a foyer QR. Optional email invites are fine when you want them. The sheet still works as a shared link.
                     </p>
                   </div>
 
@@ -180,20 +180,20 @@ export default async function WardSecretarySignupPage() {
                       <Link href="/use-cases/tithing-declaration" className="text-[#0E96B0] hover:text-[#08647E] font-medium">
                         Tithing declaration appointments
                       </Link>
-                      {" "}— bishop windows with household spot caps
+                      {": "}bishop windows with household spot caps
                     </span>
                   </li>
                   <li className="flex items-start gap-3">
                     <svg className="w-5 h-5 text-[#0E96B0] flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
-                    <span>Temple recommend / youth and adult interviews — same slot-and-spots pattern</span>
+                    <span>Temple recommend / youth and adult interviews, using the same slot and spots pattern</span>
                   </li>
                   <li className="flex items-start gap-3">
                     <svg className="w-5 h-5 text-[#0E96B0] flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                       <polyline points="20 6 9 17 4 12"/>
                     </svg>
-                    <span>Nursery coverage, teaching assignments, missionary dinners, service shifts, Fast Sunday sheets — timed shifts or labeled openings using the same sheet model</span>
+                    <span>Nursery coverage, teaching assignments, missionary dinners, service shifts, Fast Sunday sheets, with timed shifts or labeled openings using the same sheet model</span>
                   </li>
                 </ul>
                 <p className="text-[17px] text-[#5A8399] mt-4 italic">
@@ -296,7 +296,7 @@ export default async function WardSecretarySignupPage() {
                       What is an online ward signup sheet?
                     </h3>
                     <p className="text-[16px] text-[#2E5566] leading-[1.7]">
-                      An online ward signup sheet is a scheduling tool that lets ward secretaries publish available time slots (for example, tithing declaration appointments or interview windows), set capacity limits, and share one link. Members pick a slot, enter their name, and confirm — no account required. The secretary sees progress in real time and follows up only on gaps.
+                      An online ward signup sheet is a scheduling tool that lets ward secretaries publish available time slots (for example, tithing declaration appointments or interview windows), set capacity limits, and share one link. Members pick a slot, enter their name, and confirm. No account required. The secretary sees progress in real time and follows up only on gaps.
                     </p>
                   </div>
 

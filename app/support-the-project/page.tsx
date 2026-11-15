@@ -15,7 +15,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
   const title = "Support the Project";
-  const description = `${brand.shortName} is free to use and always will be. Optional contributions help offset hosting costs — never required.`;
+  const description = `${brand.shortName} is free to use and always will be. Optional contributions help offset hosting costs, never required.`;
 
   return {
     title,
@@ -61,12 +61,12 @@ export default async function SupportTheProjectPage() {
 
           <section className="mb-10">
             <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
-              Ward Signup is free to use — and always will be. No paid plan,
+              Ward Signup is free to use, and always will be. No paid plan,
               no credit card wall, no ads on your signup sheets. Hosting, email
               delivery, and keeping wardsignup.com online is covered by the
               maintainers out of pocket. If Ward Signup has helped your ward
               coordinate scheduling, an optional contribution toward those costs is
-              always welcome — and never required.
+              always welcome, and never required.
             </p>
           </section>
 

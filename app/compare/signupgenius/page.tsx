@@ -10,7 +10,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const host = h.get("x-forwarded-host") ?? h.get("host");
   const brand = getBrandFromHost(host);
   const title = "Ward Signup vs SignUpGenius for ward signup sheets";
-  const description = "A fair look at Ward Signup and SignUpGenius for Latter-day Saint ward appointments — when a simple sheet fits, when to stay put, and how tithing declaration works online.";
+  const description = "A fair look at Ward Signup and SignUpGenius for Latter-day Saint ward appointments: when a simple sheet fits, when to stay put, and how tithing declaration works online.";
   const url = `${brand.siteUrl}/compare/signupgenius`;
   
   return {
@@ -48,7 +48,7 @@ export default async function CompareSignUpGenius() {
         "@id": `${brand.siteUrl}/compare/signupgenius`,
         "url": `${brand.siteUrl}/compare/signupgenius`,
         "name": "Ward Signup vs SignUpGenius for ward signup sheets",
-        "description": "A fair look at Ward Signup and SignUpGenius for Latter-day Saint ward appointments — when a simple sheet fits, when to stay put, and how tithing declaration works online.",
+        "description": "A fair look at Ward Signup and SignUpGenius for Latter-day Saint ward appointments: when a simple sheet fits, when to stay put, and how tithing declaration works online.",
         "isPartOf": {
           "@type": "WebSite",
           "url": brand.siteUrl,
@@ -63,7 +63,7 @@ export default async function CompareSignUpGenius() {
             "name": "What is a good SignUpGenius alternative for an LDS ward?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Ward Signup is a simple option for Latter-day Saint wards and branches that need online signup sheets: leaders create time slots, set spots per session, and share one link. Members claim a spot with their name — no account or app — which fits executive secretary workflows like tithing declaration, interviews, and volunteer shifts. Ward Signup is free to use.",
+              "text": "Ward Signup is a simple option for Latter-day Saint wards and branches that need online signup sheets: leaders create time slots, set spots per session, and share one link. Members claim a spot with their name, with no account or app, which fits executive secretary workflows like tithing declaration, interviews, and volunteer shifts. Ward Signup is free to use.",
             },
           },
           {
@@ -71,7 +71,7 @@ export default async function CompareSignUpGenius() {
             "name": "How is Ward Signup different from SignUpGenius?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "SignUpGenius is a broad signup platform used by many kinds of groups. Ward Signup is focused on the ward signup-sheet model — time slots, spot limits, shareable links, and no member logins — with language and examples aimed at ward secretaries and bishopric callings. If you need a wide general-purpose signup toolkit, SignUpGenius may still fit. If you want a paper-sheet replacement for ward appointments, Ward Signup is built for that job.",
+              "text": "SignUpGenius is a broad signup platform used by many kinds of groups. Ward Signup is focused on the ward signup sheet model (time slots, spot limits, shareable links, and no member logins), with language and examples aimed at ward secretaries and bishopric callings. If you need a wide general purpose signup toolkit, SignUpGenius may still fit. If you want a paper sheet replacement for ward appointments, Ward Signup is built for that job.",
             },
           },
           {
@@ -106,11 +106,11 @@ export default async function CompareSignUpGenius() {
 
             <div className="prose prose-lg max-w-none text-[#2E5566] space-y-6">
               <p>
-                SignUpGenius is a familiar tool for a lot of wards. Many executive secretaries have used it for years for activities, meals, and appointment sheets. This page is a calm comparison for leaders who are asking whether a <strong>simpler ward signup sheet</strong> might fit a job like tithing declaration — not a teardown, and not a claim that one product is "best for everyone."
+                SignUpGenius is a familiar tool for a lot of wards. Many executive secretaries have used it for years for activities, meals, and appointment sheets. This page is a calm comparison for leaders who are asking whether a <strong>simpler ward signup sheet</strong> might fit a job like tithing declaration. It is not a teardown, and not a claim that one product is "best for everyone."
               </p>
 
               <p>
-                <strong>Ward Signup</strong> is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set how many spots each session has, and share one link. Members pick a time and enter their name — no account, no app. Free to use.
+                <strong>Ward Signup</strong> is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set how many spots each session has, and share one link. Members pick a time and enter their name with no account and no app. Free to use.
               </p>
 
               <h2 className="font-serif text-2xl text-[#0D2B35] mt-10 mb-4">
@@ -129,7 +129,7 @@ export default async function CompareSignUpGenius() {
               </ul>
 
               <p>
-                If that sounds like the paper sheet on the office door — just online — that is the model Ward Signup is built around.
+                If that sounds like the paper sheet on the office door, just online, that is the model Ward Signup is built around.
               </p>
 
               <h2 className="font-serif text-2xl text-[#0D2B35] mt-10 mb-4">
@@ -153,7 +153,7 @@ export default async function CompareSignUpGenius() {
                     </tr>
                     <tr className="bg-[#F4FAFB]">
                       <td className="border border-[#0E96B0]/20 px-4 py-3 font-medium">Member account</td>
-                      <td className="border border-[#0E96B0]/20 px-4 py-3">Not required — name on a shared link</td>
+                      <td className="border border-[#0E96B0]/20 px-4 py-3">Not required, name on a shared link</td>
                       <td className="border border-[#0E96B0]/20 px-4 py-3">Often usable without a member login; organizer setup varies by how you use it</td>
                     </tr>
                     <tr>
@@ -179,7 +179,7 @@ export default async function CompareSignUpGenius() {
                         >
                           SignUpGenius
                         </a>
-                        {" "}for their current plans — we do not invent competitor pricing here
+                        {" "}for their current plans. We do not invent competitor pricing here
                       </td>
                     </tr>
                   </tbody>
@@ -212,9 +212,9 @@ export default async function CompareSignUpGenius() {
               </h2>
 
               <ul className="list-disc ml-6 space-y-2">
-                <li>Your ward already depends on SignUpGenius workflows or features outside what Ward Signup offers today — staying put can be the calm choice</li>
+                <li>Your ward already depends on SignUpGenius workflows or features outside what Ward Signup offers today. Staying put can be the calm choice</li>
                 <li>You need a large, general-purpose signup toolkit for many non-ward contexts in one account</li>
-                <li>You specifically need <strong>personal calendar sync</strong> for one leader's availability — many wards use <strong>Calendly</strong> for that job. Ward Signup is a <strong>sheet</strong> tool (slots + spots + link), not a calendar-sync product</li>
+                <li>You specifically need <strong>personal calendar sync</strong> for one leader's availability. Many wards use <strong>Calendly</strong> for that job. Ward Signup is a <strong>sheet</strong> tool (slots + spots + link), not a calendar sync product</li>
               </ul>
 
               <p>
@@ -244,7 +244,7 @@ export default async function CompareSignUpGenius() {
               <ol className="list-decimal ml-6 space-y-2">
                 <li>Create the next event in Ward Signup (for example <strong>Tithing Declaration 2026</strong>) with the real windows and spot limits.</li>
                 <li>Announce the same way you already do: bulletin, email, text, or foyer QR.</li>
-                <li>Recreate slots for the next season when it opens — there is no one-click import from other tools claimed here.</li>
+                <li>Recreate slots for the next season when it opens. There is no one click import from other tools claimed here.</li>
               </ol>
 
               <p className="mt-4 text-[15px] text-[#5A8399]">
@@ -268,7 +268,7 @@ export default async function CompareSignUpGenius() {
                     What is a good SignUpGenius alternative for an LDS ward?
                   </h3>
                   <p>
-                    Ward Signup is a simple option for Latter-day Saint wards and branches that need online signup sheets: leaders create time slots, set spots per session, and share one link. Members claim a spot with their name — no account or app — which fits executive secretary workflows like tithing declaration, interviews, and volunteer shifts. Ward Signup is free to use.
+                    Ward Signup is a simple option for Latter-day Saint wards and branches that need online signup sheets: leaders create time slots, set spots per session, and share one link. Members claim a spot with their name, with no account or app, which fits executive secretary workflows like tithing declaration, interviews, and volunteer shifts. Ward Signup is free to use.
                   </p>
                 </div>
 
@@ -277,7 +277,7 @@ export default async function CompareSignUpGenius() {
                     How is Ward Signup different from SignUpGenius?
                   </h3>
                   <p>
-                    SignUpGenius is a broad signup platform used by many kinds of groups. Ward Signup is focused on the ward signup-sheet model — time slots, spot limits, shareable links, and no member logins — with language and examples aimed at ward secretaries and bishopric callings. If you need a wide general-purpose signup toolkit, SignUpGenius may still fit. If you want a paper-sheet replacement for ward appointments, Ward Signup is built for that job.
+                    SignUpGenius is a broad signup platform used by many kinds of groups. Ward Signup is focused on the ward signup sheet model (time slots, spot limits, shareable links, and no member logins), with language and examples aimed at ward secretaries and bishopric callings. If you need a wide general purpose signup toolkit, SignUpGenius may still fit. If you want a paper sheet replacement for ward appointments, Ward Signup is built for that job.
                   </p>
                 </div>
 

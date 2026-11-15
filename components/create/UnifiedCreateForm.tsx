@@ -519,7 +519,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, onDirtyChange, o
 
       <ComponentCard
         title="How do people respond?"
-        description="The core of your event — pick one. You can change it anytime."
+        description="The core of your event. Pick one. You can change it anytime."
         icon={
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4">
             <rect x="3" y="3" width="7" height="7" rx="1.5" /><rect x="14" y="3" width="7" height="7" rx="1.5" /><rect x="3" y="14" width="7" height="7" rx="1.5" /><rect x="14" y="14" width="7" height="7" rx="1.5" />
@@ -626,7 +626,7 @@ export default function UnifiedCreateForm({ initialTemplateKey, onDirtyChange, o
       <div className="pt-3">
         <h2 className="text-[14px] font-bold text-[#0D2B35]">Add to your event</h2>
         <p className="text-[12px] text-[#5A8399] mt-0.5">
-          Optional components — add only the ones you need.
+          Optional components. Add only the ones you need.
         </p>
       </div>
 

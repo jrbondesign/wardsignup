@@ -57,8 +57,8 @@ function buildGoogleEvent(
   // Title: event name + first signup name (or "Multiple signups")
   const firstName = signups[0]?.member_name || "Unknown";
   const title = signups.length === 1
-    ? `${campaign.name} — ${firstName}`
-    : `${campaign.name} — ${firstName} + ${signups.length - 1} more`;
+    ? `${campaign.name}: ${firstName}`
+    : `${campaign.name}: ${firstName} + ${signups.length - 1} more`;
 
   // Description: member details + admin link
   const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || "https://wardsignup.com";
@@ -161,7 +161,7 @@ describe("Google Calendar sync", () => {
     it("builds event with single signup", () => {
       const event = buildGoogleEvent(campaign, session, false);
 
-      expect(event.summary).toBe("Tithing Declaration — John Smith");
+      expect(event.summary).toBe("Tithing Declaration: John Smith");
       expect(event.description).toContain("John Smith");
       expect(event.description).toContain("Phone: 555-1234");
       expect(event.description).toContain("Email: john@example.com");
@@ -192,7 +192,7 @@ describe("Google Calendar sync", () => {
 
       const event = buildGoogleEvent(campaign, sessionMulti, false);
 
-      expect(event.summary).toBe("Tithing Declaration — John Smith + 1 more");
+      expect(event.summary).toBe("Tithing Declaration: John Smith + 1 more");
       expect(event.description).toContain("John Smith");
       expect(event.description).toContain("Jane Doe");
     });

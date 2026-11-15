@@ -214,7 +214,7 @@ function CreateInner() {
                   </div>
                   {initialTemplateKey && (
                     <p className="mt-2.5 text-[12px] text-[#5A8399]">
-                      Template applied — edit anything below, or{" "}
+                      Template applied. Edit anything below, or{" "}
                       <Link href="/create" className="text-[#0E96B0] hover:underline">
                         clear and start over
                       </Link>

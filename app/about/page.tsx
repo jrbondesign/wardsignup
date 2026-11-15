@@ -13,7 +13,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     title: `About · ${brand.shortName}`,
-    description: `${brand.shortName} is an independent free online signup sheet for Latter-day Saint wards and branches. Create time slots, set spots, and share one link — members sign up with no account.`,
+    description: `${brand.shortName} is an independent free online signup sheet for Latter-day Saint wards and branches. Create time slots, set spots, and share one link. Members sign up with no account.`,
     alternates: {
       canonical: "/about",
     },
@@ -51,7 +51,7 @@ export default async function AboutPage() {
             </h2>
             <div className="prose prose-lg max-w-none">
               <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
-                Ward Signup is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set how many spots each session has, and share one link — members pick a time and enter their name without creating an account or downloading an app.
+                Ward Signup is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set how many spots each session has, and share one link. Members pick a time and enter their name without creating an account or downloading an app.
               </p>
               <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
                 It is built for the people who already run paper sheets and bulletin announcements: ward and branch executive secretaries, clerks, and other callings that need capped appointment windows or volunteer openings filled before Sunday.
@@ -97,7 +97,7 @@ export default async function AboutPage() {
               Pricing
             </h2>
             <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
-              Ward Signup is <strong>free to use</strong>. No credit card required — and there is no paid plan.
+              Ward Signup is <strong>free to use</strong>. No credit card required, and there is no paid plan.
             </p>
             {tipEnabled && (
               <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
