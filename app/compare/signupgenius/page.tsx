@@ -79,7 +79,7 @@ export default async function CompareSignUpGenius() {
             "name": "When should a ward keep SignUpGenius?",
             "acceptedAnswer": {
               "@type": "Answer",
-              "text": "Keep SignUpGenius if it already fits how your ward runs and you rely on workflows outside Ward Signup's scope. Consider Ward Signup when the job is mainly a capped appointment or volunteer sheet you want to publish and share like a bulletin announcement. For calendar sync for one person, Calendly is often the better match than either sheet tool.",
+              "text": "Keep SignUpGenius if it already fits how your ward runs and you rely on workflows outside Ward Signup's scope. Consider Ward Signup when the job is mainly a capped appointment or volunteer sheet you want to publish and share like a bulletin announcement. If one leader needs personal calendar sync, Calendly is often the better match than either sheet tool.",
             },
           },
         ],
@@ -286,7 +286,7 @@ export default async function CompareSignUpGenius() {
                     When should a ward keep SignUpGenius?
                   </h3>
                   <p>
-                    Keep SignUpGenius if it already fits how your ward runs and you rely on workflows outside Ward Signup's scope. Consider Ward Signup when the job is mainly a capped appointment or volunteer sheet you want to publish and share like a bulletin announcement. For calendar sync for one person, Calendly is often the better match than either sheet tool.
+                    Keep SignUpGenius if it already fits how your ward runs and you rely on workflows outside Ward Signup's scope. Consider Ward Signup when the job is mainly a capped appointment or volunteer sheet you want to publish and share like a bulletin announcement. If one leader needs personal calendar sync, Calendly is often the better match than either sheet tool.
                   </p>
                 </div>
               </div>

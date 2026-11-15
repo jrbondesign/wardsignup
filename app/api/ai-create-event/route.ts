@@ -55,7 +55,7 @@ export async function POST(request: Request) {
   if (!allowed) {
     const retryAfterSecs = Math.ceil(retryAfterMs / 1000);
     return NextResponse.json(
-      { error: "This feature is not available." },
+      { error: "Too many requests. Please wait a bit and try again." },
       {
         status: 429,
         headers: { "Retry-After": String(retryAfterSecs) },

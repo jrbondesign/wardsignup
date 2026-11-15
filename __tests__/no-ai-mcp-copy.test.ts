@@ -1,7 +1,12 @@
 /**
- * Guard: the create page, the dashboard and the marketing pages must not
- * mention AI, MCP or Claude in user facing copy (Jonathan, Nov 15, 2026).
+ * Guard: the create page, create form components, dashboard, marketing pages
+ * and email builders must not mention AI, MCP or Claude in user facing copy
+ * (Jonathan, Nov 15, 2026).
  * Comments are stripped before checking so code notes do not trip it.
+ *
+ * The disabled backend is kept on purpose and is out of scope for this
+ * scan: app/api/auth/create-mcp-token/route.ts, app/api/ai-create-event/route.ts
+ * and lib/ai-event-extraction.ts. Do not widen this list to a repo-wide walk.
  */
 import fs from "fs";
 import path from "path";
@@ -18,6 +23,12 @@ function listPages(dir: string): string[] {
       return /\.(tsx|ts)$/.test(e.name) ? [rel] : [];
     });
 }
+
+const DORMANT_DISABLED_BACKEND = [
+  "app/api/auth/create-mcp-token/route.ts",
+  "app/api/ai-create-event/route.ts",
+  "lib/ai-event-extraction.ts",
+];
 
 const files = [
   "app/create/page.tsx",
@@ -36,6 +47,13 @@ const files = [
   "app/terms/page.tsx",
   ...listPages("app/use-cases"),
   ...listPages("app/compare"),
+  ...listPages("components/create"),
+  "lib/organizer-email.ts",
+  "lib/leader-email.ts",
+  "lib/participant-email.ts",
+  "lib/welcome-email.ts",
+  "lib/feedback-email.ts",
+  "lib/founder-notify.ts",
 ].filter((f) => fs.existsSync(path.join(root, f)));
 
 const stripComments = (src: string) =>
@@ -48,6 +66,27 @@ describe("no AI or MCP copy", () => {
   it("covers the create page, dashboard and marketing pages", () => {
     expect(files).toEqual(expect.arrayContaining(["app/create/page.tsx", "app/dashboard/page.tsx", "app/faq/page.tsx"]));
     expect(files.length).toBeGreaterThan(12);
+  });
+
+  it("covers create form components and email builders", () => {
+    expect(files).toEqual(
+      expect.arrayContaining([
+        "components/create/UnifiedCreateForm.tsx",
+        "lib/organizer-email.ts",
+        "lib/leader-email.ts",
+        "lib/participant-email.ts",
+        "lib/welcome-email.ts",
+        "lib/feedback-email.ts",
+        "lib/founder-notify.ts",
+      ]),
+    );
+    expect(files.some((f) => f.startsWith("components/create/"))).toBe(true);
+  });
+
+  it("does not scan the dormant disabled backend files kept on purpose", () => {
+    for (const file of DORMANT_DISABLED_BACKEND) {
+      expect(files).not.toContain(file);
+    }
   });
 
   it.each(files)("%s has no AI, MCP or Claude wording", (file) => {
