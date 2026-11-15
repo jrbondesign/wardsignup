@@ -20,7 +20,12 @@ jest.mock("@/lib/auth", () => ({
 
 jest.mock("@/lib/attribution", () => ({ getStoredAttribution: () => undefined }));
 
-jest.mock("@/components/create/EventTypePicker", () => () => <div data-testid="event-type-picker" />);
+jest.mock("@/components/create/EventTypePicker", () => {
+  function EventTypePickerMock() {
+    return <div data-testid="event-type-picker" />;
+  }
+  return EventTypePickerMock;
+});
 jest.mock("@/components/create/sections/LocationSection", () => () => null);
 jest.mock("@/components/create/sections/CapacitySection", () => () => null);
 jest.mock("@/components/create/sections/AttendeeFieldsSection", () => () => null);
