@@ -5,6 +5,7 @@ import { getBrandFromHost } from "@/lib/brand";
 import MarketingNav from "@/components/MarketingNav";
 import MarketingFooter from "@/components/MarketingFooter";
 import { isTipJarEnabled } from "@/lib/tip-jar";
+import AboutSponsorSection from "@/components/AboutSponsorSection";
 
 export async function generateMetadata(): Promise<Metadata> {
   const h = await headers();
@@ -40,6 +41,8 @@ export default async function AboutPage() {
       {/* Main Content */}
       <main className="pt-[94px] pb-16 px-6">
         <article className="max-w-[720px] mx-auto">
+          <AboutSponsorSection />
+
           <h1 className="font-serif text-[clamp(36px,6vw,52px)] tracking-[-1px] text-[#0D2B35] mb-6 leading-[1.1]">
             About Ward Signup
           </h1>
