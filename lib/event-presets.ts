@@ -154,6 +154,25 @@ export function buildPreset(key: TemplateKey): PresetResult {
         ui: {},
       };
 
+    case "giving-machine":
+      return {
+        patch: {
+          ...base,
+          eventType: "spots",
+          allowGuests: false,
+          spotsDateMode: "specific",
+          spotsPickedDates: [
+            { id: "giving-machine-1000", date: "2026-12-12", start: "10:00", end: "12:00" },
+            { id: "giving-machine-1200", date: "2026-12-12", start: "12:00", end: "14:00" },
+            { id: "giving-machine-1400", date: "2026-12-12", start: "14:00", end: "16:00" },
+            { id: "giving-machine-1600", date: "2026-12-12", start: "16:00", end: "18:00" },
+          ],
+          spotsAutoSplit: false,
+          spotsCapacity: 4,
+        },
+        ui: {},
+      };
+
     // ── Bring or Do (items) ──────────────────────────────────────────────
     case "ward-potluck":
     case "service-project":

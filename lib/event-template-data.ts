@@ -23,7 +23,8 @@ export type TemplateKey =
   | "ward-potluck"
   | "service-project"
   | "moving-help"
-  | "ward-christmas-party";
+  | "ward-christmas-party"
+  | "giving-machine";
 
 export type EventCategory = "single" | "sessions" | "bring";
 
@@ -200,6 +201,20 @@ const BUILTIN_TEMPLATES: EventTemplate[] = [
       { label: "Music", quantity: 2, section: "Jobs" },
       { label: "Cleanup crew", quantity: 8, section: "Jobs" },
     ],
+  },
+  {
+    key: "giving-machine",
+    icon: "🎁",
+    label: "Giving Machine",
+    desc: "Volunteer shifts on Saturday, December 12. Always free.",
+    catId: "sessions",
+    catLabel: "Scheduled Sessions",
+    badgeColor: "bg-violet-50 text-violet-700 border-violet-200",
+    catTextColor: "text-violet-600",
+    allowGuestsDefault: false,
+    defaultName: "Giving Machine",
+    defaultDescription:
+      "Sign up for a Giving Machine shift. Pick a time that works for you. No account is needed.",
   },
   // ── Bring or Do ──────────────────────────────────────────────────────────
   {
