@@ -12,6 +12,7 @@ import UnifiedCreateForm from "@/components/create/UnifiedCreateForm";
 import OrgNameModal from "@/components/OrgNameModal";
 import { getTemplatesForBrand, getEventTemplate, type TemplateKey } from "@/lib/event-template-data";
 import { getMaxCampaignsForOrg, getMaxCampaignsPerUser, isUnlimitedEventsUser } from "@/lib/limits";
+import { safeReturnPath } from "@/lib/auth-return-path";
 
 function CreateInner() {
   const brand = useBrand();
@@ -48,7 +49,11 @@ function CreateInner() {
       const supabase = createClientComponentClient();
       const { data: { user: authUser } } = await supabase.auth.getUser();
       if (!authUser) {
-        router.push("/login");
+        // Keep ?template= (and any other create query) so sign in / sign up
+        // returns to the prefilled sheet instead of a blank create page.
+        const returnPath = `${window.location.pathname}${window.location.search}`;
+        const next = safeReturnPath(returnPath) ?? "/create";
+        router.push(`/login?next=${encodeURIComponent(next)}`);
         return;
       }
       setUserEmail(authUser.email ?? null);
