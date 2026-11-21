@@ -35,7 +35,7 @@
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
     "leaflet": "^1.9.4",
-    "next": "^16.4.2",
+    "next": "^16.4.6",
     "posthog-js": "^1.435.6",
     "posthog-node": "^5.55.0",
     "qrcode": "^1.5.4",
@@ -45,7 +45,7 @@
     "resend": "^6.9.4"
   },
   "devDependencies": {
-    "@next/bundle-analyzer": "^16.2.2",
+    "@next/bundle-analyzer": "^16.4.6",
     "@playwright/test": "^1.58.2",
     "@tailwindcss/postcss": "^4.2.2",
     "@testing-library/jest-dom": "^6.9.1",
@@ -59,7 +59,7 @@
     "@types/react-dom": "^19.2.3",
     "autoprefixer": "^10.4.27",
     "eslint": "^9.39.4",
-    "eslint-config-next": "^16.2.2",
+    "eslint-config-next": "^16.4.6",
     "jest": "^30.3.0",
     "jest-environment-jsdom": "^30.3.0",
     "postcss": "^8.5.8",
