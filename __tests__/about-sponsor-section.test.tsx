@@ -61,3 +61,39 @@ describe("About page placement", () => {
     expect(sponsorIdx).toBeLessThan(h1Idx);
   });
 });
+
+describe("Local Senior Advisor sponsor block", () => {
+  const LSA_HREF = "https://localsenioradvisor.com/";
+
+  it("renders the LSA heading, body, logo, and visit link", () => {
+    render(<AboutSponsorSection />);
+
+    expect(screen.getByText("Thank you to Local Senior Advisor")).toBeInTheDocument();
+    expect(screen.getByText(/Randy Chipman/)).toBeInTheDocument();
+    expect(screen.getByAltText("Local Senior Advisor logo")).toBeInTheDocument();
+
+    const visit = screen.getByRole("link", { name: "Visit Local Senior Advisor" });
+    expect(visit).toHaveAttribute("href", LSA_HREF);
+    expect(visit).toHaveAttribute("target", "_blank");
+    expect(visit).toHaveAttribute("rel", "sponsored noopener");
+
+    const logoLink = screen.getByAltText("Local Senior Advisor logo").closest("a");
+    expect(logoLink).toHaveAttribute("href", LSA_HREF);
+    expect(logoLink).toHaveAttribute("rel", "sponsored noopener");
+  });
+
+  it("keeps the ACLG block first", () => {
+    const { container } = render(<AboutSponsorSection />);
+    const sections = container.querySelectorAll("section");
+    expect(sections).toHaveLength(2);
+    expect(sections[0]).toHaveAttribute("aria-label", "Thank you to our first sponsor");
+    expect(sections[1]).toHaveAttribute("aria-label", "Thank you to Local Senior Advisor");
+  });
+
+  it("uses ward, never unit, and no dashes in the LSA copy", () => {
+    const { container } = render(<AboutSponsorSection />);
+    const lsa = container.querySelectorAll("section")[1].textContent ?? "";
+    expect(lsa).not.toMatch(/\bunit\b/i);
+    expect(lsa).not.toMatch(/[\u2013\u2014-]/);
+  });
+});
