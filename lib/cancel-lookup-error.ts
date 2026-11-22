@@ -26,14 +26,18 @@ export class CancelLookupError extends Error {
  * whether the token was a well formed uuid. Never throws.
  */
 export function captureCancelLookupError(dbError: unknown, route: string, token: string): void {
-  const rawCode = (dbError as { code?: unknown } | null)?.code;
-  const code = typeof rawCode === "string" && rawCode ? rawCode : null;
-  captureServerException(new CancelLookupError(code), {
-    route,
-    properties: {
-      kind: "cancel_lookup_db_error",
-      error_code: code,
-      token_malformed: !isWellFormedCancelToken(token),
-    },
-  });
+  try {
+    const rawCode = (dbError as { code?: unknown } | null)?.code;
+    const code = typeof rawCode === "string" && rawCode ? rawCode : null;
+    captureServerException(new CancelLookupError(code), {
+      route,
+      properties: {
+        kind: "cancel_lookup_db_error",
+        error_code: code,
+        token_malformed: !isWellFormedCancelToken(token),
+      },
+    });
+  } catch {
+    // analytics must never break the cancel response
+  }
 }
