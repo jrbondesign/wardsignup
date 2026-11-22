@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { initAttributionTracking } from "@/lib/attribution";
 import { scrubExceptionEvent } from "@/lib/pii-scrub";
 import { isDemoAnalyticsPath } from "@/lib/posthog-client";
+import { maskReplayNetworkRequest, scrubAuthParamsFromEvent } from "@/lib/posthog-url-scrub";
 
 if (typeof window !== "undefined") {
   posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
@@ -20,10 +21,17 @@ if (typeof window !== "undefined") {
     // Error tracking: unhandled errors and unhandled promise rejections become
     // $exception events tied to the session replay.
     capture_exceptions: true,
+    // Sign in links carry token_hash, code or access_token in the URL. Replay
+    // page URLs and network requests go through this hook; events are
+    // scrubbed in before_send below.
+    session_recording: {
+      maskCapturedNetworkRequestFn: maskReplayNetworkRequest,
+    },
     // Error messages can echo an email or a token; scrub $exception events
-    // before they leave the browser (same rules as the server side).
+    // before they leave the browser (same rules as the server side). Then strip
+    // sign in secrets (token_hash, code, ...) from URLs on every event.
     before_send: (event) => {
-      const scrubbed = scrubExceptionEvent(event);
+      const scrubbed = scrubAuthParamsFromEvent(scrubExceptionEvent(event));
       if (!scrubbed) return null;
       const url =
         (scrubbed.properties && (scrubbed.properties.$current_url as string | undefined)) ||
