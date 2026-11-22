@@ -3,6 +3,7 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { formatSessionSlotLabel } from "@/lib/organizer-email";
 import { publicSiteOriginAndBrandForCampaign } from "@/lib/brand";
 import { captureServerException } from "@/lib/posthog-server";
+import { captureCancelLookupError } from "@/lib/cancel-lookup-error";
 import { REQUEST_TIMEOUT_MESSAGE, SupabaseTimeoutError, withSupabaseTimeout } from "@/lib/supabase-timeout";
 
 export async function GET(request: NextRequest) {
@@ -55,6 +56,7 @@ export async function GET(request: NextRequest) {
 
   if (error) {
     console.error("cancel/lookup:", error);
+    captureCancelLookupError(error, "/api/signups/cancel/lookup", token);
     return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
   }
 
