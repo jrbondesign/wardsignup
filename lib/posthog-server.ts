@@ -75,16 +75,17 @@ export function captureServerException(
     if (!c) return;
     // Scrub before anything leaves the process: messages and stacks can echo
     // an email, a Postgres Key (...)=(...) value or a token.
-    c.captureException(
-      scrubError(error),
-      ctx.distinctId || undefined,
-      scrubProperties({
+    // posthog-node 6.x takes an options object after the error (the 5.x
+    // positional distinctId/properties form is deprecated).
+    c.captureException(scrubError(error), {
+      distinctId: ctx.distinctId || undefined,
+      properties: scrubProperties({
         ...(ctx.properties ?? {}),
         route: ctx.route,
         runtime: "server",
         vercel_env: process.env.VERCEL_ENV ?? null,
       }),
-    );
+    });
     const flush = () => flushPostHogSafely(POSTHOG_FLUSH_TIMEOUT_MS, c);
     try {
       // Required lazily so this module stays importable outside Next's server
