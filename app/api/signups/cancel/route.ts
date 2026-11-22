@@ -4,6 +4,7 @@ import { createServiceRoleClient } from "@/lib/supabase-admin";
 import { consumeActionRate } from "@/lib/rate-limit";
 import { syncCampaignCalendar } from "@/lib/google-calendar-sync";
 import { isGcalSyncFeatureEnabled } from "@/lib/gcal-feature";
+import { captureCancelLookupError } from "@/lib/cancel-lookup-error";
 
 export async function POST(request: NextRequest) {
   try {
@@ -31,6 +32,7 @@ export async function POST(request: NextRequest) {
 
     if (fetchErr) {
       console.error("signups/cancel fetch:", fetchErr);
+      captureCancelLookupError(fetchErr, "/api/signups/cancel", token);
       return NextResponse.json({ error: "Something went wrong." }, { status: 500 });
     }
 
