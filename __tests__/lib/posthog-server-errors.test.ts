@@ -30,8 +30,10 @@ describe("captureServerException", () => {
     captureServerException(err, { route: "/api/signups", distinctId: "abc", properties: { campaign_id: "c1" } }, client as never);
     expect(client.captureException).toHaveBeenCalledWith(
       expect.objectContaining({ message: "db down", name: "Error" }),
-      "abc",
-      expect.objectContaining({ route: "/api/signups", campaign_id: "c1", runtime: "server" }),
+      {
+        distinctId: "abc",
+        properties: expect.objectContaining({ route: "/api/signups", campaign_id: "c1", runtime: "server" }),
+      },
     );
     expect(mockAfter).toHaveBeenCalledTimes(1);
     await mockAfter.mock.calls[0][0]();
@@ -41,7 +43,7 @@ describe("captureServerException", () => {
     const client = { captureException: jest.fn(), flush: jest.fn().mockResolvedValue(undefined) };
     const err = new Error("Resend rejected to=jane@example.org with key re_AbCdEf123456789012345678");
     captureServerException(err, { route: "/api/signups", properties: { note: "for bob@example.com", count: 2 } }, client as never);
-    const [sent, distinctId, props] = client.captureException.mock.calls[0];
+    const [sent, { distinctId, properties: props }] = client.captureException.mock.calls[0];
     expect(sent).toBeInstanceOf(Error);
     expect(sent).not.toBe(err);
     expect(sent.message).toBe("Resend rejected to=[email] with key [secret]");
