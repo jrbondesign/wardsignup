@@ -38,7 +38,7 @@ export default function AboutSponsorSection() {
         Thank you to our sponsors
       </h2>
       <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-6">
-        These sponsors help cover the cost of running WardSignup. Sponsors get no data from WardSignup and have no say in how the site works. Sponsorship is not an endorsement by The Church of Jesus Christ of Latter-day Saints.
+        These sponsors help cover the cost of running Ward Signup. Sponsors get no data from Ward Signup and have no say in how the site works. Sponsorship is not an endorsement by The Church of Jesus Christ of Latter-day Saints.
       </p>
 
       <div className="flex flex-col gap-10">
@@ -53,7 +53,7 @@ export default function AboutSponsorSection() {
             />
           </a>
           <p className={bodyClass}>
-            Arizona Consumer Law Group and its managing attorney, John Skiba, are WardSignup&apos;s first sponsor. Their support helps keep WardSignup free for every ward.
+            Arizona Consumer Law Group and its managing attorney, John Skiba, are Ward Signup&apos;s first sponsor. Their support helps keep Ward Signup free for every ward.
           </p>
           <p className="mb-0">
             <a href={ACLG_HREF} target="_blank" rel={SPONSOR_REL} className={visitClass}>
@@ -76,7 +76,7 @@ export default function AboutSponsorSection() {
             </span>
           </a>
           <p className={bodyClass}>
-            Local Senior Advisor and Randy Chipman help cover the cost of running WardSignup. Randy is a Certified Senior Advisor with more than 12 years of experience helping Utah families find the right senior living community.
+            Local Senior Advisor and Randy Chipman help cover the cost of running Ward Signup. Randy is a Certified Senior Advisor with more than 12 years of experience helping Utah families find the right senior living community.
           </p>
           <p className="mb-0">
             <a href={LSA_HREF} target="_blank" rel={SPONSOR_REL} className={visitClass}>

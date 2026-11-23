@@ -12,10 +12,9 @@ export function madeWithHref(siteUrl: string): string {
 
 /** "Made with" line in the bottom footer of public signup sheets. */
 export default function MadeWithFooter({ brandName, siteUrl }: { brandName: string; siteUrl: string }) {
-  const compactName = brandName.replace(/\s+/g, "");
   return (
     <p className="text-sm text-[#5A8399] leading-relaxed text-center" data-testid="made-with-footer">
-      Made with {compactName}.
+      Made with {brandName}.
       <br />
       <a
         href={madeWithHref(siteUrl)}
