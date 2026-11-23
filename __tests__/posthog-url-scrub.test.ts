@@ -141,6 +141,38 @@ describe("scrubAuthParamsFromEvent", () => {
     expect(out.properties.$current_url).not.toContain("fake123");
     expect(meta.data.href).toBe(callback);
   });
+
+  it("scrubs $pathname, $current_url and referrer on cancel and signup success pageviews", () => {
+    const token = "00000000-0000-4000-8000-000000000001";
+    const event = {
+      event: "$pageview",
+      properties: {
+        $current_url: `https://preview.wardsignup.com/cancel/${token}`,
+        $pathname: `/cancel/${token}`,
+        $referrer: `https://preview.wardsignup.com/signup-success/${token}?event=abc`,
+        $session_entry_url: `https://preview.wardsignup.com/signup-success/${token}?event=abc`,
+        $elements_chain: `a:href="/cancel/${token}"nth-child="1"`,
+      },
+      $set_once: { $initial_current_url: `https://preview.wardsignup.com/cancel/${token}`, $initial_pathname: `/cancel/${token}` },
+    };
+    const out = scrubAuthParamsFromEvent(event);
+    expect(out.properties.$current_url).toBe(`https://preview.wardsignup.com/cancel/${R}`);
+    expect(out.properties.$pathname).toBe(`/cancel/${R}`);
+    expect(out.properties.$referrer).toBe(`https://preview.wardsignup.com/signup-success/${R}?event=abc`);
+    expect(out.properties.$session_entry_url).toBe(`https://preview.wardsignup.com/signup-success/${R}?event=abc`);
+    expect(out.properties.$elements_chain).toBe(`a:href="/cancel/${R}"nth-child="1"`);
+    expect(out.$set_once.$initial_pathname).toBe(`/cancel/${R}`);
+    expect(JSON.stringify(out)).not.toContain(token);
+  });
+
+  it("redacts a token property on custom events such as run_your_own_clicked", () => {
+    const token = "00000000-0000-4000-8000-000000000001";
+    const out = scrubAuthParamsFromEvent({
+      event: "run_your_own_clicked",
+      properties: { source: "signup_confirmation_page", token, event_id: "evt_1" },
+    });
+    expect(out.properties).toEqual({ source: "signup_confirmation_page", token: R, event_id: "evt_1" });
+  });
 });
 
 describe("maskReplayNetworkRequest", () => {
@@ -173,5 +205,76 @@ describe("maskReplayNetworkRequest", () => {
   it("leaves ordinary requests alone", () => {
     const req = { name: "/api/events/123?ref=share", requestBody: '{"name":"Bishop"}', responseBody: undefined, duration: 12 };
     expect(maskReplayNetworkRequest(req)).toEqual(req);
+  });
+
+  it("scrubs cancel, signup success and calendar token paths on replay requests", () => {
+    const token = "00000000-0000-4000-8000-000000000001";
+    expect(maskReplayNetworkRequest({ name: `https://x.test/cancel/${token}` }).name).toBe(
+      `https://x.test/cancel/${R}`,
+    );
+    expect(maskReplayNetworkRequest({ name: `/api/signups/calendar/${token}`, url: `/signup-success/${token}` }).name).toBe(
+      `/api/signups/calendar/${R}`,
+    );
+    expect(maskReplayNetworkRequest({ name: `/api/signups/calendar/${token}`, url: `/signup-success/${token}` }).url).toBe(
+      `/signup-success/${R}`,
+    );
+  });
+});
+
+describe("scrubAuthParams path tokens", () => {
+  const cancelToken = "00000000-0000-4000-8000-000000000001";
+  const successToken = "11111111-1111-4111-8111-111111111111";
+  const feedbackToken = "deadbeefcafef00d";
+
+  it("rewrites /cancel/<token> and /signup-success/<token> and keeps the query string", () => {
+    expect(scrubAuthParams(`https://www.wardsignup.com/cancel/${cancelToken}?utm=1`)).toBe(
+      `https://www.wardsignup.com/cancel/${R}?utm=1`,
+    );
+    expect(scrubAuthParams(`https://www.wardsignup.com/signup-success/${successToken}?event=abc`)).toBe(
+      `https://www.wardsignup.com/signup-success/${R}?event=abc`,
+    );
+    expect(scrubAuthParams(`/cancel/${cancelToken}`)).toBe(`/cancel/${R}`);
+    expect(scrubAuthParams(`/signup-success/${successToken}/`)).toBe(`/signup-success/${R}/`);
+  });
+
+  it("rewrites other token path routes and their API counterparts", () => {
+    expect(scrubAuthParams(`/feedback/${feedbackToken}`)).toBe(`/feedback/${R}`);
+    expect(scrubAuthParams(`/build-next/${feedbackToken}`)).toBe(`/build-next/${R}`);
+    expect(scrubAuthParams(`/api/feedback/${feedbackToken}`)).toBe(`/api/feedback/${R}`);
+    expect(scrubAuthParams(`/api/build-next/${feedbackToken}`)).toBe(`/api/build-next/${R}`);
+    expect(scrubAuthParams(`/api/signups/calendar/${cancelToken}`)).toBe(`/api/signups/calendar/${R}`);
+  });
+
+  it("handles a token nested and URL encoded inside next", () => {
+    expect(scrubAuthParams(`https://x.test/a?next=%2Fcancel%2F${cancelToken}%26foo%3Dbar`)).toBe(
+      `https://x.test/a?next=%2Fcancel%2F${R}%26foo%3Dbar`,
+    );
+    expect(scrubAuthParams(`/a?next=%252Fsignup-success%252F${successToken}`)).toBe(
+      `/a?next=%252Fsignup-success%252F${R}`,
+    );
+  });
+
+  it("does not treat /api/signups/cancel/lookup as a cancel page token", () => {
+    expect(scrubAuthParams("/api/signups/cancel/lookup")).toBe("/api/signups/cancel/lookup");
+    expect(scrubAuthParams(`/api/signups/cancel/lookup?token=${cancelToken}`)).toBe(
+      `/api/signups/cancel/lookup?token=${R}`,
+    );
+  });
+
+  it("leaves event and admin ids and already redacted paths alone", () => {
+    expect(scrubAuthParams("https://www.wardsignup.com/event/123?ref=share")).toBe(
+      "https://www.wardsignup.com/event/123?ref=share",
+    );
+    expect(scrubAuthParams("/admin/3f2c1a9e-8b7d-4c6e-9f10-112233445566")).toBe(
+      "/admin/3f2c1a9e-8b7d-4c6e-9f10-112233445566",
+    );
+    expect(scrubAuthParams(`/cancel/${R}`)).toBe(`/cancel/${R}`);
+    expect(scrubAuthParams("/cancel/[token]")).toBe("/cancel/[token]");
+  });
+
+  it("is idempotent on a cancel URL", () => {
+    const once = scrubAuthParams(`https://x.test/cancel/${cancelToken}?token=${cancelToken}`);
+    expect(once).toBe(`https://x.test/cancel/${R}?token=${R}`);
+    expect(scrubAuthParams(once)).toBe(once);
   });
 });

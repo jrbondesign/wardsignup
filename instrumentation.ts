@@ -19,8 +19,11 @@ export async function onRequestError(
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
   try {
     const { captureServerException, flushPostHogSafely } = await import("@/lib/posthog-server");
+    const { scrubAuthParams } = await import("@/lib/posthog-url-scrub");
     captureServerException(err, {
-      route: context.routePath || request.path.split("?")[0],
+      // Prefer Next's route pattern (/cancel/[token]). If it is missing, scrub
+      // the request path so a live cancel token is never stored as route.
+      route: scrubAuthParams(context.routePath || request.path.split("?")[0]),
       properties: {
         method: request.method,
         route_type: context.routeType,

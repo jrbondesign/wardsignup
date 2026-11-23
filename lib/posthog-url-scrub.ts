@@ -1,5 +1,5 @@
 /**
- * Keeps sign in secrets out of PostHog.
+ * Keeps sign in and link secrets out of PostHog.
  *
  * Magic links land on /auth/callback?token_hash=...&type=..., PKCE and OAuth
  * land with ?code=..., implicit grants carry #access_token=...&refresh_token=...
@@ -8,9 +8,17 @@
  * the first pageview, autocapture, web vitals, person "initial URL" props and
  * session replay (page href and network requests) can see them before that.
  *
- * Only the values are replaced; the parameter names, other query params and
- * the rest of the URL stay as they were so pageview analytics still work.
- * Everything here is best effort and never throws.
+ * Cancel, signup success, feedback and build-next links carry the token in
+ * the path (/cancel/<token>, /signup-success/<token>, /feedback/<token>,
+ * /build-next/<token>). The same is true of /api/signups/calendar/<token>,
+ * /api/feedback/<token> and /api/build-next/<token> when those requests are
+ * recorded in session replay. A cancel token can still be live, so these
+ * matter more than a spent sign in token.
+ *
+ * Only the secret values are replaced; the route, the parameter names, other
+ * query params and the rest of the URL stay as they were so pageview
+ * analytics still work. Path tokens become [redacted]. Everything here is
+ * best effort and never throws.
  */
 
 /** Query or hash parameters whose values are secrets on auth URLs. */
@@ -25,6 +33,21 @@ export const AUTH_URL_PARAMS = [
   "code",
 ] as const;
 
+/**
+ * Routes that put a secret in the next path segment. First-segment names must
+ * not also match a later segment of another route (for example
+ * /api/signups/cancel/lookup is left alone).
+ */
+export const TOKEN_PATH_PREFIXES = [
+  "signup-success",
+  "cancel",
+  "feedback",
+  "build-next",
+  "api/signups/calendar",
+  "api/feedback",
+  "api/build-next",
+] as const;
+
 export const REDACTED_VALUE = "[redacted]";
 
 // A parameter starts after ? & # or ; (raw, URL encoded or double encoded,
@@ -37,14 +60,52 @@ const END = String.raw`(?=$|[&#;\s"'<>]|%(?:25)?(?:26|23|3B))`;
 const NAMES = [...AUTH_URL_PARAMS].sort((a, b) => b.length - a.length).join("|");
 const AUTH_PARAM_PATTERN = new RegExp(`(${SEP}(?:${NAMES})${EQ})([^&#;\\s"'<>]+?)${END}`, "gi");
 
-// Every name above contains "token" or "code", so most strings skip the regex.
-const QUICK_CHECK = /token|code/i;
+const SLASH = String.raw`(?:/|%(?:25)?2F)`;
+const PATH_END = String.raw`(?=$|[/?#;&\s"'<>]|%(?:25)?(?:2F|3F|23|3B|26))`;
+const PATH_ALREADY_REDACTED = String.raw`\[(?:redacted|token)\]`;
+// Longest first so api/signups/calendar wins over a shorter prefix.
+const PATH_ALT = [...TOKEN_PATH_PREFIXES]
+  .sort((a, b) => b.length - a.length)
+  .map((p) => p.split("/").map((seg) => seg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join(SLASH))
+  .join("|");
+// Lead anchors the match at the start of a path (or after a host / a
+// separator such as = or "). A letter before /cancel/ is ignored, so
+// /api/signups/cancel/lookup is not treated as a cancel page token.
+const PATH_LEAD = String.raw`(?:^|://[^/?#]*|[^A-Za-z0-9._~%/-])`;
+const TOKEN_PATH_PATTERN = new RegExp(
+  `(${PATH_LEAD}${SLASH}(?:${PATH_ALT})${SLASH})(?!${PATH_ALREADY_REDACTED})([^/?#;&\\s"'<>]+?)${PATH_END}`,
+  "gi",
+);
 
-/** Replace the values of auth params (token_hash, code, access_token, ...) in a URL or text. */
+// Query params use "token" or "code"; path routes use the names above.
+const QUICK_CHECK = /token|code|cancel|signup-success|feedback|build-next|calendar/i;
+
+/** Object keys whose string values are secrets (not "code", which is too generic). */
+const SECRET_PROP_KEYS = new Set<string>([
+  "token_hash",
+  "access_token",
+  "refresh_token",
+  "provider_token",
+  "provider_refresh_token",
+  "id_token",
+  "token",
+]);
+
+function scrubTokenPaths(input: string): string {
+  return input.replace(TOKEN_PATH_PATTERN, (_m, prefix: string) => `${prefix}${REDACTED_VALUE}`);
+}
+
+/** Replace auth param values and token path segments in a URL or text. */
 export function scrubAuthParams(input: string): string {
   if (typeof input !== "string" || input.length === 0 || !QUICK_CHECK.test(input)) return input;
   try {
-    return input.replace(AUTH_PARAM_PATTERN, (_m, prefix: string) => `${prefix}${REDACTED_VALUE}`);
+    let out = input.replace(AUTH_PARAM_PATTERN, (_m, prefix: string) => `${prefix}${REDACTED_VALUE}`);
+    try {
+      out = scrubTokenPaths(out);
+    } catch {
+      // keep the query-param scrub if the path pass throws
+    }
+    return out;
   } catch {
     return input;
   }
@@ -62,7 +123,8 @@ export function scrubAuthParamsDeep<T>(value: T, depth = 0): T {
   const out: Record<string, unknown> = {};
   // Keys too: $$heatmap events key their data by page URL.
   for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    out[scrubAuthParams(k)] = scrubAuthParamsDeep(v, depth + 1);
+    const secretKey = SECRET_PROP_KEYS.has(k.toLowerCase()) && typeof v === "string" && v.length > 0;
+    out[scrubAuthParams(k)] = secretKey ? REDACTED_VALUE : scrubAuthParamsDeep(v, depth + 1);
   }
   return out as T;
 }
@@ -87,7 +149,8 @@ function scrubSnapshotData(data: unknown): unknown {
 /**
  * posthog-js before_send hook: removes auth param values from every string on
  * the event ($current_url, $referrer, $session_entry_url, $elements_chain,
- * $set_once $initial_current_url, ...). Never throws and never drops an event.
+ * $set_once $initial_current_url, ...) and rewrites token path segments.
+ * Never throws and never drops an event.
  */
 export function scrubAuthParamsFromEvent<E extends AnalyticsEvent | null>(event: E): E {
   if (!event) return event;

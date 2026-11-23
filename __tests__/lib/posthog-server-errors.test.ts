@@ -58,6 +58,20 @@ describe("captureServerException", () => {
     captureServerException({ code: "23505", message: "Key (email)=(a@b.co) already exists" }, { route: "/api/x" }, client as never);
     expect(client.captureException.mock.calls[0][0].message).toBe("Key (email)=([redacted]) already exists");
   });
+  it("rewrites a cancel token in the route and error message before capture", () => {
+    const client = { captureException: jest.fn(), flush: jest.fn().mockResolvedValue(undefined) };
+    const token = "00000000-0000-4000-8000-000000000001";
+    captureServerException(
+      new Error(`lookup failed for /cancel/${token}`),
+      { route: `/cancel/${token}`, properties: { path: `/signup-success/${token}` } },
+      client as never,
+    );
+    const [sent, { properties: props }] = client.captureException.mock.calls[0];
+    expect(sent.message).toBe("lookup failed for /cancel/[redacted]");
+    expect(props.route).toBe("/cancel/[redacted]");
+    expect(props.path).toBe("/signup-success/[redacted]");
+    expect(JSON.stringify(client.captureException.mock.calls[0])).not.toContain(token);
+  });
   it("falls back to a direct flush outside a request scope", async () => {
     mockAfter.mockImplementation(() => { throw new Error("after() outside request scope"); });
     const client = { captureException: jest.fn(), flush: jest.fn().mockResolvedValue(undefined) };

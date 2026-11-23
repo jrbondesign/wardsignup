@@ -7,6 +7,8 @@
  * include tokens. Everything here is best effort and never throws.
  */
 
+import { scrubAuthParams } from "@/lib/posthog-url-scrub";
+
 type Rule = { pattern: RegExp; replace: string | ((match: string, ...groups: string[]) => string) };
 
 const RULES: Rule[] = [
@@ -57,6 +59,13 @@ export const MAX_SCRUB_LENGTH = 20_000;
 export function scrubText(input: string): string {
   if (typeof input !== "string" || input.length === 0) return input;
   let out = input.length > MAX_SCRUB_LENGTH ? `${input.slice(0, MAX_SCRUB_LENGTH)}…[truncated]` : input;
+  // Path and query tokens (/cancel/<token>, ?token_hash=...) use the same
+  // rules as the client before_send hook.
+  try {
+    out = scrubAuthParams(out);
+  } catch {
+    // keep going with the other rules
+  }
   for (const rule of RULES) {
     try {
       out = out.replace(rule.pattern, rule.replace as never);

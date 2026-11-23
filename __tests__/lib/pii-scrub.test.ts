@@ -30,6 +30,15 @@ describe("scrubText", () => {
     expect(scrubText("https://x.test/cb?access_token=abc123&ok=1")).toBe("https://x.test/cb?access_token=[redacted]&ok=1");
   });
 
+  it("rewrites cancel and signup success path tokens and keeps a UUID that is not in a token path", () => {
+    const token = "00000000-0000-4000-8000-000000000001";
+    expect(scrubText(`failed at https://x.test/cancel/${token}`)).toBe("failed at https://x.test/cancel/[redacted]");
+    expect(scrubText(`/signup-success/${token}?event=abc`)).toBe("/signup-success/[redacted]?event=abc");
+    expect(scrubText("event 3f2c1a9e-8b7d-4c6e-9f10-112233445566 not found")).toBe(
+      "event 3f2c1a9e-8b7d-4c6e-9f10-112233445566 not found",
+    );
+  });
+
   it("redacts long hex and random looking base64 runs", () => {
     expect(scrubText("hash 0123456789abcdef0123456789abcdef done")).toBe("hash [hex] done");
     expect(scrubText("blob Zm9vYmFyQmF6UXV4MTIzNDU2Nzg5MEFiQ2RFZkdoSWpLbE1u end")).toBe("blob [secret] end");
@@ -141,6 +150,16 @@ describe("scrubExceptionEvent", () => {
     });
     expect(out.properties.$current_url).toBe("https://wardsignup.com/x?email=[email]&token=[redacted]");
     expect(out.properties.$referrer).toBe("https://mail.test/?u=[email]");
+  });
+
+  it("rewrites a cancel path on exception page URLs", () => {
+    const token = "00000000-0000-4000-8000-000000000001";
+    const out = scrubExceptionEvent({
+      event: "$exception",
+      properties: { $current_url: `https://wardsignup.com/cancel/${token}`, $pathname: `/cancel/${token}` },
+    });
+    expect(out.properties.$current_url).toBe("https://wardsignup.com/cancel/[redacted]");
+    expect(out.properties.$pathname).toBe("/cancel/[redacted]");
   });
 });
 
