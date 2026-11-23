@@ -41,20 +41,18 @@ export default async function AboutPage() {
       {/* Main Content */}
       <main className="pt-[94px] pb-16 px-6">
         <article className="max-w-[720px] mx-auto">
-          <AboutSponsorSection />
-
           <h1 className="font-serif text-[clamp(36px,6vw,52px)] tracking-[-1px] text-[#0D2B35] mb-6 leading-[1.1]">
-            About Ward Signup
+            About WardSignup
           </h1>
 
-          {/* What Ward Signup is */}
+          {/* What WardSignup is */}
           <section className="mb-10">
             <h2 className="font-serif text-[28px] text-[#0D2B35] tracking-[-0.3px] mb-4 mt-8">
-              What Ward Signup is
+              What WardSignup is
             </h2>
             <div className="prose prose-lg max-w-none">
               <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
-                Ward Signup is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set how many spots each session has, and share one link. Members pick a time and enter their name without creating an account or downloading an app.
+                WardSignup is a free online signup sheet for Latter-day Saint wards and branches. Leaders create time slots, set how many spots each session has, and share one link. Members pick a time and enter their name without creating an account or downloading an app.
               </p>
               <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
                 It is built for the people who already run paper sheets and bulletin announcements: ward and branch executive secretaries, clerks, and other callings that need capped appointment windows or volunteer openings filled before Sunday.
@@ -69,7 +67,7 @@ export default async function AboutPage() {
                 Independent of the Church
               </h2>
               <p className="text-[16px] leading-[1.7] text-[#2E5566] mb-0">
-                Ward Signup is an <strong>independent</strong> product. It is <strong>not</strong> official Church software and is <strong>not</strong> affiliated with or endorsed by The Church of Jesus Christ of Latter-day Saints. Use official Church systems for membership records, finances, and declaration status. Use Ward Signup only for appointment and signup logistics.
+                WardSignup is an <strong>independent</strong> product. It is <strong>not</strong> official Church software and is <strong>not</strong> affiliated with or endorsed by The Church of Jesus Christ of Latter-day Saints. Use official Church systems for membership records, finances, and declaration status. Use WardSignup only for appointment and signup logistics.
               </p>
             </div>
           </section>
@@ -80,18 +78,38 @@ export default async function AboutPage() {
               Who built it
             </h2>
             <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
-              Ward Signup is made by <strong>Jonathan Bond (maker)</strong>. Built with ward secretary workflows in mind, not as a generic school or PTA signup clone.
+              Hi, I&apos;m Jonathan Bond, a product builder in Arizona. I built WardSignup so ward leaders would have a signup app they can trust. It doesn&apos;t show ads, and it never sells your data. If you have a question or an idea, email me at{" "}
+              <a href="mailto:jonathan@wardsignup.com" className="text-[#0E96B0] font-medium hover:text-[#08647E] transition-colors">
+                jonathan@wardsignup.com
+              </a>
+              .
             </p>
           </section>
 
-          {/* Where & how to reach us */}
+          {/* For members */}
           <section className="mb-10">
             <h2 className="font-serif text-[28px] text-[#0D2B35] tracking-[-0.3px] mb-4 mt-8">
-              Where &amp; how to reach us
+              For members
             </h2>
-            <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
-              Made with care from <strong>Arizona</strong>. Questions or feedback: <a href={`mailto:${brand.supportEmail}`} className="text-[#0E96B0] font-medium hover:text-[#08647E] transition-colors">{brand.supportEmail}</a>.
-            </p>
+            <div className="prose prose-lg max-w-none">
+              <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
+                If someone shared a WardSignup link with you, you can pick a slot without an account or an app.
+              </p>
+              <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
+                By default, names on a sheet are visible to the organizer and any co-admins in that ward organization, not to other people who open the link. The organizer can choose to show the signup list to anyone with the link. Email and phone are not shown on the public sheet.
+              </p>
+              <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
+                We keep signup data until the organizer removes the event or the signup, or you ask us to delete it. To request removal, email the address on our{" "}
+                <Link href="/privacy" className="text-[#0E96B0] font-medium no-underline hover:text-[#08647E] transition-colors">
+                  Privacy Policy
+                </Link>
+                . Nothing is sold or used for ads. Learn more about{" "}
+                <Link href="/ad-free" className="text-[#0E96B0] font-medium no-underline hover:text-[#08647E] transition-colors">
+                  ad free sheets
+                </Link>
+                .
+              </p>
+            </div>
           </section>
 
           {/* Pricing */}
@@ -100,7 +118,7 @@ export default async function AboutPage() {
               Pricing
             </h2>
             <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
-              Ward Signup is <strong>free to use</strong>. No credit card required, and there is no paid plan.
+              WardSignup is <strong>free to use</strong>. No credit card required, and there is no paid plan.
             </p>
             {tipEnabled && (
               <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
@@ -111,6 +129,16 @@ export default async function AboutPage() {
                 .
               </p>
             )}
+          </section>
+
+          {/* Where & how to reach us */}
+          <section className="mb-10">
+            <h2 className="font-serif text-[28px] text-[#0D2B35] tracking-[-0.3px] mb-4 mt-8">
+              Where &amp; how to reach us
+            </h2>
+            <p className="text-[17px] leading-[1.7] text-[#2E5566] mb-4">
+              Made with care from <strong>Arizona</strong>. Questions or feedback: <a href={`mailto:${brand.supportEmail}`} className="text-[#0E96B0] font-medium hover:text-[#08647E] transition-colors">{brand.supportEmail}</a>.
+            </p>
           </section>
 
           {/* Explore */}
@@ -148,6 +176,8 @@ export default async function AboutPage() {
             </div>
           </section>
 
+          <AboutSponsorSection />
+
           {/* Schema.org Organization markup */}
           <script
             type="application/ld+json"
@@ -155,7 +185,7 @@ export default async function AboutPage() {
               __html: JSON.stringify({
                 "@context": "https://schema.org",
                 "@type": "Organization",
-                "name": "Ward Signup",
+                "name": "WardSignup",
                 "url": brand.siteUrl,
                 "email": brand.supportEmail,
                 "description": "Free online signup sheet for Latter-day Saint wards and branches",

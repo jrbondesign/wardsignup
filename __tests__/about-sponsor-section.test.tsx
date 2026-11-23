@@ -1,99 +1,124 @@
 /**
- * Tests for the About page first sponsor section.
+ * Tests for the About page sponsor section and page order (Dana's About
+ * page mockup v1 with Jonathan's changes).
  */
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import "@testing-library/jest-dom";
 import { readFileSync } from "fs";
 import path from "path";
 import AboutSponsorSection from "@/components/AboutSponsorSection";
 
-const SPONSOR_HREF = "https://www.consumerwarrior.com/";
-const BODY =
+const ACLG_HREF = "https://www.consumerwarrior.com/";
+const LSA_HREF = "https://localsenioradvisor.com/";
+const INTRO =
+  "These sponsors help cover the cost of running WardSignup. Sponsors get no data from WardSignup and have no say in how the site works. Sponsorship is not an endorsement by The Church of Jesus Christ of Latter-day Saints.";
+const ACLG_BODY =
   "Arizona Consumer Law Group and its managing attorney, John Skiba, are WardSignup's first sponsor. Their support helps keep WardSignup free for every ward.";
+const LSA_BODY =
+  "Local Senior Advisor and Randy Chipman help cover the cost of running WardSignup. Randy is a Certified Senior Advisor with more than 12 years of experience helping Utah families find the right senior living community.";
 
 describe("AboutSponsorSection", () => {
-  it("renders the thank you heading, body, logo, and visit link", () => {
+  it("renders one shared heading and the approved transparency line", () => {
     render(<AboutSponsorSection />);
-
-    expect(screen.getByText("Thank you to our first sponsor")).toBeInTheDocument();
-    expect(screen.getByText(BODY)).toBeInTheDocument();
     expect(
-      screen.getByAltText("Arizona Consumer Law Group logo")
+      screen.getByRole("heading", { level: 2, name: "Thank you to our sponsors" })
     ).toBeInTheDocument();
+    expect(screen.getByText(INTRO)).toBeInTheDocument();
+  });
 
-    const visit = screen.getByRole("link", {
-      name: "Visit Arizona Consumer Law Group",
-    });
-    expect(visit).toHaveAttribute("href", SPONSOR_HREF);
+  it("keeps the ACLG block copy, logo, and links as is", () => {
+    render(<AboutSponsorSection />);
+    const card = screen.getByRole("article", { name: "Arizona Consumer Law Group" });
+    expect(within(card).getByText(ACLG_BODY)).toBeInTheDocument();
+    const logo = within(card).getByAltText("Arizona Consumer Law Group logo");
+    expect(logo.closest("a")).toHaveAttribute("href", ACLG_HREF);
+    const visit = within(card).getByRole("link", { name: "Visit Arizona Consumer Law Group" });
+    expect(visit).toHaveAttribute("href", ACLG_HREF);
     expect(visit).toHaveAttribute("target", "_blank");
     expect(visit).toHaveAttribute("rel", "sponsored noopener");
   });
 
-  it("makes the logo a sponsored link to the firm site", () => {
+  it("keeps the dark plate behind the cream ACLG mark", () => {
     render(<AboutSponsorSection />);
-
-    const logo = screen.getByAltText("Arizona Consumer Law Group logo");
-    const logoLink = logo.closest("a");
-    expect(logoLink).toHaveAttribute("href", SPONSOR_HREF);
-    expect(logoLink).toHaveAttribute("target", "_blank");
-    expect(logoLink).toHaveAttribute("rel", "sponsored noopener");
-  });
-
-  it("does not show a dollar amount", () => {
-    const { container } = render(<AboutSponsorSection />);
-    expect(container.textContent).not.toMatch(/\$\d/);
-  });
-});
-
-describe("About page placement", () => {
-  it("places the sponsor section first in the About page content", () => {
-    const src = readFileSync(
-      path.join(process.cwd(), "app/about/page.tsx"),
-      "utf8"
+    expect(screen.getByAltText("Arizona Consumer Law Group logo").className).toContain(
+      "bg-[#0D2B35]"
     );
-    expect(src).toContain("import AboutSponsorSection from \"@/components/AboutSponsorSection\"");
-    const article = src.slice(src.indexOf("<article"));
-    const sponsorIdx = article.indexOf("<AboutSponsorSection");
-    const h1Idx = article.indexOf("<h1");
-    expect(sponsorIdx).toBeGreaterThan(-1);
-    expect(h1Idx).toBeGreaterThan(-1);
-    expect(sponsorIdx).toBeLessThan(h1Idx);
   });
-});
 
-describe("Local Senior Advisor sponsor block", () => {
-  const LSA_HREF = "https://localsenioradvisor.com/";
-
-  it("renders the LSA heading, body, logo, and visit link", () => {
+  it("renders the approved LSA blurb, logo, and links", () => {
     render(<AboutSponsorSection />);
-
-    expect(screen.getByText("Thank you to Local Senior Advisor")).toBeInTheDocument();
-    expect(screen.getByText(/Randy Chipman/)).toBeInTheDocument();
-    expect(screen.getByAltText("Local Senior Advisor logo")).toBeInTheDocument();
-
-    const visit = screen.getByRole("link", { name: "Visit Local Senior Advisor" });
+    const card = screen.getByRole("article", { name: "Local Senior Advisor" });
+    expect(within(card).getByText(LSA_BODY)).toBeInTheDocument();
+    const logo = within(card).getByAltText("Local Senior Advisor logo");
+    const chip = logo.closest("a");
+    expect(chip).toHaveAttribute("href", LSA_HREF);
+    expect(chip).toHaveAttribute("rel", "sponsored noopener");
+    const visit = within(card).getByRole("link", { name: "Visit Local Senior Advisor" });
     expect(visit).toHaveAttribute("href", LSA_HREF);
     expect(visit).toHaveAttribute("target", "_blank");
     expect(visit).toHaveAttribute("rel", "sponsored noopener");
-
-    const logoLink = screen.getByAltText("Local Senior Advisor logo").closest("a");
-    expect(logoLink).toHaveAttribute("href", LSA_HREF);
-    expect(logoLink).toHaveAttribute("rel", "sponsored noopener");
   });
 
-  it("keeps the ACLG block first", () => {
-    const { container } = render(<AboutSponsorSection />);
-    const sections = container.querySelectorAll("section");
-    expect(sections).toHaveLength(2);
-    expect(sections[0]).toHaveAttribute("aria-label", "Thank you to our first sponsor");
-    expect(sections[1]).toHaveAttribute("aria-label", "Thank you to Local Senior Advisor");
+  it("lists ACLG first, then LSA", () => {
+    render(<AboutSponsorSection />);
+    const cards = screen.getAllByRole("article");
+    expect(cards.map((c) => c.getAttribute("aria-label"))).toEqual([
+      "Arizona Consumer Law Group",
+      "Local Senior Advisor",
+    ]);
   });
 
-  it("uses ward, never unit, and no dashes in the LSA copy", () => {
+  it("shows no dollar amount, no unit wording, and no owner claim", () => {
     const { container } = render(<AboutSponsorSection />);
-    const lsa = container.querySelectorAll("section")[1].textContent ?? "";
-    expect(lsa).not.toMatch(/\bunit\b/i);
-    expect(lsa).not.toMatch(/[\u2013\u2014-]/);
+    const text = container.textContent ?? "";
+    expect(text).not.toMatch(/\$\d/);
+    expect(text).not.toMatch(/\bunits?\b/i);
+    expect(text).not.toMatch(/\bowner\b/i);
+    expect(text).not.toMatch(/nonprofit/i);
+  });
+});
+
+describe("About page order and copy", () => {
+  const src = readFileSync(path.join(process.cwd(), "app/about/page.tsx"), "utf8");
+  const article = src.slice(src.indexOf("<article"));
+
+  it("leads with the product and puts sponsors last, after reach us and Explore", () => {
+    const order = [
+      "<h1",
+      "What WardSignup is",
+      "Independent of the Church",
+      "Who built it",
+      "For members",
+      "Pricing",
+      "Where &amp; how to reach us",
+      "Explore",
+      "<AboutSponsorSection",
+    ].map((needle) => {
+      const idx = article.indexOf(needle);
+      expect(idx).toBeGreaterThan(-1);
+      return idx;
+    });
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+  });
+
+  it("keeps both emails", () => {
+    expect(article).toContain("mailto:jonathan@wardsignup.com");
+    expect(article).toContain("mailto:${brand.supportEmail}");
+  });
+
+  it("uses WardSignup as one word in the page body and schema name", () => {
+    expect(article).not.toContain("Ward Signup");
+    expect(article).toContain('"name": "WardSignup"');
+  });
+
+  it("uses the approved Who built it and For members copy", () => {
+    expect(article).toContain("a product builder in Arizona");
+    expect(article).toContain(
+      "By default, names on a sheet are visible to the organizer and any co-admins in that ward organization, not to other people who open the link."
+    );
+    expect(article).toContain('href="/privacy"');
+    expect(article).toContain('href="/ad-free"');
+    expect(article).not.toMatch(/nonprofit/i);
   });
 });
