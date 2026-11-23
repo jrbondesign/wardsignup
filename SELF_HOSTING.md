@@ -1,10 +1,10 @@
-# Self-Hosting WardSignup
+# Self-Hosting Ward Signup
 
-Complete guide to running your own WardSignup instance.
+Complete guide to running your own Ward Signup instance.
 
 ## Overview
 
-WardSignup is a Next.js application that requires:
+Ward Signup is a Next.js application that requires:
 1. **PostgreSQL database** (via Supabase)
 2. **Email service** (via Resend)
 3. **Hosting platform** (Vercel recommended, or any Node.js host)
@@ -63,7 +63,7 @@ In the Supabase dashboard:
 
 1. Go to **Authentication → Providers**
 2. Enable **Email** provider
-3. **Disable** "Confirm email" (WardSignup uses magic links, not confirm-then-password)
+3. **Disable** "Confirm email" (Ward Signup uses magic links, not confirm-then-password)
 4. Go to **Authentication → URL Configuration**
 5. Set **Site URL** to your production domain (e.g., `https://yourward.com`)
 6. Add **Redirect URLs**:
@@ -123,7 +123,7 @@ CRON_SECRET=your-random-secret-string
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) — you should see the WardSignup homepage!
+Open [http://localhost:3000](http://localhost:3000) — you should see the Ward Signup homepage!
 
 **Test magic link authentication:**
 1. Go to `/login`
@@ -175,7 +175,7 @@ In Supabase:
 
 ### 9. Set Up Cron Jobs (Email Reminders)
 
-WardSignup sends reminder emails 24 hours before events. You need to trigger `/api/cron/participant-reminders` hourly.
+Ward Signup sends reminder emails 24 hours before events. You need to trigger `/api/cron/participant-reminders` hourly.
 
 **Option A: GitHub Actions (free)**
 
@@ -323,7 +323,7 @@ Before going live:
 
 ## Alternative Hosting
 
-Don't want to use Vercel? WardSignup runs anywhere that supports Next.js:
+Don't want to use Vercel? Ward Signup runs anywhere that supports Next.js:
 
 - **Docker:** Build with `docker build -t wardsignup .` and run with `docker run -p 3000:3000 wardsignup`
 - **Railway:** Connect GitHub repo, set env vars, deploy
@@ -346,4 +346,4 @@ Once deployed:
 3. Set up sessions at `/setup/[id]`
 4. Share the public signup link with your ward
 
-Welcome to the WardSignup family! 🎉
+Welcome to the Ward Signup family! 🎉

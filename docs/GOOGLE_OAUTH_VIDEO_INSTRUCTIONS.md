@@ -1,7 +1,7 @@
-# Task: Record the Google OAuth verification demo video for WardSignup
+# Task: Record the Google OAuth verification demo video for Ward Signup
 
 You are producing a screen-recorded demo video that Google's OAuth review team
-will watch to verify WardSignup's use of two Google Calendar scopes. The video
+will watch to verify Ward Signup's use of two Google Calendar scopes. The video
 has **no voice-over**. Instead, add **on-screen text captions** after recording.
 
 Follow every step in order. Do not skip or reorder steps. Do not add steps that
@@ -22,7 +22,7 @@ show other parts of the app.
 ## Human-only steps
 
 A human (the account owner) must do these. Stop and ask them, do not attempt them yourself:
-- Signing in to the WardSignup organizer account.
+- Signing in to the Ward Signup organizer account.
 - Signing in to the test Google account and clicking Allow on Google's consent screen.
 - Uploading to YouTube and submitting the verification form in Google Cloud Console.
 
@@ -34,7 +34,7 @@ A human (the account owner) must do these. Stop and ask them, do not attempt the
    and remove **WardSignup** if listed. This makes the full consent screen appear.
 2. In Google Calendar for that account, make sure a calendar named
    **"WardSignup Test"** exists (create it if not).
-3. In WardSignup, signed in as organizer in the **Smoke Test** org, make sure
+3. In Ward Signup, signed in as organizer in the **Smoke Test** org, make sure
    there is a **spots**-type event with at least one open slot dated in the
    future. Copy its public signup link.
 4. If that org is already connected to Google Calendar, go to
@@ -62,7 +62,7 @@ Steps marked ⚠️ are what reviewers check most closely; hold those for 5+ sec
 | 8 | Select **WardSignup Test**, turn sync **On**, save. Show the enabled state. | 4s |
 | 9 | Switch to the private window. Open the public event link. Sign up for a slot as name **"Test Participant"**, phone **555-0100**, note **"Demo signup"**. Show the confirmation. | 5s |
 | 10 ⚠️ | Wait ~5 seconds. Open **calendar.google.com** in a new tab, go to that slot's date, click the event so the details panel shows the title and description. | 6s |
-| 11 | Back in WardSignup → event admin page → **delete** that signup. Wait ~5 seconds. Return to Google Calendar, refresh, show the event is gone. | 5s |
+| 11 | Back in Ward Signup → event admin page → **delete** that signup. Wait ~5 seconds. Return to Google Calendar, refresh, show the event is gone. | 5s |
 | 12 | Go to **Settings → Organization** → click **Disconnect**. Show the disconnected state. | 4s |
 
 Stop recording.
@@ -78,20 +78,20 @@ to read at 720p. Keep each caption up for the full step.
 
 | # | Caption |
 |---|---|
-| 1 | WardSignup: signup sheets for congregations and volunteer groups. Organizers can optionally sync filled signup slots to their Google Calendar. |
+| 1 | Ward Signup: signup sheets for congregations and volunteer groups. Organizers can optionally sync filled signup slots to their Google Calendar. |
 | 2 | Our privacy policy discloses the Google Calendar data we access and our compliance with the Google API Services User Data Policy, including Limited Use. |
 | 3 | Google Calendar sync is opt-in. An organizer connects it from Organization Settings. |
-| 4 | OAuth request for WardSignup. The client_id in this URL matches the Google Cloud project under review. |
-| 5 | WardSignup requests two scopes: calendar.calendarlist.readonly and calendar.events. |
+| 4 | OAuth request for Ward Signup. The client_id in this URL matches the Google Cloud project under review. |
+| 5 | Ward Signup requests two scopes: calendar.calendarlist.readonly and calendar.events. |
 | 6 | The organizer's Google account is now connected. |
 | 7 | Scope: calendar.calendarlist.readonly. Used only to list calendars the organizer can write to, to fill this picker. We do not read events or other calendar data. |
 | 8 | The organizer chooses which calendar receives synced signups. |
 | 9 | A participant signs up for a time slot on the public signup page. |
-| 10 | Scope: calendar.events. WardSignup created this event for the filled slot. The title shows the event name and first name; contact details and notes are only in the description. |
-| 11 | When a slot empties, WardSignup deletes the event it created. It only modifies events it created. |
-| 12 | Organizers can disconnect at any time. Disconnecting revokes WardSignup's access at Google. |
+| 10 | Scope: calendar.events. Ward Signup created this event for the filled slot. The title shows the event name and first name; contact details and notes are only in the description. |
+| 11 | When a slot empties, Ward Signup deletes the event it created. It only modifies events it created. |
+| 12 | Organizers can disconnect at any time. Disconnecting revokes Ward Signup's access at Google. |
 
-Optional: a 3-second title card at the start: "WardSignup — Google Calendar
+Optional: a 3-second title card at the start: "Ward Signup — Google Calendar
 integration demo (OAuth verification)".
 
 ## Part D: Export and hand off
