@@ -1,10 +1,10 @@
 # Stewardship & Governance
 
-How WardSignup is maintained, who makes decisions, and what happens if a steward is unavailable.
+How Ward Signup is maintained, who makes decisions, and what happens if a steward is unavailable.
 
 ## Co-Steward Model
 
-WardSignup uses a **co-steward** model with two primary maintainers who share responsibility for the project's health and direction.
+Ward Signup uses a **co-steward** model with two primary maintainers who share responsibility for the project's health and direction.
 
 ### Current Stewards
 
@@ -118,13 +118,13 @@ If both stewards become unavailable:
 
 ### If Hosting Costs Grow
 
-If WardSignup outgrows free tiers (>500 MB database, >100 emails/day, etc.):
+If Ward Signup outgrows free tiers (>500 MB database, >100 emails/day, etc.):
 1. **First:** Optimize queries, add caching, reduce email volume
 2. **Second:** Split costs between stewards (50/50 or by agreement)
 3. **Third:** Accept GitHub Sponsors donations to offset costs
 4. **Last resort:** Sunset the hosted instance, remain OSS for self-hosters
 
-**Principle:** WardSignup should never become a paid service or require users to pay. Hosting costs are a steward responsibility, optionally supported by voluntary donations.
+**Principle:** Ward Signup should never become a paid service or require users to pay. Hosting costs are a steward responsibility, optionally supported by voluntary donations.
 
 ## Nonprofit Status
 

@@ -1,14 +1,14 @@
-# WardSignup
+# Ward Signup
 
 **Simple, streamlined volunteer signup and coordination for church wards, ministries, and community groups.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-WardSignup helps coordinate volunteers for teaching, potlucks, service projects, and events. Create an event, add sessions with capacity limits, and share a public signup page — no passwords required for participants.
+Ward Signup helps coordinate volunteers for teaching, potlucks, service projects, and events. Create an event, add sessions with capacity limits, and share a public signup page — no passwords required for participants.
 
 ## ⚠️ Disclaimer
 
-**WardSignup is not affiliated with, endorsed by, or sponsored by The Church of Jesus Christ of Latter-day Saints.**
+**Ward Signup is not affiliated with, endorsed by, or sponsored by The Church of Jesus Christ of Latter-day Saints.**
 
 This is an independent open-source project created by individual members to serve ward communities worldwide. The Church has no involvement in its development, operation, or maintenance.
 
@@ -66,11 +66,11 @@ npm run dev
 
 ## 💖 Support This Project
 
-WardSignup is free and open-source. If the hosted version at [wardsignup.com](https://wardsignup.com) has helped your ward, consider supporting hosting costs:
+Ward Signup is free and open-source. If the hosted version at [wardsignup.com](https://wardsignup.com) has helped your ward, consider supporting hosting costs:
 
 **[Sponsor on GitHub](https://github.com/sponsors/jrbondesign)** · **[Support the Project](https://wardsignup.com/support-the-project)**
 
-Your support helps keep the lights on and development moving forward. Every contribution is appreciated, but never required — WardSignup will always be free.
+Your support helps keep the lights on and development moving forward. Every contribution is appreciated, but never required — Ward Signup will always be free.
 
 *(Enable GitHub Sponsors on the maintainer account so the Sponsors link resolves.)*
 

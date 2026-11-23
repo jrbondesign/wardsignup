@@ -1,6 +1,6 @@
-# Contributing to WardSignup
+# Contributing to Ward Signup
 
-Thank you for your interest in contributing to WardSignup! This project helps Latter-day Saint wards, ministries, and other groups coordinate volunteer signups, potlucks, and service events.
+Thank you for your interest in contributing to Ward Signup! This project helps Latter-day Saint wards, ministries, and other groups coordinate volunteer signups, potlucks, and service events.
 
 ## Quick Start
 
@@ -13,7 +13,7 @@ Thank you for your interest in contributing to WardSignup! This project helps La
 
 ## Code of Conduct
 
-**Be kind, respectful, and constructive.** WardSignup serves faith communities worldwide. Contributors and maintainers should treat everyone with dignity, assume good intent, and focus on solving problems together.
+**Be kind, respectful, and constructive.** Ward Signup serves faith communities worldwide. Contributors and maintainers should treat everyone with dignity, assume good intent, and focus on solving problems together.
 
 Unacceptable behavior includes harassment, discrimination, trolling, or any conduct that creates an unwelcoming environment. If you see a problem, reach out to the maintainers privately.
 
@@ -106,7 +106,7 @@ By contributing, you agree that your contributions will be licensed under the [M
 - **Stewardship/operational questions** — email Jonathan at [jon@jrbond.com](mailto:jon@jrbond.com)
 - **Feature requests** — open a GitHub issue with the `enhancement` label
 
-Thank you for helping make WardSignup better! 🙌
+Thank you for helping make Ward Signup better! 🙌
 
 ## Database migrations: grants checklist
 

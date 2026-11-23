@@ -1,6 +1,6 @@
 # Time zones
 
-WardSignup runs on **Arizona time (America/Phoenix, UTC-7 all year, no DST)**.
+Ward Signup runs on **Arizona time (America/Phoenix, UTC-7 all year, no DST)**.
 
 - A **day** is 00:00 to 23:59:59 Phoenix (07:00Z to 06:59:59Z).
 - A **week** is **Monday 00:00 through Sunday 23:59:59 Phoenix**. Labels show the Monday to Sunday dates, e.g. "Oct 12 to Oct 18".

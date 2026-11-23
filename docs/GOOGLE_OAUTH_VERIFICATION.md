@@ -7,7 +7,7 @@ Scopes requested (`lib/google-oauth.ts`):
 
 | Scope | Classification | Used for |
 |---|---|---|
-| `https://www.googleapis.com/auth/calendar.events` | Sensitive | Create, update, delete the events WardSignup writes for filled slots |
+| `https://www.googleapis.com/auth/calendar.events` | Sensitive | Create, update, delete the events Ward Signup writes for filled slots |
 | `https://www.googleapis.com/auth/calendar.calendarlist.readonly` | Sensitive | List the user's writable calendars so they can pick one |
 
 Confirm in Cloud Console that these two (and nothing else) are listed under
@@ -47,17 +47,17 @@ a future slot in an org that has the feature enabled.
 
 | # | On screen | Say |
 |---|---|---|
-| 1 | `https://wardsignup.com` homepage | "This is WardSignup, a signup sheet tool for congregations and volunteer groups. Organizers can optionally sync filled signup slots to a Google Calendar." |
+| 1 | `https://wardsignup.com` homepage | "This is Ward Signup, a signup sheet tool for congregations and volunteer groups. Organizers can optionally sync filled signup slots to a Google Calendar." |
 | 2 | Scroll footer, click Privacy, scroll to "4. Google Calendar" | "Our privacy policy describes the Google Calendar data we access and our compliance with Google's Limited Use requirements." |
 | 3 | Sign in as organizer → Settings → Organization → Integrations card | "Calendar sync is opt-in. The organizer starts here." |
 | 4 | Click **Connect Google Calendar**. **Pause on the Google account chooser and click the address bar so the full URL with `client_id=…` is visible.** | "This is our OAuth request. The client ID shown matches the project under review." |
-| 5 | Consent screen: show app name and both permissions; expand each permission line | "WardSignup requests two permissions: view your list of calendars, and view and edit events on your calendars." |
+| 5 | Consent screen: show app name and both permissions; expand each permission line | "Ward Signup requests two permissions: view your list of calendars, and view and edit events on your calendars." |
 | 6 | Click Continue/Allow → back in Settings showing connected Google email | "The account is connected." |
 | 7 | Open the event → Manage (or Edit) → Google Calendar controls → open the calendar dropdown | "**calendarlist.readonly**: we read the user's calendar list only to populate this picker, showing calendars they can write to. We don't read events or other calendar contents." |
 | 8 | Pick the test calendar, turn sync on, save | "The organizer chooses which calendar receives signups." |
 | 9 | In a private window, open the public event link and sign up for a slot | "A participant signs up for a time slot." |
-| 10 | Back as organizer, wait a few seconds (sync runs automatically after each signup), then open Google Calendar in another tab at that date; open the event | "**calendar.events**: WardSignup created this event for the filled slot. The title shows the event name and first name; contact details and notes are only in the description." |
-| 11 | Cancel the signup (admin page delete or cancel link) → wait a few seconds → refresh Google Calendar | "When the slot empties, we delete the event we created. We only ever modify events WardSignup created." |
+| 10 | Back as organizer, wait a few seconds (sync runs automatically after each signup), then open Google Calendar in another tab at that date; open the event | "**calendar.events**: Ward Signup created this event for the filled slot. The title shows the event name and first name; contact details and notes are only in the description." |
+| 11 | Cancel the signup (admin page delete or cancel link) → wait a few seconds → refresh Google Calendar | "When the slot empties, we delete the event we created. We only ever modify events Ward Signup created." |
 | 12 | Settings → Integrations → **Disconnect** | "Organizers can disconnect at any time, which revokes our access token at Google." |
 
 Upload to YouTube as Unlisted; paste the link in the verification form.
@@ -66,12 +66,12 @@ Upload to YouTube as Unlisted; paste the link in the verification form.
 
 **`calendar.events`**
 
-> WardSignup lets organizers of signup sheets (for example, appointment slots
+> Ward Signup lets organizers of signup sheets (for example, appointment slots
 > for a congregation leader) opt in to syncing filled time slots to a Google
 > Calendar they choose. When a participant signs up, changes, or cancels, our
 > server creates, updates, or deletes a single event for that time slot on the
 > organizer's selected calendar, so the leader sees their appointments without
-> manual entry. We only modify events that WardSignup created (tagged with a
+> manual entry. We only modify events that Ward Signup created (tagged with a
 > private extended property) and never read or change other events. Narrower
 > scopes are not sufficient: `calendar.events.owned` would not support
 > writing to shared calendars the organizer has writer access to, and
