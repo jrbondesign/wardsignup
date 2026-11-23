@@ -623,7 +623,7 @@ export default function MetricsPage({ preview }: { preview?: MetricsData } = {})
                   User Geography
                 </div>
                 <p className="text-[13px] text-[#5A8399] mb-5 max-w-3xl">
-                  Where users are accessing WardSignup from, based on PostHog GeoIP data. Marker size indicates number of unique users per city.
+                  Where users are accessing Ward Signup from, based on PostHog GeoIP data. Marker size indicates number of unique users per city.
                 </p>
                 <PublicGeographyMap />
               </div>

@@ -12,11 +12,11 @@ import AboutSponsorSection from "@/components/AboutSponsorSection";
 const ACLG_HREF = "https://www.consumerwarrior.com/";
 const LSA_HREF = "https://localsenioradvisor.com/";
 const INTRO =
-  "These sponsors help cover the cost of running WardSignup. Sponsors get no data from WardSignup and have no say in how the site works. Sponsorship is not an endorsement by The Church of Jesus Christ of Latter-day Saints.";
+  "These sponsors help cover the cost of running Ward Signup. Sponsors get no data from Ward Signup and have no say in how the site works. Sponsorship is not an endorsement by The Church of Jesus Christ of Latter-day Saints.";
 const ACLG_BODY =
-  "Arizona Consumer Law Group and its managing attorney, John Skiba, are WardSignup's first sponsor. Their support helps keep WardSignup free for every ward.";
+  "Arizona Consumer Law Group and its managing attorney, John Skiba, are Ward Signup's first sponsor. Their support helps keep Ward Signup free for every ward.";
 const LSA_BODY =
-  "Local Senior Advisor and Randy Chipman help cover the cost of running WardSignup. Randy is a Certified Senior Advisor with more than 12 years of experience helping Utah families find the right senior living community.";
+  "Local Senior Advisor and Randy Chipman help cover the cost of running Ward Signup. Randy is a Certified Senior Advisor with more than 12 years of experience helping Utah families find the right senior living community.";
 
 describe("AboutSponsorSection", () => {
   it("renders one shared heading and the approved transparency line", () => {
@@ -86,7 +86,7 @@ describe("About page order and copy", () => {
   it("leads with the product and puts sponsors last, after reach us and Explore", () => {
     const order = [
       "<h1",
-      "What WardSignup is",
+      "What Ward Signup is",
       "Independent of the Church",
       "Who built it",
       "For members",
@@ -107,9 +107,10 @@ describe("About page order and copy", () => {
     expect(article).toContain("mailto:${brand.supportEmail}");
   });
 
-  it("uses WardSignup as one word in the page body and schema name", () => {
-    expect(article).not.toContain("Ward Signup");
-    expect(article).toContain('"name": "WardSignup"');
+  it("uses Ward Signup as two words in the page body and schema name", () => {
+    expect(article).not.toContain("WardSignup");
+    expect(article).toContain("About Ward Signup");
+    expect(article).toContain('"name": "Ward Signup"');
   });
 
   it("uses the approved Who built it and For members copy", () => {

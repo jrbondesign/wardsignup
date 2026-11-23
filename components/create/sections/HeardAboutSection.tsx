@@ -27,7 +27,7 @@ export default function HeardAboutSection({
 }: Props) {
   return (
     <ComponentCard
-      title="How did you hear about WardSignup?"
+      title="How did you hear about Ward Signup?"
       description="Optional. Helps us improve."
       optional
     >
