@@ -45,6 +45,24 @@ describe("onRequestError", () => {
     await onRequestError(new Error("x"), { path: "/p", method: "GET", headers: {} }, ctx);
     expect(mockCapture).not.toHaveBeenCalled();
   });
+
+  it("keeps Next's /cancel/[token] route pattern and scrubs a raw request path fallback", async () => {
+    const token = "00000000-0000-4000-8000-000000000001";
+    await onRequestError(
+      new Error("boom"),
+      { path: `/cancel/${token}?x=1`, method: "GET", headers: {} },
+      { routerKind: "App Router", routePath: "/cancel/[token]", routeType: "render" },
+    );
+    expect(mockCapture.mock.calls[0][1].route).toBe("/cancel/[token]");
+    mockCapture.mockReset();
+    await onRequestError(
+      new Error("boom"),
+      { path: `/cancel/${token}?x=1`, method: "GET", headers: {} },
+      { routerKind: "App Router", routePath: "", routeType: "render" },
+    );
+    expect(mockCapture.mock.calls[0][1].route).toBe("/cancel/[redacted]");
+    expect(JSON.stringify(mockCapture.mock.calls[0])).not.toContain(token);
+  });
 });
 
 describe("unverifiedClientDistinctId", () => {

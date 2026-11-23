@@ -21,9 +21,10 @@ if (typeof window !== "undefined") {
     // Error tracking: unhandled errors and unhandled promise rejections become
     // $exception events tied to the session replay.
     capture_exceptions: true,
-    // Sign in links carry token_hash, code or access_token in the URL. Replay
-    // page URLs and network requests go through this hook; events are
-    // scrubbed in before_send below.
+    // Sign in links carry token_hash, code or access_token in the URL, and
+    // cancel / signup success links carry a token in the path. Replay page
+    // URLs and network requests go through this hook; events are scrubbed
+    // in before_send below.
     session_recording: {
       maskCapturedNetworkRequestFn: maskReplayNetworkRequest,
     },

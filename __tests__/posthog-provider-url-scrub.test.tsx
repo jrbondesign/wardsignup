@@ -50,4 +50,24 @@ describe("PostHogProvider auth URL scrub wiring", () => {
     expect(masked.name).not.toContain("fake123");
     expect(masked.name).toContain("type=magiclink");
   });
+
+  it("before_send and the replay hook rewrite cancel and signup success path tokens", () => {
+    const token = "00000000-0000-4000-8000-000000000001";
+    const out = config.before_send({
+      event: "$pageview",
+      uuid: "u",
+      properties: {
+        $current_url: `https://x.test/cancel/${token}`,
+        $pathname: `/cancel/${token}`,
+      },
+    });
+    expect(out).not.toBeNull();
+    expect(JSON.stringify(out)).not.toContain(token);
+    expect(out?.properties.$current_url).toBe("https://x.test/cancel/[redacted]");
+    expect(out?.properties.$pathname).toBe("/cancel/[redacted]");
+    const masked = config.session_recording.maskCapturedNetworkRequestFn({
+      name: `https://x.test/signup-success/${token}?event=abc`,
+    });
+    expect(masked.name).toBe("https://x.test/signup-success/[redacted]?event=abc");
+  });
 });
