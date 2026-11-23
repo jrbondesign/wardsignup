@@ -2,7 +2,7 @@
 
 import { fetchRetryOn503 } from "@/lib/fetch-retry-503";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 
@@ -29,7 +29,7 @@ export default function CancelSignupPage() {
   // No token means there's nothing to look up; derive that instead of setting state in the effect.
   const state: PageState = token ? fetchedState : { status: "not_found" };
 
-  useEffect(() => {
+  const lookup = useCallback(() => {
     if (!token) return;
     fetchRetryOn503(() => fetch(`/api/signups/cancel/lookup?token=${encodeURIComponent(token)}`))
       .then((r) => r.json())
@@ -44,6 +44,10 @@ export default function CancelSignupPage() {
       })
       .catch(() => setState({ status: "error", message: "Something went wrong." }));
   }, [token]);
+
+  useEffect(() => {
+    lookup();
+  }, [lookup]);
 
   async function handleCancel() {
     if (state.status !== "found" && state.status !== "confirming") return;
@@ -171,7 +175,10 @@ export default function CancelSignupPage() {
             <h1 className="font-serif text-[22px] text-[#0D2B35] mb-3">Something went wrong</h1>
             <p className="text-[15px] text-[#5A8399] mb-6">{state.status === "error" ? state.message : ""}</p>
             <button
-              onClick={() => setState({ status: "loading" })}
+              onClick={() => {
+                setState({ status: "loading" });
+                lookup();
+              }}
               className="text-[14px] text-[#0E96B0] hover:underline"
             >
               Try again
