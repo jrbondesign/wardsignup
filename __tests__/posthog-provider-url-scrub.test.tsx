@@ -33,6 +33,15 @@ describe("PostHogProvider auth URL scrub wiring", () => {
     expect(out?.properties.$current_url).toContain("type=magiclink");
   });
 
+  it("before_send keeps the project token PostHog needs to accept the event", () => {
+    const out = config.before_send({
+      event: "$pageview",
+      uuid: "u",
+      properties: { token: "phc_testProjectKey123", $current_url: "https://x.test/" },
+    });
+    expect(out?.properties.token).toBe("phc_testProjectKey123");
+  });
+
   it("before_send still scrubs exceptions and drops /demo events", () => {
     const ex = config.before_send({
       event: "$exception",
