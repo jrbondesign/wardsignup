@@ -4,6 +4,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import type { CoreMetric, CoreWeekly } from "@/lib/core-metrics";
 import { buildChartTooltip, tooltipAriaLabel } from "@/lib/chart-tooltip";
 import { TREND_ARROW, formatWeekRange, formatWeekStart, pctChange } from "@/lib/metrics-weeks";
+import { BROWSER_TRACKING_GAPS, TRACKING_GAP_NOTE, formatGapWindow, type GapStatus } from "@/lib/tracking-gaps";
 
 const TREND_CLASS = { up: "text-[#1a9b6c]", down: "text-[#d0623b]", flat: "text-[#8a94a6]" } as const;
 const TREND_WORD = { up: "up", down: "down", flat: "flat (within 3%)" } as const;
@@ -15,7 +16,32 @@ function fmtValue(m: Pick<CoreMetric, "kind">, v: number | null | undefined): st
   return m.kind === "rate" ? `${v.toFixed(1)}%` : v.toLocaleString();
 }
 
+/** Value for week i, "no data" when a tracking gap left a browser only week empty. */
+function fmtWeekValue(m: CoreMetric, i: number): string {
+  if (m.gap?.[i] === "missing") return "no data";
+  return fmtValue(m, m.values[i]);
+}
+
+/** Small diagonal hatch used for weeks a browser tracking gap touched. */
+function HatchDef({ id, color }: { id: string; color: string }) {
+  return (
+    <defs>
+      <pattern id={id} width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <rect width="4" height="4" fill="#ffffff" />
+        <line x1="0" y1="0" x2="0" y2="4" stroke={color} strokeWidth="2" />
+      </pattern>
+    </defs>
+  );
+}
+
+function GapTag({ gap }: { gap: GapStatus | null | undefined }) {
+  if (gap !== "partial") return null;
+  return <span className="block text-[11px] font-normal text-[#7A9BAE]">partial</span>;
+}
+
 function fmtChange(m: CoreMetric, cur: number | null, prev: number | null): string {
+  const n = m.values.length;
+  if (m.gap && (m.gap[n - 1] || m.gap[n - 2])) return "partial week";
   if (cur == null || prev == null) return "n/a";
   const d = cur - prev;
   const sign = d >= 0 ? "+" : "";
@@ -24,23 +50,65 @@ function fmtChange(m: CoreMetric, cur: number | null, prev: number | null): stri
   return `${sign}${d.toLocaleString()}${p == null ? "" : ` (${p >= 0 ? "+" : ""}${p.toFixed(0)}%)`}`;
 }
 
-function MiniBars({ values, weeks, metric }: { values: (number | null)[]; weeks: string[]; metric: CoreMetric }) {
+function MiniBars({
+  values,
+  weeks,
+  metric,
+  gaps,
+  weekGaps,
+}: {
+  values: (number | null)[];
+  weeks: string[];
+  metric: CoreMetric;
+  /** This metric's own gap flags (browser only metrics). */
+  gaps?: (GapStatus | null)[];
+  /** Weeks any browser tracking gap touched. */
+  weekGaps?: (GapStatus | null)[];
+}) {
+  const hatchId = useId();
   const w = 132;
   const h = 30;
   const max = Math.max(1, ...values.map((v) => v ?? 0));
   const bw = w / values.length;
   return (
     <svg width={w} height={h} role="img" aria-label={`${metric.label}, last ${values.length} weeks`}>
+      <HatchDef id={hatchId} color="#9fd3de" />
       {values.map((v, i) => {
-        const bh = v ? Math.max(2, ((h - 4) * v) / max) : 2;
-        const fill = i === values.length - 1 ? "#0E96B0" : i === values.length - 2 ? "#9fd3de" : "#cfe8ee";
+        const gap = gaps?.[i];
+        const missing = gap === "missing";
+        const bh = missing ? h - 4 : v ? Math.max(2, ((h - 4) * v) / max) : 2;
+        const fill = gap ? `url(#${hatchId})` : i === values.length - 1 ? "#0E96B0" : i === values.length - 2 ? "#9fd3de" : "#cfe8ee";
+        const tag = gap === "partial" ? " (partial)" : "";
+        const note = weekGaps?.[i] ? `. ${TRACKING_GAP_NOTE}` : "";
         return (
-          <rect key={weeks[i]} x={i * bw + 2} y={h - bh} width={bw - 5} height={bh} rx={2} fill={fill}>
-            <title>{`${formatWeekRange(weeks[i]!)}: ${fmtValue(metric, v)}`}</title>
+          <rect
+            key={weeks[i]}
+            x={i * bw + 2}
+            y={h - bh}
+            width={bw - 5}
+            height={bh}
+            rx={2}
+            fill={fill}
+            stroke={gap ? "#9fd3de" : undefined}
+            strokeWidth={gap ? 1 : undefined}
+            data-gap={gap ?? undefined}
+          >
+            <title>{`${formatWeekRange(weeks[i]!)}: ${missing ? "no data" : fmtValue(metric, v)}${tag}${note}`}</title>
           </rect>
         );
       })}
     </svg>
+  );
+}
+
+/** Note shown under a card when a browser tracking gap touches the weeks it shows. */
+function GapNote({ weekGaps, children }: { weekGaps: (GapStatus | null)[]; children?: React.ReactNode }) {
+  if (!weekGaps.some(Boolean)) return null;
+  return (
+    <p className="mt-3 text-[11px] text-[#7A9BAE] leading-relaxed" data-testid="tracking-gap-note">
+      <span className="font-semibold text-[#5A8399]">{TRACKING_GAP_NOTE}</span>
+      {" "}from {BROWSER_TRACKING_GAPS.map(formatGapWindow).join(" and ")}. {children}
+    </p>
   );
 }
 
@@ -50,6 +118,7 @@ export function CoreMetricsStrip({ core }: { core: CoreWeekly }) {
   const thisWeek = core.weeks[n - 1]!;
   const lastWeek = core.weeks[n - 2]!;
   const hist = core.weeks.slice(-6);
+  const histGaps = (core.gapWeeks ?? []).slice(-6);
   return (
     <div
       className="bg-white rounded-2xl border border-[rgba(14,150,176,0.22)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6 min-w-0"
@@ -78,23 +147,26 @@ export function CoreMetricsStrip({ core }: { core: CoreWeekly }) {
               const cur = m.values[n - 1] ?? null;
               const prev = m.values[n - 2] ?? null;
               const histVals = m.values.slice(-6);
+              const histMetricGaps = m.gap?.slice(-6);
               return (
                 <tr key={m.key} className="border-b border-[rgba(14,150,176,0.06)] last:border-0" data-testid={`core-row-${m.key}`}>
                   <td className="py-2 pr-3 font-semibold text-[#0D2B35]">{m.label}</td>
                   <td className="py-2 px-3 text-right tabular-nums">
-                    <span className="text-[16px] font-bold text-[#0D2B35]">{fmtValue(m, cur)}</span>
+                    <span className="text-[16px] font-bold text-[#0D2B35]">{fmtWeekValue(m, n - 1)}</span>
                     {m.details?.[n - 1] && <span className="block text-[11px] text-[#7A9BAE]">{m.details[n - 1]}</span>}
+                    <GapTag gap={m.gap?.[n - 1]} />
                   </td>
                   <td className="py-2 px-3 text-right tabular-nums text-[#5A8399]">
-                    {fmtValue(m, prev)}
+                    {fmtWeekValue(m, n - 2)}
                     {m.details?.[n - 2] && <span className="block text-[11px] text-[#7A9BAE]">{m.details[n - 2]}</span>}
+                    <GapTag gap={m.gap?.[n - 2]} />
                   </td>
                   <td className="py-2 px-3 text-right tabular-nums text-[#2E5566] whitespace-nowrap">{fmtChange(m, cur, prev)}</td>
                   <td className={`py-2 px-3 text-center text-[17px] ${TREND_CLASS[m.trend]}`} title={TREND_WORD[m.trend]}>
                     <span aria-label={TREND_WORD[m.trend]}>{TREND_ARROW[m.trend]}</span>
                   </td>
                   <td className="py-2 pl-3">
-                    <MiniBars values={histVals} weeks={hist} metric={m} />
+                    <MiniBars values={histVals} weeks={hist} metric={m} gaps={histMetricGaps} weekGaps={histGaps} />
                   </td>
                 </tr>
               );
@@ -107,6 +179,11 @@ export function CoreMetricsStrip({ core }: { core: CoreWeekly }) {
         Returning organizers were active this week and the week before. Email capture uses database signup rows, same as the card below.
         Visitors exclude only team members who are signed in.
       </p>
+      <GapNote weekGaps={histGaps}>
+        Hatched bars are visitors and organizer activity, which are partial in the weeks it touched, so those weeks are not
+        compared. Signups in those weeks come from server events, and sheets, wards and email capture come from server
+        events or the database, so they are complete.
+      </GapNote>
     </div>
   );
 }
@@ -121,6 +198,8 @@ type ChartSeries = {
   tooltipLabel?: string;
   /** Per week detail shown in the tooltip, e.g. "83 of 118". */
   details?: (string | null)[];
+  /** Browser only series: weeks a tracking gap made missing or partial. */
+  gaps?: (GapStatus | null)[];
 };
 
 /**
@@ -137,6 +216,7 @@ export function WeeklyTrendChart({
   yMax,
   testId,
   now,
+  gapWeeks,
 }: {
   title: string;
   weeks: string[];
@@ -148,10 +228,13 @@ export function WeeklyTrendChart({
   testId?: string;
   /** Clock for the "in progress" week (tests). */
   now?: Date | string;
+  /** Weeks a browser tracking gap touched; shaded on the chart. */
+  gapWeeks?: (GapStatus | null)[];
 }) {
   const [active, setActive] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const tipId = useId();
+  const hatchId = useId();
 
   // Tap or click anywhere outside this chart hides its tooltip.
   useEffect(() => {
@@ -187,9 +270,11 @@ export function WeeklyTrendChart({
         values: s.values,
         kind: valueKind,
         details: s.details,
+        gaps: s.gaps,
       })),
       goal: goal ? { value: goal.value, kind: valueKind } : undefined,
       now,
+      gapWeeks,
     });
   const tip = active == null ? null : tipFor(active);
   // Keep the tooltip inside the card near the edges.
@@ -223,6 +308,22 @@ export function WeeklyTrendChart({
         onMouseLeave={() => setActive(null)}
       >
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full max-w-full h-auto" role="group" aria-label={title}>
+          <HatchDef id={hatchId} color="#cfe8ee" />
+          {gapWeeks?.map((g, i) =>
+            g ? (
+              <rect
+                key={`gap-${i}`}
+                x={pad.l + i * step}
+                y={pad.t}
+                width={step}
+                height={ih}
+                fill={`url(#${hatchId})`}
+                opacity={0.6}
+                pointerEvents="none"
+                data-testid={testId ? `${testId}-gap-${i}` : undefined}
+              />
+            ) : null,
+          )}
           <line x1={pad.l} x2={W - pad.r} y1={pad.t + ih} y2={pad.t + ih} stroke="#d5e6ec" />
           <text x={pad.l - 4} y={pad.t + 4} fontSize="9" textAnchor="end" fill="#7A9BAE">{fmt(maxL)}</text>
           <text x={pad.l - 4} y={pad.t + ih} fontSize="9" textAnchor="end" fill="#7A9BAE">0</text>
@@ -258,7 +359,10 @@ export function WeeklyTrendChart({
                         width={Math.max(1, bw - 1)}
                         height={Math.max(0, pad.t + ih - y(v, max))}
                         rx={1.5}
-                        fill={s.color}
+                        fill={s.gaps?.[i] === "partial" ? `url(#${hatchId})` : s.color}
+                        stroke={s.gaps?.[i] === "partial" ? s.color : undefined}
+                        strokeWidth={s.gaps?.[i] === "partial" ? 1 : undefined}
+                        data-gap={s.gaps?.[i] ?? undefined}
                       />
                     ),
                   )}
@@ -339,6 +443,7 @@ export function WeeklyTrendChart({
                 <span className="font-semibold">{r.value}</span>
               </div>
             ))}
+            {tip.note && <div className="mt-1 text-[11px] text-[#7A9BAE] whitespace-normal">{tip.note}</div>}
           </div>
         )}
       </div>
@@ -350,6 +455,8 @@ export function WeeklyTrendChart({
 export function CoreTrendCharts({ core, now }: { core: CoreWeekly; now?: Date | string }) {
   const get = (k: CoreMetric["key"]) => core.metrics.find((m) => m.key === k)?.values ?? [];
   const details = (k: CoreMetric["key"]) => core.metrics.find((m) => m.key === k)?.details;
+  const gaps = (k: CoreMetric["key"]) => core.metrics.find((m) => m.key === k)?.gap;
+  const gapWeeks = core.gapWeeks ?? [];
   return (
     <div
       className="bg-white rounded-2xl border border-[rgba(14,150,176,0.14)] shadow-[0_2px_12px_rgba(8,100,126,0.06)] p-6 min-w-0"
@@ -366,20 +473,23 @@ export function CoreTrendCharts({ core, now }: { core: CoreWeekly; now?: Date | 
           now={now}
           title="Signups (submissions)"
           weeks={core.weeks}
-          series={[{ label: "Signups", values: get("slotSignups"), color: "#0E96B0", kind: "bar" }]}
+          gapWeeks={gapWeeks}
+          series={[{ label: "Signups", values: get("slotSignups"), details: details("slotSignups"), color: "#0E96B0", kind: "bar" }]}
         />
         <WeeklyTrendChart
           testId="chart-visitors"
           now={now}
           title="Unique visitors"
           weeks={core.weeks}
-          series={[{ label: "Visitors", values: get("visitors"), color: "#5BB8CC", kind: "bar" }]}
+          gapWeeks={gapWeeks}
+          series={[{ label: "Visitors", values: get("visitors"), gaps: gaps("visitors"), color: "#5BB8CC", kind: "bar" }]}
         />
         <WeeklyTrendChart
           testId="chart-wards"
           now={now}
           title="New wards and total wards"
           weeks={core.weeks}
+          gapWeeks={gapWeeks}
           series={[
             { label: "New wards (left)", tooltipLabel: "New wards", values: get("newWards"), color: "#0E96B0", kind: "bar" },
             {
@@ -397,6 +507,7 @@ export function CoreTrendCharts({ core, now }: { core: CoreWeekly; now?: Date | 
           now={now}
           title="Email capture rate"
           weeks={core.weeks}
+          gapWeeks={gapWeeks}
           unit="%"
           yMax={100}
           goal={{ value: EMAIL_CAPTURE_GOAL_PCT, label: `${EMAIL_CAPTURE_GOAL_PCT}% goal` }}
@@ -411,6 +522,10 @@ export function CoreTrendCharts({ core, now }: { core: CoreWeekly; now?: Date | 
           ]}
         />
       </div>
+      <GapNote weekGaps={gapWeeks}>
+        Shaded weeks are the ones it touched. Visitors there are partial (hatched bars). Signups come from server events,
+        and wards and email capture from the database, so those are complete.
+      </GapNote>
     </div>
   );
 }

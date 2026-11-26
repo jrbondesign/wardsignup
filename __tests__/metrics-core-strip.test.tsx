@@ -169,3 +169,77 @@ describe("metrics page keeps existing sections", () => {
     expect(src).not.toContain("Active (30d)");
   });
 });
+
+describe("browser tracking gap on the strip and charts", () => {
+  const gapWeeksKeys = lastWeekKeys("2026-11-23", 12);
+  const gapCore = buildCoreWeekly({
+    weeks: gapWeeksKeys,
+    posthog: {
+      weeks: Object.fromEntries(
+        gapWeeksKeys.map((w, i) => [
+          w,
+          {
+            visitors: i === 11 ? 4 : 500,
+            slotSignups: i === 11 ? 0 : 140,
+            peopleSigningUp: 100,
+            itemSignups: 5,
+            sheetsCreated: 6,
+            activeOrganizers: 12,
+            server: { slotSignups: i === 11 ? 12 : 149, peopleSigningUp: 100, itemSignups: 5 },
+          },
+        ]),
+      ),
+      organizersByWeek: {},
+    },
+    newCreatorsByWeek: {},
+    newWardsByWeek: {},
+    wardsBeforeFirstWeek: 30,
+    emailCaptureByWeek: {},
+  });
+  const now = "2026-11-26T19:00:00Z";
+
+  it("labels partial weeks, keeps true signup counts and shows the note", () => {
+    render(<CoreMetricsStrip core={gapCore} />);
+    const visitors = screen.getByTestId("core-row-visitors");
+    expect(visitors.textContent).toContain("partial");
+    expect(visitors.textContent).toContain("partial week");
+    expect(visitors.textContent).not.toContain("▼");
+    const signups = screen.getByTestId("core-row-slotSignups");
+    expect(signups.textContent).toContain("12");
+    expect(signups.textContent).toContain("from server events");
+    expect(signups.textContent).not.toContain("partial");
+    expect(screen.getByTestId("tracking-gap-note").textContent).toContain("Browser tracking was down, no data stored");
+    expect(visitors.querySelectorAll('rect[data-gap="partial"]').length).toBe(2);
+  });
+
+  it("shades the gap weeks on every chart and hatches only browser only bars", () => {
+    render(<CoreTrendCharts core={gapCore} now={now} />);
+    for (const id of ["chart-signups", "chart-visitors", "chart-wards", "chart-email-capture"]) {
+      expect(screen.getByTestId(`${id}-gap-10`)).toBeTruthy();
+      expect(screen.getByTestId(`${id}-gap-11`)).toBeTruthy();
+      expect(screen.queryByTestId(`${id}-gap-9`)).toBeNull();
+    }
+    expect(screen.getByTestId("chart-visitors").querySelectorAll('rect[data-gap="partial"]').length).toBe(2);
+    expect(screen.getByTestId("chart-signups").querySelectorAll("rect[data-gap]").length).toBe(0);
+    fireEvent.click(screen.getByTestId("chart-visitors-hit-11"));
+    const tip = screen.getByTestId("chart-visitors-tooltip");
+    expect(tip.textContent).toContain("4 (partial)");
+    expect(tip.textContent).toContain("Browser tracking was down, no data stored");
+    fireEvent.click(screen.getByTestId("chart-signups-hit-10"));
+    expect(screen.getByTestId("chart-signups-tooltip").textContent).toContain("149 (from server events)");
+  });
+
+  it("gap copy has no dashes", () => {
+    const { container } = render(
+      <>
+        <CoreMetricsStrip core={gapCore} />
+        <CoreTrendCharts core={gapCore} now={now} />
+      </>,
+    );
+    fireEvent.click(screen.getByTestId("chart-visitors-hit-11"));
+    expect(container.textContent).not.toMatch(/[–—]|\s-\s|\d-\d/);
+    for (const el of container.querySelectorAll("[aria-label]")) {
+      expect(el.getAttribute("aria-label")).not.toMatch(/[–—-]/);
+    }
+  });
+});
