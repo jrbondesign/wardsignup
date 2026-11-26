@@ -4,6 +4,7 @@
  * Weeks are Phoenix Monday keys (YYYY-MM-DD), Monday to Sunday in America/Phoenix.
  */
 import { formatWeekRange, phoenixWeekKey } from "@/lib/metrics-weeks";
+import { TRACKING_GAP_NOTE, type GapStatus } from "@/lib/tracking-gaps";
 
 export type TooltipValueKind = "count" | "rate";
 
@@ -13,6 +14,8 @@ export type TooltipSeries = {
   kind?: TooltipValueKind;
   /** Optional per week detail shown after the value, e.g. "83 of 118". */
   details?: (string | null)[];
+  /** Browser only series: weeks a tracking gap made missing or partial. */
+  gaps?: (GapStatus | null)[];
 };
 
 export type ChartTooltipContent = {
@@ -21,6 +24,8 @@ export type ChartTooltipContent = {
   /** True when the week is the current Phoenix week (still in progress). */
   inProgress: boolean;
   rows: { label: string; value: string }[];
+  /** Set when a browser tracking gap touched this week. */
+  note?: string;
 };
 
 /** True when `weekKey` is the Phoenix week containing `now`. */
@@ -41,22 +46,29 @@ export function buildChartTooltip(opts: {
   series: TooltipSeries[];
   goal?: { value: number; kind?: TooltipValueKind };
   now?: Date | string;
+  /** Per week: whether a browser tracking gap touched the week. */
+  gapWeeks?: (GapStatus | null)[];
 }): ChartTooltipContent {
   const week = opts.weeks[opts.index]!;
   const rows = opts.series.map((s) => {
+    const gap = s.gaps?.[opts.index];
+    if (gap === "missing") return { label: s.label, value: "no data" };
     const value = formatTooltipValue(s.values[opts.index], s.kind);
-    const detail = s.details?.[opts.index];
+    const detail = s.details?.[opts.index] ?? (gap === "partial" && value !== "n/a" ? "partial" : null);
     return { label: s.label, value: detail && value !== "n/a" ? `${value} (${detail})` : value };
   });
   if (opts.goal) rows.push({ label: "Goal", value: formatTooltipValue(opts.goal.value, opts.goal.kind ?? "rate") });
-  return {
+  const out: ChartTooltipContent = {
     range: formatWeekRange(week),
     inProgress: isCurrentPhoenixWeek(week, opts.now),
     rows,
   };
+  if (opts.gapWeeks?.[opts.index]) out.note = TRACKING_GAP_NOTE;
+  return out;
 }
 
 /** One line for screen readers: "Oct 13 to Oct 19, in progress. New wards: 3. Total wards: 50." */
 export function tooltipAriaLabel(t: ChartTooltipContent): string {
-  return `${t.range}${t.inProgress ? ", in progress" : ""}. ${t.rows.map((r) => `${r.label}: ${r.value}.`).join(" ")}`;
+  const note = t.note ? ` ${t.note}.` : "";
+  return `${t.range}${t.inProgress ? ", in progress" : ""}. ${t.rows.map((r) => `${r.label}: ${r.value}.`).join(" ")}${note}`;
 }

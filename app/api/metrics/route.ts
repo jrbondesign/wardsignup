@@ -24,6 +24,7 @@ import { buildCoreWeekly, lastWeekKeys } from "@/lib/core-metrics";
 import { fetchAllRows } from "@/lib/supabase-paging";
 import { attachCreatorIdentity, fetchCreatorIdentity, type CreatorIdentityClient } from "@/lib/creator-identity";
 import { computeWardFirstEvents, type OrgWithAttribution, type WardCampaign } from "@/lib/new-wards";
+import { weekGapStatus } from "@/lib/tracking-gaps";
 
 /** Every week on the founder metrics page is Monday to Sunday in Phoenix time. */
 const toWeekKey = phoenixWeekKey;
@@ -423,6 +424,9 @@ async function computeMetricsBody(brandFilter: string | null) {
     newEvents: campaignWeekMap[w] ?? 0,
     newSignups: signupWeekMap[w] ?? 0,
     newCreatorAccounts: accountWeekMap[w] ?? 0,
+    // These counts come from server events or the database, so they stay
+    // complete; the flag only marks the week on the page.
+    trackingGap: weekGapStatus(w),
   }));
 
   const creatorRowsTyped = (creatorRpc ?? []) as CreatorBreakdownRow[];

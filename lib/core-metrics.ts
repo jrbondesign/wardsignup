@@ -5,6 +5,7 @@
  */
 import { addWeeks, trendDirection, type Trend } from "@/lib/metrics-weeks";
 import type { CoreWeekCounts } from "@/lib/posthog-query";
+import { weekGapStatuses, type GapStatus } from "@/lib/tracking-gaps";
 
 export type CoreMetricKey =
   | "visitors"
@@ -28,6 +29,12 @@ export type CoreMetric = {
   details?: (string | null)[];
   /** This week vs last week. */
   trend: Trend;
+  /**
+   * Browser only metrics: per week "missing" or "partial" when browser
+   * tracking was down (value is null when missing). Absent for metrics with a
+   * server or database source.
+   */
+  gap?: (GapStatus | null)[];
 };
 
 export type CoreWeekly = {
@@ -37,7 +44,12 @@ export type CoreWeekly = {
   totalWards: number[];
   /** False when PostHog was unreachable, so the PostHog metrics are null. */
   posthogAvailable: boolean;
+  /** Per week: did a browser tracking gap touch it (see lib/tracking-gaps). */
+  gapWeeks: (GapStatus | null)[];
 };
+
+/** Metrics that only browser events can measure. */
+const BROWSER_ONLY: ReadonlySet<CoreMetricKey> = new Set(["visitors", "activeOrganizers", "returningOrganizers"]);
 
 export const CORE_METRIC_LABELS: Record<CoreMetricKey, string> = {
   visitors: "Unique visitors",
@@ -81,10 +93,20 @@ export function buildCoreWeekly(input: {
   /** Wards whose first published sheet is before the first week. */
   wardsBeforeFirstWeek: number;
   emailCaptureByWeek: Record<string, { total: number; withEmail: number; ratePct: number | null }>;
+  /** Defaults to the weeks touched by BROWSER_TRACKING_GAPS. */
+  gapWeeks?: (GapStatus | null)[];
 }): CoreWeekly {
   const { weeks, posthog } = input;
-  const ph = (pick: keyof CoreWeekCounts) =>
+  const gapWeeks = input.gapWeeks ?? weekGapStatuses(weeks);
+  const ph = (pick: Exclude<keyof CoreWeekCounts, "server">) =>
     weeks.map((w) => (posthog ? posthog.weeks[w]?.[pick] ?? 0 : null));
+  // Signups have a server event too; weeks touched by a browser gap use it.
+  const serverWeek = (i: number) => (gapWeeks[i] ? posthog?.weeks[weeks[i]!]?.server ?? null : null);
+  const signupSeries = (pick: "slotSignups" | "peopleSigningUp" | "itemSignups") => {
+    const values = ph(pick).map((v, i) => serverWeek(i)?.[pick] ?? v);
+    const details = weeks.map((_, i) => (serverWeek(i) ? "from server events" : null));
+    return details.some(Boolean) ? { values, details } : { values };
+  };
 
   const returning: (number | null)[] = [];
   const returningDetails: (string | null)[] = [];
@@ -113,9 +135,9 @@ export function buildCoreWeekly(input: {
 
   const raw: Omit<CoreMetric, "trend" | "label">[] = [
     { key: "visitors", kind: "count", values: ph("visitors") },
-    { key: "slotSignups", kind: "count", values: ph("slotSignups") },
-    { key: "peopleSigningUp", kind: "count", values: ph("peopleSigningUp") },
-    { key: "itemSignups", kind: "count", values: ph("itemSignups") },
+    { key: "slotSignups", kind: "count", ...signupSeries("slotSignups") },
+    { key: "peopleSigningUp", kind: "count", ...signupSeries("peopleSigningUp") },
+    { key: "itemSignups", kind: "count", ...signupSeries("itemSignups") },
     { key: "sheetsCreated", kind: "count", values: ph("sheetsCreated") },
     { key: "newCreators", kind: "count", values: weeks.map((w) => input.newCreatorsByWeek[w] ?? 0) },
     { key: "newWards", kind: "count", values: weeks.map((w) => input.newWardsByWeek[w] ?? 0) },
@@ -129,14 +151,24 @@ export function buildCoreWeekly(input: {
     { key: "returningOrganizers", kind: "count", values: returning, details: returningDetails },
   ];
 
+  const anyGap = gapWeeks.some(Boolean);
   const metrics: CoreMetric[] = raw.map((m) => {
     const n = m.values.length;
+    if (!anyGap || !BROWSER_ONLY.has(m.key)) {
+      return { ...m, label: CORE_METRIC_LABELS[m.key], trend: trendDirection(m.values[n - 1], m.values[n - 2]) };
+    }
+    // Browser only: a fully missing week has no value (never a real zero), and
+    // a partial week is not compared, so the dip does not read as a drop.
+    const values = m.values.map((v, i) => (gapWeeks[i] === "missing" ? null : v));
+    const affected = Boolean(gapWeeks[n - 1] || gapWeeks[n - 2]);
     return {
       ...m,
+      values,
+      gap: gapWeeks,
       label: CORE_METRIC_LABELS[m.key],
-      trend: trendDirection(m.values[n - 1], m.values[n - 2]),
+      trend: affected ? "flat" : trendDirection(values[n - 1], values[n - 2]),
     };
   });
 
-  return { weeks, metrics, totalWards, posthogAvailable: posthog !== null };
+  return { weeks, metrics, totalWards, posthogAvailable: posthog !== null, gapWeeks };
 }

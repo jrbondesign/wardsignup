@@ -10,6 +10,7 @@ import dynamic from "next/dynamic";
 import type { CoreWeekly } from "@/lib/core-metrics";
 import { formatMonthLabel, formatWeekRange } from "@/lib/metrics-weeks";
 import { CoreMetricsStrip, CoreTrendCharts } from "@/components/metrics/CoreMetricsStrip";
+import { BROWSER_TRACKING_GAPS, TRACKING_GAP_NOTE, formatGapWindow, type GapStatus } from "@/lib/tracking-gaps";
 import { CreatorsTable, type CreatorRow } from "@/components/metrics/CreatorsTable";
 
 type EmailCaptureWeekRow = { weekStart: string; total: number; withEmail: number; ratePct: number | null };
@@ -45,6 +46,8 @@ export interface MetricsData {
     newEvents: number;
     newSignups: number;
     newCreatorAccounts: number;
+    /** Set when a browser tracking gap touched the week (counts here stay complete). */
+    trackingGap?: GapStatus | null;
   }[];
   creators: CreatorRow[];
   /** False until the organizer_profiles.calling migration is applied. */
@@ -553,6 +556,13 @@ export default function MetricsPage({ preview }: { preview?: MetricsData } = {})
                     ? " (from PostHog server events: events created and signup submissions, including ones later deleted or cancelled)."
                     : " (from current database rows; PostHog unavailable, so deleted events and cancelled signups are missing)."}
                 </p>
+                {data.growth.some((g) => g.trackingGap) && (
+                  <p className="-mt-3 mb-5 text-[12px] text-[#7A9BAE] max-w-3xl" data-testid="history-tracking-gap-note">
+                    <span className="font-semibold text-[#5A8399]">{TRACKING_GAP_NOTE}</span> from{" "}
+                    {BROWSER_TRACKING_GAPS.map(formatGapWindow).join(" and ")}. Weeks marked partial were touched by it. Every
+                    count in this card comes from server events or the database, so those weeks are still complete.
+                  </p>
+                )}
                 {(() => {
                   const maxC = Math.max(
                     1,
@@ -568,7 +578,13 @@ export default function MetricsPage({ preview }: { preview?: MetricsData } = {})
                           <div
                             key={row.week}
                             className="flex-1 flex flex-col justify-end h-full min-w-0 group relative"
-                            title={`${weekLabel(row.week)}: ${row.newCreatorAccounts} creators`}
+                            title={`${weekLabel(row.week)}: ${row.newCreatorAccounts} creators${row.trackingGap ? `. ${TRACKING_GAP_NOTE}` : ""}`}
+                            data-gap={row.trackingGap ?? undefined}
+                            style={
+                              row.trackingGap
+                                ? { backgroundImage: "repeating-linear-gradient(45deg, rgba(14,150,176,0.10) 0 2px, transparent 2px 5px)" }
+                                : undefined
+                            }
                           >
                             <div
                               className="w-full rounded-t bg-[#0E96B0] transition-opacity group-hover:opacity-90"
@@ -600,7 +616,17 @@ export default function MetricsPage({ preview }: { preview?: MetricsData } = {})
                     <tbody>
                       {[...data.growth].reverse().map((row) => (
                         <tr key={row.week} className="border-b border-[rgba(14,150,176,0.06)] last:border-0">
-                          <td className="py-3 pr-4 text-[13px] text-[#5A8399]">{weekLabel(row.week)}</td>
+                          <td className="py-3 pr-4 text-[13px] text-[#5A8399]">
+                            {weekLabel(row.week)}
+                            {row.trackingGap && (
+                              <span
+                                className="ml-2 rounded-full bg-[#E6F4F7] px-1.5 py-[1px] text-[10px] font-semibold text-[#08647E]"
+                                title={TRACKING_GAP_NOTE}
+                              >
+                                partial
+                              </span>
+                            )}
+                          </td>
                           <td className="py-3 px-3 text-right text-[14px] font-semibold text-[#0E96B0] tabular-nums">
                             {row.newCreatorAccounts > 0 ? row.newCreatorAccounts : <span className="text-[#C8DDE6] font-normal">0</span>}
                           </td>

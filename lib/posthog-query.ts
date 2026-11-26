@@ -1,4 +1,5 @@
 import { TEAM_EMAIL_HOGQL_REGEX } from "@/lib/team-accounts";
+import { excludedDistinctIdsSql } from "@/lib/tracking-gaps";
 
 /**
  * Read-side PostHog access (HogQL) using a personal API key with query:read scope.
@@ -17,6 +18,7 @@ export async function posthogWeeklyEventCounts(
   // Weeks are Monday to Sunday in Phoenix time, same as the rest of the founder metrics page.
   const query = `select event, toString(toStartOfWeek(toTimeZone(timestamp, 'America/Phoenix'), 1)) as w, count() from events
     where event in (${list}) and timestamp >= toDateTime('${since.slice(0, 19).replace("T", " ")}', 'UTC')
+      and ${excludedDistinctIdsSql()}
     group by event, w`;
   try {
     const res = await fetch(`${host}/api/projects/${project}/query/`, {
@@ -72,6 +74,12 @@ export type CoreWeekCounts = {
   itemSignups: number;
   sheetsCreated: number;
   activeOrganizers: number;
+  /**
+   * The same signup counts from server events (signup_batch_created with at
+   * least one saved slot, item_signup_created). Used for weeks when browser
+   * tracking was down.
+   */
+  server?: { slotSignups: number; peopleSigningUp: number; itemSignups: number };
 };
 
 export type CoreWeeklyPosthog = {
@@ -93,6 +101,7 @@ export function coreTeamFilterSql(teamSheetIds: Iterable<string>, extraTeamEmail
     .map((e) => `'${e}'`);
   const parts = [
     `not match(lower(coalesce(toString(person.properties.email), '')), '${TEAM_EMAIL_HOGQL_REGEX}')`,
+    excludedDistinctIdsSql(),
   ];
   if (emails.length) parts.push(`lower(coalesce(toString(person.properties.email), '')) not in (${emails.join(",")})`);
   if (ids.length) {
@@ -122,10 +131,13 @@ export async function posthogCoreWeekly(opts: {
       uniqIf(person_id, event = 'signup_completed') as people_signing_up,
       countIf(event = 'item_signup_completed') as item_signups,
       countIf(event = 'event_created') as sheets_created,
-      uniqIf(person_id, event in ('user_signed_in', 'event_created', 'event_shared')) as active_organizers
+      uniqIf(person_id, event in ('user_signed_in', 'event_created', 'event_shared')) as active_organizers,
+      countIf(event = 'signup_batch_created' and toInt(properties.success_count) > 0) as slot_signups_server,
+      uniqIf(person_id, event = 'signup_batch_created' and toInt(properties.success_count) > 0) as people_signing_up_server,
+      countIf(event = 'item_signup_created') as item_signups_server
     from events
     where timestamp >= toDateTime('${since}', 'UTC')
-      and event in ('$pageview', 'signup_completed', 'item_signup_completed', 'event_created', 'user_signed_in', 'event_shared')
+      and event in ('$pageview', 'signup_completed', 'item_signup_completed', 'event_created', 'user_signed_in', 'event_shared', 'signup_batch_created', 'item_signup_created')
       and ${team}
     group by w
     order by w`;
@@ -137,12 +149,12 @@ export async function posthogCoreWeekly(opts: {
     group by w, pid
     limit 10000`;
   const [counts, organizers] = await Promise.all([
-    runHogQL<[string, number, number, number, number, number, number]>(countsQuery),
+    runHogQL<[string, number, number, number, number, number, number, number, number, number]>(countsQuery),
     runHogQL<[string, string]>(organizersQuery),
   ]);
   if (!counts || !organizers) return null;
   const weeks: Record<string, CoreWeekCounts> = {};
-  for (const [w, visitors, slot, people, items, sheets, active] of counts) {
+  for (const [w, visitors, slot, people, items, sheets, active, slotServer, peopleServer, itemsServer] of counts) {
     weeks[String(w).slice(0, 10)] = {
       visitors: Number(visitors) || 0,
       slotSignups: Number(slot) || 0,
@@ -150,6 +162,11 @@ export async function posthogCoreWeekly(opts: {
       itemSignups: Number(items) || 0,
       sheetsCreated: Number(sheets) || 0,
       activeOrganizers: Number(active) || 0,
+      server: {
+        slotSignups: Number(slotServer) || 0,
+        peopleSigningUp: Number(peopleServer) || 0,
+        itemSignups: Number(itemsServer) || 0,
+      },
     };
   }
   const organizersByWeek: Record<string, string[]> = {};
