@@ -165,13 +165,28 @@ describe("scrubAuthParamsFromEvent", () => {
     expect(JSON.stringify(out)).not.toContain(token);
   });
 
-  it("redacts a token property on custom events such as run_your_own_clicked", () => {
-    const token = "00000000-0000-4000-8000-000000000001";
+  it("keeps the PostHog project token on every event so PostHog accepts it", () => {
+    // posthog-js sets properties.token to the project API key before
+    // before_send and sends it as the batch api_key. Redacting it made PostHog
+    // drop every client event (Nov 22 regression).
+    const projectToken = "phc_testProjectKey123";
+    for (const name of ["$pageview", "sheet_viewed", "signup_completed", "$exception"]) {
+      const out = scrubAuthParamsFromEvent({
+        event: name,
+        properties: { token: projectToken, $current_url: "https://x.test/cancel/abc123" },
+      });
+      expect(out.properties.token).toBe(projectToken);
+      expect(out.properties.$current_url).toBe(`https://x.test/cancel/${R}`);
+    }
+  });
+
+  it("still redacts a nested token property", () => {
+    const secret = "00000000-0000-4000-8000-000000000001";
     const out = scrubAuthParamsFromEvent({
       event: "run_your_own_clicked",
-      properties: { source: "signup_confirmation_page", token, event_id: "evt_1" },
+      properties: { token: "phc_testProjectKey123", meta: { token: secret }, event_id: "evt_1" },
     });
-    expect(out.properties).toEqual({ source: "signup_confirmation_page", token: R, event_id: "evt_1" });
+    expect(out.properties).toEqual({ token: "phc_testProjectKey123", meta: { token: R }, event_id: "evt_1" });
   });
 });
 

@@ -163,6 +163,12 @@ export function scrubAuthParamsFromEvent<E extends AnalyticsEvent | null>(event:
       } else {
         out.properties = scrubAuthParamsDeep(event.properties);
       }
+      // posthog-js sets properties.token to the project API key (public, phc_...)
+      // right before this hook and sends it as the batch api_key. Redacting it
+      // makes PostHog drop the event, so it is always kept as is.
+      if (typeof event.properties.token === "string") {
+        out.properties = { ...out.properties, token: event.properties.token };
+      }
     }
     if (event.$set) out.$set = scrubAuthParamsDeep(event.$set);
     if (event.$set_once) out.$set_once = scrubAuthParamsDeep(event.$set_once);
